@@ -1,0 +1,114 @@
+{
+  "format": 1,
+  "vectors": [
+    {
+      "addrs": [
+        "192.168.1.20"
+      ],
+      "inviter_key": "d61fcda8433c35ebbed8ef2c8a52188159ac8410b5cbebae41b3f0c816013ae6",
+      "name": "one-ipv4",
+      "note": "one IPv4 address",
+      "payload": "01d61fcda8433c35ebbed8ef2c8a52188159ac8410b5cbebae41b3f0c816013ae6fd4860b870ec14528818a7c0d900a6ebca6c0104c0a80114",
+      "port": 51820,
+      "qr_secret": "fd4860b870ec14528818a7c0d900a6eb",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQJQFIAEKA",
+      "valid": true
+    },
+    {
+      "addrs": [
+        "192.168.1.20",
+        "fe80::1c2d:3eff:fe4f:5a6b"
+      ],
+      "inviter_key": "d61fcda8433c35ebbed8ef2c8a52188159ac8410b5cbebae41b3f0c816013ae6",
+      "name": "two-addresses",
+      "note": "IPv4 then IPv6 link-local",
+      "payload": "01d61fcda8433c35ebbed8ef2c8a52188159ac8410b5cbebae41b3f0c816013ae6fd4860b870ec14528818a7c0d900a6ebca6c0204c0a8011406fe800000000000001c2d3efffe4f5a6b",
+      "port": 51820,
+      "qr_secret": "fd4860b870ec14528818a7c0d900a6eb",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQBAJQFIAEKAN7UAAAAAAAAAAAOC2PX77ZHVU2Y",
+      "valid": true
+    },
+    {
+      "addrs": [
+        "10.0.0.5",
+        "172.16.4.9",
+        "fe80::1",
+        "fd12:3456:789a::1"
+      ],
+      "inviter_key": "d61fcda8433c35ebbed8ef2c8a52188159ac8410b5cbebae41b3f0c816013ae6",
+      "name": "four-addresses",
+      "note": "the most addresses a payload may hold",
+      "payload": "01d61fcda8433c35ebbed8ef2c8a52188159ac8410b5cbebae41b3f0c816013ae6fd4860b870ec14528818a7c0d900a6eb9c4004040a00000504ac10040906fe80000000000000000000000000000106fd123456789a00000000000000000001",
+      "port": 40000,
+      "qr_secret": "fd4860b870ec14528818a7c0d900a6eb",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN244IACAICQAAACQJLAQAQEQN7UAAAAAAAAAAAAAAAAAAAAAAAIG7UJDIVTYTIAAAAAAAAAAAAAAAE",
+      "valid": true
+    },
+    {
+      "name": "wrong-prefix",
+      "note": "prefix UCLIP2: is not ours",
+      "text": "UCLIP2:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQJQFIAEKA",
+      "valid": false
+    },
+    {
+      "name": "lower-case-prefix",
+      "note": "the prefix is case sensitive",
+      "text": "uclip1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQJQFIAEKA",
+      "valid": false
+    },
+    {
+      "name": "version-2",
+      "note": "payload version 2 is unknown",
+      "text": "UCLIP1:ALLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQJQFIAEKA",
+      "valid": false
+    },
+    {
+      "name": "zero-addresses",
+      "note": "n is 0",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAA",
+      "valid": false
+    },
+    {
+      "name": "five-addresses",
+      "note": "n is 5",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQCQJQFIAEKAJQFIAEKQJQFIAELAJQFIAELQJQFIAEMA",
+      "valid": false
+    },
+    {
+      "name": "unknown-family",
+      "note": "family byte 0x05",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQLQFIAEKA",
+      "valid": false
+    },
+    {
+      "name": "one-byte-too-many",
+      "note": "a byte left over",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQJQFIAEKAA",
+      "valid": false
+    },
+    {
+      "name": "one-byte-too-few",
+      "note": "the address is cut short",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQJQFIAE",
+      "valid": false
+    },
+    {
+      "name": "lower-case-base32",
+      "note": "base32 must be upper case",
+      "text": "UCLIP1:ahlb7tniim6dl2563dxszcssdcavtleecc24x25oigz7bsawae5on7kimc4hb3aukkebrj6a3eakn26knqaqjqfiaeka",
+      "valid": false
+    },
+    {
+      "name": "padding",
+      "note": "padding characters are not allowed",
+      "text": "UCLIP1:AHLB7TNIIM6DL2563DXSZCSSDCAVTLEECC24X25OIGZ7BSAWAE5ON7KIMC4HB3AUKKEBRJ6A3EAKN26KNQAQJQFIAEKA====",
+      "valid": false
+    },
+    {
+      "name": "empty",
+      "note": "nothing after the prefix",
+      "text": "UCLIP1:",
+      "valid": false
+    }
+  ]
+}
