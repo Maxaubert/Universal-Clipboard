@@ -1,0 +1,11 @@
+[package]
+name = "uc-keys"
+description = "Universal Clipboard: device key store trait and per-OS backends."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

@@ -15,6 +15,29 @@ decisions that are yours. Every choice in the text is a decision unless it says 
 
 ---
 
+## Decisions after approval (2026-11-13)
+
+Max approved the plan and the build on 2026-11-13. These decisions came after the text below was
+written. Where they conflict with the text, they win.
+
+- The name stays "Universal Clipboard". Only an App Store display name may differ later. The
+  Copybridge and Clipbridge name check is skipped.
+- No "send" and no "get" actions anywhere in the UI or the apps. The latest copy is on every
+  device automatically.
+- The pairing code has 6 digits (for example `418 207`). The QR code comes first, then the code.
+  The PAKE (SPAKE2 or CPace) allows 5 tries, so a guess works 1 time in about 200,000. The long
+  code stays for other networks.
+- The desktop UI design is locked: `docs/design/desktop` (12 `.dc.html` screens, Device tiles
+  style, Figtree, integrated title bar, 5-step setup indicator). The mobile design is not done.
+- Relay: develop against the free iroh test relays. The decision on an own relay waits until
+  before the public beta. Max uses Mullvad with "Local network sharing" on.
+- Max has an Apple Developer account. There is no Google Play account and no Android phone yet
+  (emulator only). There is no Windows signing yet.
+- Approved setup work: Android SDK on the PC, Rust and Node on the Mac, the lab VMs (a Hyper-V
+  external switch on the PC is fine: the network drops for a few seconds once).
+
+---
+
 ## 1. Goal and non-goals
 
 ### Goal
@@ -113,7 +136,7 @@ Closing the window leaves the agent running. There is no tray icon and no Dock i
 
 On a device that is already set up (or the first device):
 1. Open the app. Press "Add a device".
-2. The screen shows a **short code**: 9 digits in three groups, for example `418 207 953`, and a
+2. The screen shows a **short code**: 6 digits in two groups, for example `418 207`, and a
    **QR code**. Both are valid for 10 minutes. The short code allows 5 tries.
 3. Below them is a link: "The other device is not on this Wi-Fi, or it uses a VPN". It shows a
    **long code**: 20 letters and digits in four groups, for example `K7QF2-M9XTD-4HRWA-P3ZNC`.
@@ -435,15 +458,15 @@ all for an attacker on the internet to find or attack a short code.
 
 | | Short code | Long code | QR code |
 |---|---|---|---|
-| Form | 9 digits. First 3: public "meeting number". Last 6: the secret. | 20 characters (base32 without look-alike letters), 100 secret bits | A's public key, LAN addresses, relay address, and a 128-bit secret |
+| Form | 6 digits, all secret. No public part. | 20 characters (base32 without look-alike letters), 100 secret bits | A's public key, LAN addresses, relay address, and a 128-bit secret |
 | Works | **Same LAN only** | LAN and relay | LAN and relay |
-| How B finds A | mDNS pairing service on each physical interface, tagged with a hash of the meeting number | See "long code rendezvous" below | Needs no discovery: the address is in the QR |
+| How B finds A | mDNS pairing service on each physical interface, one random pairing tag per open pairing (not derived from the code); B tries each pairing it sees on the LAN | See "long code rendezvous" below | Needs no discovery: the address is in the QR |
 | Guess limit | 5 tries, 10 minutes | 10 minutes (guessing 100 bits is not possible) | 10 minutes |
 
 **Short code is LAN only, and this is enforced.** A accepts a short-code pairing only on a direct
 connection from a link-local or private address inside the subnet of one of its physical
 interfaces. It refuses short-code pairing on relay paths. Nothing about a short code is ever
-published outside the LAN. Reason: a 3-digit meeting number has 1,000 values. On the internet,
+published outside the LAN. Reason: a 6-digit code has only 1,000,000 values. On the internet,
 anyone could list every open pairing in the world and spend the 5 tries on each.
 
 **Long code rendezvous (no lookup service).** Both sides derive two values from the long code with
@@ -473,7 +496,7 @@ Spike S6 proves this. Fallback if S6 fails: a short-lived record under the deriv
 
 **Limits:** for the short code, 5 failed tries or 10 minutes end the code. One try per connection.
 **A connection that drops after B's PAKE message counts as a failed try.** A guess has a 1 in
-1,000,000 chance per try, so at most 5 in 1,000,000 per code, and only for someone on the same LAN.
+1,000,000 chance per try, so at most 5 in 1,000,000 (about 1 in 200,000) per code, and only for someone on the same LAN.
 A LAN attacker can burn the 5 tries on purpose. We accept that: A shows "Someone else tried this
 code. Make a new code." and the user can use the QR or long code.
 
