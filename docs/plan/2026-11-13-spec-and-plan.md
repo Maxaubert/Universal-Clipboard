@@ -26,7 +26,7 @@ written. Where they conflict with the text, they win.
 - No "send" and no "get" actions anywhere in the UI or the apps. The latest copy is on every
   device automatically.
 - The pairing code has 6 digits (for example `418 207`). The QR code comes first, then the code.
-  The PAKE (SPAKE2 or CPace) allows 5 tries, so a guess works 1 time in about 200,000. There is
+  The PAKE (SPAKE2, decided in M0c, see `docs/protocol.md`) allows 5 tries, so a guess works 1 time in about 200,000. There is
   no long code (removed on 2026-11-13, see the scope change below).
 - The desktop UI design is locked: `docs/design/desktop` (12 `.dc.html` screens, Device tiles
   style, Figtree, integrated title bar, 5-step setup indicator). The mobile design is not done.
@@ -476,91 +476,71 @@ the lab VMs already in M2, not first in M10 (section 6.5).
 
 ### 3.6 Pairing protocol
 
+**The exact protocol is in `docs/protocol.md` (signed off in M0c on 2026-11-14). M3 implements
+that page word for word. Where this section and that page differ, that page wins.** This section
+is only the summary.
+
 Goal: a code that a person can type, safe against an attacker on the same network, and no way at
 all for an attacker on the internet to find or attack a pairing.
 
-**Two ways to carry the secret. One protocol after that. Both work on the same LAN only.**
-
 | | Short code | QR code |
 |---|---|---|
-| Form | 6 digits, all secret. No public part. | A's public key, LAN addresses, and a 128-bit secret |
+| Form | 6 digits, all secret. No public part. | The inviter's device key, its port, up to 4 LAN addresses, and a 128-bit secret |
 | Works | **Same LAN only** | Same LAN only |
-| How B finds A | mDNS pairing service on each physical interface, one random pairing tag per open pairing (not derived from the code); B tries each pairing it sees on the LAN | Needs no discovery: the address is in the QR |
+| How the new device finds the inviter | mDNS pairing service on each physical interface, one random pairing tag per open pairing; the new device tries each pairing it sees | Needs no discovery: the address is in the QR. The new device checks the inviter's key before it sends anything. |
 | Guess limit | 5 tries, 10 minutes | 10 minutes (guessing 128 bits is not possible) |
 
-**Pairing is LAN only, and this is enforced.** A accepts a pairing only on a direct connection from
-a link-local or private address inside the subnet of one of its physical interfaces. Nothing about a
-pairing is ever published outside the LAN, because there is no outside path. A 6-digit code has only
-1,000,000 values; keeping it on the LAN means that only someone on the same network can try it.
-
-**Steps (both code types):**
-1. A opens pairing for 10 minutes. One open pairing at a time.
-2. B connects with ALPN `uclip-pair/1`. QUIC encrypts the channel to a key, but B does not yet
-   know that this key is the right one.
-3. Both run **SPAKE2** with the code's secret as the password.
-4. **Transcript.** Both sides hash, in this fixed order and each with a length prefix: the text
-   `uclip-pair/1`, the protocol version, the role of each side ("shows code", "types code"), A's
-   device public key, B's device public key, the two QUIC endpoint keys of this connection, both
-   SPAKE2 messages, and the SPAKE2 shared value. The session key and two confirmation keys come
-   from that hash with HKDF.
-5. **Key confirmation.** Each side sends a MAC over the transcript with its confirmation key. Both
-   must check the other's MAC before they send any group data. A man in the middle shows a
-   different key to each side, so the transcripts differ and the check fails.
-6. Over that channel A sends the group state: membership chain, group secret, group epoch. B sends
-   its device record (name, type, public key). A signs the "add B" change and spreads it.
-7. Both store the result. Pairing closes. The code is dead.
-
-**Limits:** for the short code, 5 failed tries or 10 minutes end the code (the QR code ends after 10 minutes or one pairing). One try per connection.
-**A connection that drops after B's PAKE message counts as a failed try.** A guess has a 1 in
-1,000,000 chance per try, so at most 5 in 1,000,000 (about 1 in 200,000) per code, and only for someone on the same LAN.
-A LAN attacker can burn the 5 tries on purpose. We accept that: A shows "Someone else tried this
-code. Make a new code." and the user can use the QR code.
-
-**Crate.** RustCrypto `spake2` is not audited and has no transcript binding or key confirmation
-built in. So steps 4 and 5 are our own code around it, with written test vectors. In the protocol
-review before M3 (section 7) we check whether the crate matches the RFC 9382 test vectors, and
-whether a maintained CPace crate exists. If CPace is available and maintained, it replaces SPAKE2
-(same transcript, same confirmation).
-
-**Why no second confirm code:** the PAKE with key confirmation already proves that both sides know
-the code and see the same keys. One step less for the user.
+- **PAKE: SPAKE2**, RustCrypto `spake2` pinned to `=0.4.0` (decided in M0c; CPace has no
+  maintained Rust crate and is not an RFC yet). Both device keys are the SPAKE2 identities.
+- **Transcript and confirmation:** both device keys (read from the TLS layer), a TLS exporter
+  value of this connection, the mode and both SPAKE2 messages are hashed. Each side sends an HMAC
+  with its own confirmation key. **The inviter confirms first.** The new device sends nothing
+  that depends on the code before it has checked that. So a fake inviter learns nothing, and a
+  fake new device gets one guess per try.
+- **Limits:** 5 tries per code, counted when the inviter sends its reply (a dropped connection
+  stays counted); 10 minutes; one open pairing. After 3 codes in a row die from wrong tries, the
+  short code is off for 1 hour on that device and only the QR code is shown. A guess works at most
+  5 times in 1,000,000 (1 in 200,000) per code, and only from the same LAN.
+- **A 6-digit code is safe only with the PAKE and the try limit together** (protocol page 4.1).
+- **LAN only, enforced:** the inviter accepts a pairing only from a private or link-local address
+  inside the subnet of one of its physical interfaces. The QR payload is taken only from the
+  in-app scanner; the app registers no link scheme.
+- **No second confirm code:** the PAKE with key confirmation already proves that both sides know
+  the code and see the same keys.
 
 ### 3.7 Groups and membership
 
+**The exact rules, byte formats and cases are in `docs/protocol.md` section 5 (signed off in M0c).
+Where this section and that page differ, that page wins.** Summary:
+
 - Every device has one Ed25519 key pair, made at first run. Its public key is its ID and its iroh address.
-- A group is a **membership chain**: a list of signed changes (add device, remove device, rename,
-  rotate secret). **Each change names the hash of the change or changes it was made on** (its
-  parents), so the changes form a hash-linked graph with a clear "before and after".
-- **Validity rule.** A change signed by device X counts only if, looking at everything before it
-  in the graph, X had been added and not removed. Every device computes this the same way from the
-  same graph, so all devices agree.
-- **A removed device cannot add devices.** If "remove X" exists, then any change signed by X that
-  does not come before that removal in the graph is invalid. That covers changes X signs after the
-  removal, and changes X pretends to have signed earlier (they are not linked before the removal
-  in anyone else's graph). Devices that X added that way are not members, and anything those
-  devices signed is invalid too. A member that was offline and accepted such a device drops it as
-  soon as it sees the removal.
-- **Two devices remove each other at the same moment:** the device that joined the group earlier
-  wins. The other is removed.
+- A group is a **membership chain**: signed changes (genesis, add, remove, rename, rotate). Each
+  change names the hashes of its parents, so the changes form a hash-linked graph.
+- **Removal always wins.** A removal counts if its signer was a member in the removal's own past.
+  Nothing beside it can cancel it. A removed key is never a member again; a removed device makes
+  a new key.
+- **A removed device cannot add devices.** Every add, rename or rotate signed by a removed device
+  that is not in the past of its removal is invalid. That covers changes signed after the removal
+  and back-dated ones. Devices added that way are not members.
+- **Two devices remove each other at the same moment: both are removed** (changed in M0c: with
+  "the older device wins", a stolen old device could cancel its own removal by back-dating).
 - All members are equal. Any member can add or remove a device. This fits one person's devices.
-- Devices swap chain heads on every connection and pull what they miss.
-- The agent accepts sync connections only from keys that are valid members. All others are closed
-  before any data is read.
-- **Group secret:** 32 random bytes, used only for the discovery tags. It has an epoch number.
-- **Removing a device:** a signed removal spreads to every reachable member. Those members drop the
-  device's connection at once and make a new group secret (epoch + 1), which they pass to the
-  remaining members over the pairwise channels. The removed device gets a "removed" message if it
-  is reachable and then wipes its state.
-- **A stolen device removes all the others.** It can do that (all members are equal). It gains
-  nothing: the others stop sending to it. Each removed device shows a notification "Another device
-  removed this one" and the button "Pair my devices again", which starts a new group.
-- **Honest limit:** a member that is offline during a removal learns of it at its next connection
-  to any other member. Until then it would still accept the removed device. The window closes as
-  soon as that member talks to anyone in the group.
+- On every connection, membership sync runs first. Clips, secrets and addresses flow only after
+  both sides evaluated the result and see each other as members.
+- The agent accepts sync connections only from keys that are valid members.
+- **Group secret:** 32 random bytes with an epoch, used only for the discovery tags. The device
+  that signs a removal also makes the new secret and signs a `rotate` change with a commitment to
+  it. Members get the secret over the pairwise channels (`WantSecret`, `Secret`).
+- A device wipes itself only when its own evaluation of the signed changes says it is no longer
+  a member. It then shows "Another device removed this one" and "Pair my devices again".
+- **A stolen device removes all the others.** It gains nothing: the others stop sending to it.
+- **Honest limits:** a member that is offline during a removal learns of it at its next connection
+  to any other member. Until then it still accepts the removed device, and the removed device can
+  use it to make other devices drop out (never to get back in). If A removes B while B adds C at
+  the same time, C is not a member and is paired again.
 - Maximum 8 devices in v1.
 
-Property tests cover exactly the attacks above (section 6.1). The protocol text of 3.6 and 3.7 is
-reviewed on paper by the planning model before any code is written (M0c).
+Property tests cover exactly the attacks above (section 6.1 and protocol page section 7).
 
 ### 3.8 Message format and sync rules
 
@@ -577,7 +557,8 @@ Unknown message types are skipped. Devices accept the current and the previous p
 | `Latest` | metadata of the newest clip this device holds (sent on connect) |
 | `Clip` | clip header plus parts: id, origin device, clock stamp, list of (format, size, hash), then the bytes |
 | `Want` | "send me clip id X" (used after `Latest`, for large clips, and by pull-only clients) |
-| `Removed` | "you were removed from the group" |
+| `Removed` | "you were removed from the group" (a hint only; the device acts on the signed changes) |
+| `WantSecret`, `Secret` | ask for and send the group secret of an epoch (added in M0c, `docs/protocol.md` 5.8) |
 
 **Clip model:** one clip has 1 to 3 parts: `text/plain` (UTF-8), `text/html`, `image/png`.
 - **Wire ID:** BLAKE3 over the parts as sent.
@@ -866,7 +847,7 @@ The display name is one config value, so the name can change without code change
 | Async | tokio | 1.x | |
 | Transport | iroh | 1.4.x, pinned exactly if S1 picks the unstable custom transport | docs.rs today: 1.4.1 |
 | mDNS | `mdns-sd` (per-interface control). `iroh-mdns-address-lookup` 0.5 is the alternative if it can be limited to chosen interfaces. | latest | decide in S1 |
-| PAKE | `spake2` (RustCrypto) with our transcript and confirmation, or a maintained CPace crate | 0.4.x | decide in M0c |
+| PAKE | `spake2` (RustCrypto) with our transcript and confirmation (`docs/protocol.md`) | `=0.4.0` | decided in M0c |
 | Hash, MAC, KDF | `blake3`, `hmac` + `sha2`, `hkdf` | | verify |
 | Codec | `postcard` + `serde` | 1.x | verify |
 | Key store | `keyring` | 3.x | verify |
@@ -926,7 +907,8 @@ adapter (they sit on your real LAN, like separate computers), all run without a 
 - Membership chain, property tests: merge is order-free; bad signatures are refused; **a removed
   device signs "add Y" after its removal, or back-dates it, and hands it to a member that was
   offline: Y never becomes a member on any device once the removal is known**; changes signed by
-  such a Y are invalid; two devices remove each other; a device removes all others.
+  such a Y are invalid (a removal signed by Y still counts: removal always wins); two devices
+  remove each other (both are removed); a device removes all others. Full list: `docs/protocol.md` 7.
 - Pairing state machine: wrong code, 5 tries, dropped connection counts as a try, timeout, man in
   the middle (different keys on each side), transcript test vectors, **a pairing is
   refused from a non-local address, and a client outside the LAN finds nothing.**
@@ -1093,6 +1075,8 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
   3.7 (membership chain, validity rule, removal cases) for protocol errors; decide SPAKE2 or
   CPace; write the test vectors' format.
 - Accept: a signed-off protocol page in `docs/`, which M3 implements word for word.
+- **Done 2026-11-14: `docs/protocol.md`.** S1 had no result yet; the page works with iroh and
+  with plain QUIC (both give the peer key and a TLS exporter).
 
 ### M1. Core library (`uc-core`, `uc-clip` trait and fake, `uc-testkit` base)
 - Depends on: M0. Machine: PC. Model: Opus.
@@ -1449,7 +1433,7 @@ Not checked, from general knowledge, to verify in the named spike or milestone:
 - Android: clipboard preview overlay on background writes, Play policy for `connectedDevice`,
   OEM background killing (S7).
 - Microsoft Store: individual accounts in Norway, firewall rules and startup tasks in MSIX (S8).
-- Whether RustCrypto `spake2` matches the RFC 9382 test vectors; a maintained CPace crate (M0c).
+- (Checked in M0c: RustCrypto `spake2` is the python-spake2 variant, not the RFC 9382 wire format; no maintained CPace crate exists. See `docs/protocol.md` 2.1.)
 - Certum terms and prices, Play Console test rule, store fees (M0a, M15).
 - Name availability of Copybridge and Clipbridge (M0a).
 
