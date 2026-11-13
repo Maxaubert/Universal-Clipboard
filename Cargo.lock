@@ -589,6 +589,14 @@ version = "0.0.1"
 [[package]]
 name = "uc-clip-win"
 version = "0.0.1"
+dependencies = [
+ "png",
+ "proptest",
+ "uc-clip",
+ "uc-core",
+ "uc-winhost",
+ "windows-sys",
+]
 
 [[package]]
 name = "uc-core"
@@ -631,6 +639,13 @@ dependencies = [
 [[package]]
 name = "uc-update"
 version = "0.0.1"
+
+[[package]]
+name = "uc-winhost"
+version = "0.0.1"
+dependencies = [
+ "windows-sys",
+]
 
 [[package]]
 name = "unarray"
