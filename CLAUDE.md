@@ -3,6 +3,7 @@
 Clipboard sync between Windows, macOS, Linux, iOS and Android. Rust workspace in `crates/`.
 Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 first).
 Desktop design (locked): `docs/design/desktop`.
+Core library choices (M1): `docs/core.md`.
 
 ## Rules
 - Code goes on a branch and a PR. Never push code to main. `docs/*.md` may go to main.

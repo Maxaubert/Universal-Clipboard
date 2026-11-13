@@ -9,3 +9,11 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+png = "0.18.1"
+uc-clip = { version = "0.0.1", path = "../uc-clip" }
+uc-core = { version = "0.0.1", path = "../uc-core" }
+
+[dev-dependencies]
+proptest = "1.12.0"
