@@ -5,6 +5,7 @@ Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 fir
 Desktop design (locked): `docs/design/desktop`.
 Core library choices (M1): `docs/core.md`.
 Pairing and membership protocol (signed off, M3 implements it word for word): `docs/protocol.md`.
+macOS clipboard backend (M5): `docs/clip-mac.md`.
 
 ## Rules
 - Code goes on a branch and a PR. Never push code to main. `docs/*.md` may go to main.

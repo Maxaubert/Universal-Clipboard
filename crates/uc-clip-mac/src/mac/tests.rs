@@ -20,7 +20,7 @@ impl Board {
         assert_eq!(cb.name(), name);
         assert_ne!(
             cb.name(),
-            general_name(),
+            GENERAL_NAME,
             "a test must never use the general pasteboard"
         );
         Self(Some(cb))
@@ -79,6 +79,14 @@ fn part(snap: &Snapshot, f: Format) -> Option<&[u8]> {
         .iter()
         .find(|(x, _)| *x == f)
         .map(|(_, b)| b.as_slice())
+}
+
+#[test]
+fn general_name_constant_matches_appkit() {
+    // Reads only the name constant from AppKit; the general pasteboard is not opened.
+    // SAFETY: `NSPasteboardNameGeneral` is an immutable string constant from AppKit.
+    let name = unsafe { objc2_app_kit::NSPasteboardNameGeneral }.to_string();
+    assert_eq!(name, GENERAL_NAME);
 }
 
 #[test]

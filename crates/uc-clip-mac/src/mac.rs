@@ -121,7 +121,7 @@ impl MacClipboard {
     /// Free a named pasteboard in the pasteboard server. Tests call this when they end.
     /// Does nothing to the general pasteboard.
     pub fn release_globally(self) {
-        if self.name() == general_name() {
+        if self.name() == GENERAL_NAME {
             return;
         }
         // SAFETY: `releaseGlobally` takes no arguments and returns void. It exists on every
@@ -250,10 +250,9 @@ impl MacClipboard {
     }
 }
 
-/// The name of the general pasteboard.
-fn general_name() -> String {
-    autoreleasepool(|_| NSPasteboard::generalPasteboard().name().to_string())
-}
+/// The name of the general pasteboard (`NSPasteboardNameGeneral`). A constant, so that tests
+/// can check it without opening the general pasteboard.
+const GENERAL_NAME: &str = "Apple CFPasteboard general";
 
 fn to_u64(n: isize) -> u64 {
     u64::try_from(n).unwrap_or(0)
