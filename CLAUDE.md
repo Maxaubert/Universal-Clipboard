@@ -10,7 +10,8 @@ Pairing and membership protocol (signed off, M3 implements it word for word): `d
 - Code goes on a branch and a PR. Never push code to main. `docs/*.md` may go to main.
 - Tests run headless. Never touch the real clipboard; use the fake clipboard and `UCLIP_PROFILE=dev`.
 - Rust copies and worktrees share ONE `CARGO_TARGET_DIR`.
-- No "send" or "get" actions in the UI: the latest copy is on every device automatically.
+- No "send" or "get" actions in the UI or CLI: the latest copy is on every device automatically.
+- The `uc` CLI is a full user interface: every settings-window action must also work from `uc` (plan 3.2).
 
 ## Build, test, release
 - Typecheck/lint: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
