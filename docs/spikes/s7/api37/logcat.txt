@@ -1,0 +1,54 @@
+--------- beginning of system
+11-13 23:41:53.214 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: 10211, SourcePkg: null, TargetUid: 10211, TargetPkg: com.google.android.gms
+11-13 23:41:53.308 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: 10211, SourcePkg: null, TargetUid: 10211, TargetPkg: com.google.android.gms
+11-13 23:41:53.493 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: 10211, SourcePkg: null, TargetUid: 10211, TargetPkg: com.google.android.gms
+11-13 23:41:54.470 W/ActivityManager(  677): Slow operation: 51ms so far, now at startProcess: returned from zygote!
+11-13 23:41:54.470 W/ActivityManager(  677): Slow operation: 51ms so far, now at startProcess: done updating battery stats
+11-13 23:41:54.471 W/ActivityManager(  677): Slow operation: 51ms so far, now at startProcess: building log message
+11-13 23:41:54.471 W/ActivityManager(  677): Slow operation: 52ms so far, now at startProcess: starting to update pids map
+11-13 23:41:54.471 W/ActivityManager(  677): Slow operation: 52ms so far, now at startProcess: done updating pids map
+--------- beginning of main
+11-13 23:41:55.038 I/S7      ( 4502): NATIVE jni add(40,2)=42 where=activity
+11-13 23:41:55.038 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: 10211, SourcePkg: null, TargetUid: 10211, TargetPkg: com.google.android.gms
+11-13 23:41:55.227 I/S7      ( 4502): NATIVE uniffi greet=hello android from Rust info=uc-s7 0.1.0 arch=x86_64 os=android where=activity
+11-13 23:41:55.348 I/S7      ( 4502): FGS started type=connectedDevice sdk=37
+11-13 23:41:56.070 I/S7      ( 4502): READ where=main-focus sdk=37 hasPrimaryClip=false clip=null text=null
+11-13 23:42:02.517 I/S7      ( 4502): WRITE ok where=service sdk=37 flags=[] text=bg-plain-37
+11-13 23:42:04.701 I/S7      ( 4502): WRITE ok where=service sdk=37 flags=[overlay] text=bg-overlay-37
+11-13 23:42:11.968 I/S7      ( 4502): WRITE ok where=service sdk=37 flags=[overlay, remote] text=bg-remote-37
+11-13 23:42:18.142 I/S7      ( 4502): WRITE ok where=service sdk=37 flags=[overlay, sensitive] text=bg-sensitive-37
+11-13 23:42:27.218 I/S7      ( 4502): WRITE ok where=service sdk=37 flags=[] text=bg-screenoff-37
+11-13 23:42:29.705 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: 10211, SourcePkg: null, TargetUid: 10211, TargetPkg: com.google.android.gms
+11-13 23:42:30.644 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: -1, SourcePkg: null, TargetUid: 10182, TargetPkg: com.google.android.apps.photos
+11-13 23:42:31.052 W/ActivityManager(  677): pid 1181 com.android.settings sent binder code 21 with flags 0 and got error -2147483646
+11-13 23:42:31.104 W/ActivityManager(  677): ProcessRecord{a276fa1 0:com.google.android.settings.intelligence/u0a155} is attached to a previous process 4208
+11-13 23:42:31.124 I/S7      ( 4502): WRITE ok where=service sdk=37 flags=[] text=bg-doze-37
+11-13 23:42:31.171 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: -1, SourcePkg: null, TargetUid: 10182, TargetPkg: com.google.android.apps.photos
+11-13 23:42:31.186 W/ActivityManager(  677): Slow operation: 74ms so far, now at startProcess: asking zygote to start proc
+11-13 23:42:31.255 W/ActivityManager(  677): Slow operation: 144ms so far, now at startProcess: returned from zygote!
+11-13 23:42:31.262 W/ActivityManager(  677): Slow operation: 151ms so far, now at startProcess: done updating battery stats
+11-13 23:42:31.262 W/ActivityManager(  677): Slow operation: 151ms so far, now at startProcess: building log message
+11-13 23:42:31.262 W/ActivityManager(  677): Slow operation: 151ms so far, now at startProcess: starting to update pids map
+11-13 23:42:31.262 W/ActivityManager(  677): Slow operation: 151ms so far, now at startProcess: done updating pids map
+11-13 23:42:31.879 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: -1, SourcePkg: null, TargetUid: 10155, TargetPkg: com.google.android.settings.intelligence
+11-13 23:42:31.883 W/ActivityManager(  677): Skipping manifest association check for null package. SourceUid: -1, SourcePkg: null, TargetUid: 10155, TargetPkg: com.google.android.settings.intelligence
+11-13 23:42:33.953 W/ActivityManager(  677): Unable to start service Intent { act=com.google.android.gms.lockbox.service.START xflg=0x4 pkg=com.google.android.gms } U=0: not found
+11-13 23:42:33.954 W/ActivityManager(  677): Unbind failed: could not find connection for android.os.BinderProxy@cd89bc
+11-13 23:42:35.156 E/ClipboardService(  677): Denying clipboard access to dev.uc.s7, application is not in focus nor is it a system service for user 0
+11-13 23:42:35.160 E/ClipboardService(  677): Denying clipboard access to dev.uc.s7, application is not in focus nor is it a system service for user 0
+11-13 23:42:35.160 I/S7      ( 4502): READ where=service sdk=37 hasPrimaryClip=false clip=null text=null
+11-13 23:42:36.294 I/S7      ( 4502): NATIVE jni add(40,2)=42 where=service
+11-13 23:42:36.296 I/S7      ( 4502): NATIVE uniffi greet=hello android from Rust info=uc-s7 0.1.0 arch=x86_64 os=android where=service
+11-13 23:42:36.458 W/ActivityManager(  677): Unable to start service Intent { act=com.google.android.gms.home.wifipresence.service.START xflg=0x4 pkg=com.google.android.gms } U=0: not found
+11-13 23:42:36.459 W/ActivityManager(  677): Unbind failed: could not find connection for android.os.BinderProxy@c92898b
+11-13 23:42:39.571 I/S7      ( 4502): TILE onClick sdk=37
+11-13 23:42:39.648 I/S7      ( 4502): FOCUS onCreate from=tile
+11-13 23:42:39.650 E/ClipboardService(  677): Denying clipboard access to dev.uc.s7, application is not in focus nor is it a system service for user 0
+11-13 23:42:39.651 E/ClipboardService(  677): Denying clipboard access to dev.uc.s7, application is not in focus nor is it a system service for user 0
+11-13 23:42:39.652 I/S7      ( 4502): READ where=focus-onCreate sdk=37 hasPrimaryClip=false clip=null text=null
+11-13 23:42:39.664 E/ClipboardService(  677): Denying clipboard access to dev.uc.s7, application is not in focus nor is it a system service for user 0
+11-13 23:42:39.665 E/ClipboardService(  677): Denying clipboard access to dev.uc.s7, application is not in focus nor is it a system service for user 0
+11-13 23:42:39.666 I/S7      ( 4502): READ where=focus-onResume sdk=37 hasPrimaryClip=false clip=null text=null
+11-13 23:42:39.936 I/S7      ( 4502): READ where=focus-windowFocus sdk=37 hasPrimaryClip=true clip=present text=bg-doze-37
+11-13 23:42:39.937 I/S7      ( 4502): FOCUS done in 289 ms
+11-13 23:42:43.823 I/S7      ( 4502): TAP notification posted

@@ -1,0 +1,7 @@
+.gradle/
+.kotlin/
+build/
+app/build/
+local.properties
+rust/target/
+app/src/main/jniLibs/
