@@ -95,7 +95,7 @@ transcript all differ, and the confirmation fails.
 | Open pairings per device | 1 |
 | Pairing connections handled at the same time | 4 |
 | Time allowed for each protocol step | 10 seconds |
-| Codes killed by wrong tries in a row before the short code is turned off | 3, then off for 1 hour |
+| Codes killed by wrong tries in a row before the short code is turned off | 5, then off for 1 hour |
 
 ### 2.4 QR payload
 
@@ -313,7 +313,8 @@ conf_b = HMAC-SHA256(kc_b, T)
   pairing that succeeds resets the count. At 5 in a row the short code is off on this device for
   1 hour: a new pairing shows only the QR code and the text "Someone on this network keeps
   guessing the code. Use the QR code, or try again in an hour." The count and the time are kept in
-  memory only; an agent restart clears them.
+  memory only; an agent restart clears them. When the lockout starts, the count goes back to 0.
+  The count goes up at the moment a code dies (its 5th failed try), not when the pairing closes.
 
 Result: per open pairing a guesser has at most 5 in 1,000,000. Per hour at most 15 in 1,000,000,
 and only while the user keeps pressing "Add a device".
@@ -322,7 +323,8 @@ and only while the user keeps pressing "Add a device".
 
 `PairConfirm` carries the joiner's device record: `device_type` (0 unknown, 1 Windows, 2 macOS,
 3 Linux, 4 iPhone, 5 iPad, 6 Android phone, 7 Android tablet) and `name` (1 to 64 bytes of UTF-8,
-no control characters).
+no control characters). A `device_type` above 7 is refused, here and in changes (5.2): the
+parsers are strict.
 
 The inviter, after it checked `conf_b`:
 
@@ -527,7 +529,9 @@ adds C" case rare.
 
 Limits: a device opens no pairing when the group has 8 members. A device signs no add or rename
 when its graph holds 1,024 changes (the app then says "Set up your devices again"). It accepts and
-signs `remove` and `rotate` up to 2,048 changes and refuses every change after that.
+signs `remove` and `rotate` up to 2,048 changes and refuses every change after that. "Signs no add or
+rename" also means "accepts no add or rename": from 1,024 changes on, an incoming add or rename is
+refused too.
 
 ### 5.8 Group secret
 
@@ -598,6 +602,7 @@ read them. A vector file changes only together with this page.
   "joiner_code": "418207",
   "inviter_rng": "<64 bytes>",
   "joiner_rng": "<64 bytes>",
+  "tamper_msg_b": null,
   "expect": {
     "msg_b": "<33 bytes>",
     "msg_a": "<33 bytes>",
@@ -614,7 +619,11 @@ read them. A vector file changes only together with this page.
 - `inviter_sees_joiner_key`, `joiner_sees_inviter_key` and the two exporters let a vector model a
   man in the middle: in an honest run they equal the real keys and each other.
 - `inviter_code` and `joiner_code` (or `qr_secret` on both sides in mode 2) let a vector model a
-  wrong code.
+  wrong code. In mode 2 a non-null `joiner_code` means the joiner uses those 6 digits as its QR
+  secret (password `"uclip-pair/1 qr:" || digits`); this is the `mode-mismatch` vector.
+- `tamper_msg_b` (hex or `null`) is the message the inviter receives in place of the joiner's
+  `msg_b`. It models a low-order point or a wrong side byte. `expect.msg_b` stays the joiner's own
+  message.
 - `result` is one of: `ok`, `joiner-rejects-conf-a`, `inviter-rejects-conf-b`, `bad-message`.
   When the result is not `ok`, the fields of a side that never computes them are `null`.
 
@@ -663,7 +672,11 @@ Vectors with `"valid": false` hold only `text` and `note`. Required: one IPv4; I
 - A vector may hold several `views`: the same changes with different `have` sets. That tests a
   device that has not yet seen a removal, and then has.
 - The test feeds the changes of `have` in at least 20 random orders and expects the same result.
-- A change that must be refused as not well formed has `"well_formed": false` and a `why`.
+- A change that must be refused as not well formed has `"well_formed": false` and a `why` in its
+  entry in `changes`. In a view, `expect.well_formed` is true only if every change in `have` is
+  stored. A view's expected results ignore the refused changes.
+- A device knows its group ID before it gets any change, so a test graph is created with the ID
+  of the change labelled `g`. Changes whose parents are missing wait in the pool until they come.
 
 Required vectors, one for each row of 5.6 and each line of 5.5, and also: bad signature; parents
 not sorted; second genesis; signer never added; rotate with a wrong epoch; two rotates with the
