@@ -28,7 +28,7 @@ Contents: 1 review result, 2 decisions, 3 building blocks, 4 pairing, 5 membersh
 | F6 | 3.6 | QR path: no rule for what the joiner checks, and no rule against a pairing link from a web page. | The joiner checks the TLS key against the key in the QR before it sends anything. Payloads are accepted only from the in-app scanner. No URL scheme is registered (4.3). |
 | F7 | 3.6 | The `spake2` crate does not reject low-order points, and it is not the RFC 9382 wire format. | Our wrapper rejects low-order points. The page says plainly which SPAKE2 variant this is (2.1, 4.4). |
 | F8 | 3.6 | A pairing that breaks after the inviter signed "add" left the joiner half paired. | Pairing a key that is already a member sends the state again and signs nothing new (4.7). |
-| F9 | 3.6 | An attacker gets 5 new guesses each time the user makes a new code. | After 3 codes in a row die from wrong tries, the short code is off for 1 hour. The QR code still works (4.6). |
+| F9 | 3.6 | An attacker gets 5 new guesses each time the user makes a new code. | After 5 codes in a row die from wrong tries, the short code is off for 1 hour. The QR code still works (4.6). |
 | F10 | 3.7 | **"Two devices remove each other: the older device wins."** A removed device can always sign a removal with old parents, so it looks like "the same moment". A stolen device that joined early could cancel its own removal for ever. | **Removal always wins.** A removal counts if its signer was a member in the removal's own past. Nothing that happens beside it can cancel it. Two devices that remove each other are both removed (5.4, 5.6). |
 | F11 | 3.7 | The validity rule was circular: whether a removal counts depended on other removals that depended on it. Two devices could reach two different, both "correct", results. | A rule in two layers that always ends and has one result (5.4). |
 | F12 | 3.7 | Could a removed key be added again? Not said. | No. A removed key is dead in that group for ever. A removed device makes a new key (5.4, 5.7). |
@@ -310,7 +310,7 @@ conf_b = HMAC-SHA256(kc_b, T)
 - More than 4 pairing connections at once: the extra ones get `PairAbort(3)`. This is not a try.
 - A connection that sends no `PairHello` within 10 seconds is closed. This is not a try.
 - **Lockout.** The device counts open pairings that ended with a dead code (5 failed tries). A
-  pairing that succeeds resets the count. At 3 in a row the short code is off on this device for
+  pairing that succeeds resets the count. At 5 in a row the short code is off on this device for
   1 hour: a new pairing shows only the QR code and the text "Someone on this network keeps
   guessing the code. Use the QR code, or try again in an hour." The count and the time are kept in
   memory only; an agent restart clears them.
@@ -678,7 +678,7 @@ back-dated add that then signs a rename (invalid) and a remove (effective, see 5
 Pairing: every vector of 6.1 and 6.2; the 5-try limit with 4 connections at once (never more than
 5 `PairReply` frames per code); a dropped connection after `PairReply` stays counted; a fake
 inviter gets no byte after a wrong `conf_a`; the QR joiner sends nothing to a wrong key; QR stays
-valid after the code is dead; lockout after 3 dead codes; expiry at 10 minutes; a pairing from a
+valid after the code is dead; lockout after 5 dead codes; expiry at 10 minutes; a pairing from a
 non-local address is refused; no `uclip-pair/1` when no pairing is open; pairing an existing member
 signs nothing; the joiner refuses a `PairState` in which it is not a member or the secret does not
 match.

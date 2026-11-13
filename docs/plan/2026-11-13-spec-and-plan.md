@@ -498,7 +498,7 @@ all for an attacker on the internet to find or attack a pairing.
   that depends on the code before it has checked that. So a fake inviter learns nothing, and a
   fake new device gets one guess per try.
 - **Limits:** 5 tries per code, counted when the inviter sends its reply (a dropped connection
-  stays counted); 10 minutes; one open pairing. After 3 codes in a row die from wrong tries, the
+  stays counted); 10 minutes; one open pairing. After 5 codes in a row die from wrong tries, the
   short code is off for 1 hour on that device and only the QR code is shown. A guess works at most
   5 times in 1,000,000 (1 in 200,000) per code, and only from the same LAN.
 - **A 6-digit code is safe only with the PAKE and the try limit together** (protocol page 4.1).
