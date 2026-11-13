@@ -14,7 +14,9 @@ Code: `spikes/s7-android` (throwaway). Raw evidence: `docs/spikes/s7/api29/` and
 - Emulators, headless (`-no-window -no-audio`): `uc-api29` (Android 10, API 29) and `uc-api37`
   (Android 17, API 37), Google APIs x86_64 images.
 - App: Kotlin, plain `android.app` classes, AGP 9.5.1, Gradle 9.9.1 (wrapper in the folder),
-  compileSdk 37, minSdk 29, targetSdk 37. Build: `gradlew assembleDebug`.
+  compileSdk 37, minSdk 29, targetSdk 37. Build: in `rust/`, run
+  `cargo ndk -t x86_64 -t arm64-v8a -o ../app/src/main/jniLibs build --release` (the `.so` files
+  are not committed), then `gradlew assembleDebug`.
 - A broadcast to the service stands in for "a clip arrived from the network".
   `run-spike.ps1 -Serial <emulator> -Out <folder>` runs all checks.
 - Max's clipboard: the emulator has no window, so it has no Qt clipboard bridge to Windows.
