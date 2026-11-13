@@ -1,0 +1,18 @@
+23:40:49 serial=emulator-5554 sdk=29 release=10
+23:40:52 1. open app (starts FGS), then go home
+23:40:59 FGS state: * ServiceRecord{36ab669 u0 dev.uc.s7/.ClipService} | isForeground=true foregroundId=1 foregroundNoti=Notification(channel=svc pri=0 contentView=null vibrate=null sound=null defaults=0x0 flags=0x62 color=0x00000000 vis=PRIVATE)
+23:40:59 proc: *APP* UID 10146 ProcessRecord{144ecf3 6808:dev.uc.s7/u0a146} | procStateMemTracker: best=4 () / pending state=1 highest=1 1.0x | curProcState=5 mRepProcState=5 pssProcState=21 setProcState=5 lastStateTime=-6s263ms
+23:41:00 2. background write, plain clip
+23:41:01 3. background write, with SHOW_CLIPBOARD_OVERLAY (makes the emulator act like a phone)
+23:41:07 4. background write, overlay + EXTRA_IS_REMOTE_DEVICE
+23:41:13 5. background write, overlay + IS_SENSITIVE
+23:41:18 6. screen off, write after 3 s, screen on
+23:41:25 7. forced Doze (deviceidle force-idle), write, unforce
+23:41:25 doze: Now forced in to deep idle mode
+23:41:30 8. background read from the service (expected: blocked)
+23:41:31 9. Rust library from the service
+23:41:32 10. Quick Settings tile opens the transparent focus activity, which reads the clipboard
+23:41:32 add-tile: 
+23:41:34 click-tile: 
+23:41:38 11. fallback: post the "Tap to copy" notification and open the shade
+23:41:42 host clipboard sequence before=1893 after=1893 (equal means the Windows clipboard was not touched)

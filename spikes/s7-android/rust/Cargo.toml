@@ -1,0 +1,18 @@
+[package]
+name = "uc-s7"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "uc_s7"
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+uniffi = { version = "0.32.2", features = ["cli"] }
+
+[workspace]

@@ -1,0 +1,13 @@
+--------- beginning of main
+11-13 23:43:27.694 I/S7      ( 6808): TAP notification posted
+--------- beginning of system
+11-13 23:43:31.121 I/S7      ( 6808): FOCUS onCreate from=notification
+11-13 23:43:31.124 I/S7      ( 6808): WRITE ok where=focus-activity sdk=29 flags=[] text=tapped-api29
+11-13 23:43:31.124 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:43:31.131 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:43:31.131 I/S7      ( 6808): READ where=focus-onCreate sdk=29 hasPrimaryClip=false clip=null text=null
+11-13 23:43:31.137 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:43:31.143 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:43:31.144 I/S7      ( 6808): READ where=focus-onResume sdk=29 hasPrimaryClip=false clip=null text=null
+11-13 23:43:31.686 I/S7      ( 6808): READ where=focus-windowFocus sdk=29 hasPrimaryClip=true clip=present text=tapped-api29
+11-13 23:43:31.686 I/S7      ( 6808): FOCUS done in 566 ms
