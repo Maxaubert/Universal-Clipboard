@@ -1,6 +1,7 @@
 # Universal Clipboard: product spec and implementation plan
 
-Date: 2026-11-13. Status: revision 2 (after an independent review), for one approval by Max.
+Date: 2026-11-13. Status: revision 3. Revision 2 came from an independent review. Revision 3 applies
+Max's scope change of 2026-11-13: local network only (see "Decisions after approval").
 Author: planning agent (Fable). Build agents: Opus 5.5 (core, security, platform-native) and
 Sonnet 5.5 (UI, glue, packaging scripts, tests, docs).
 
@@ -12,6 +13,45 @@ Inputs:
 
 How to read this: sections 1 to 6 are the spec. Section 7 is the build plan. Section 9 lists the
 decisions that are yours. Every choice in the text is a decision unless it says "open" or "unproven".
+
+---
+
+## Decisions after approval (2026-11-13)
+
+Max approved the plan and the build on 2026-11-13. These decisions came after the text below was
+written. Where they conflict with the text, they win.
+
+- The name stays "Universal Clipboard". Only an App Store display name may differ later. The
+  Copybridge and Clipbridge name check is skipped.
+- No "send" and no "get" actions anywhere in the UI or the apps. The latest copy is on every
+  device automatically.
+- The pairing code has 6 digits (for example `418 207`). The QR code comes first, then the code.
+  The PAKE (SPAKE2 or CPace) allows 5 tries, so a guess works 1 time in about 200,000. There is
+  no long code (removed on 2026-11-13, see the scope change below).
+- The desktop UI design is locked: `docs/design/desktop` (12 `.dc.html` screens, Device tiles
+  style, Figtree, integrated title bar, 5-step setup indicator). The mobile design is not done.
+- Relay: none. This replaces the old relay decision (see the scope change below). Max uses
+  Mullvad with "Local network sharing" on.
+- Max has an Apple Developer account. There is no Google Play account and no Android phone yet
+  (emulator only). There is no Windows signing yet.
+- **Scope change (2026-11-13): LOCAL NETWORK ONLY.** This wins over every older line in this file.
+  - No relay server, no internet path, no long code, no pairing over the internet, no n0
+    discovery or DNS. Devices sync only when they are on the same local network. Nothing of ours
+    runs on a server, so there is no server cost and no server to attack.
+  - Transport is LAN only: iroh with the relay turned off and no address lookup service (or plain
+    QUIC if spike S1 finds iroh not worth it for LAN only). Discovery stays: mDNS plus remembered
+    addresses plus address gossip.
+  - VPN case: while a VPN is on, the app still tries the physical LAN path (per-interface sockets,
+    overlapping-route work stay). If the VPN blocks the LAN completely, no path exists. The app
+    detects this and shows help: turn on the VPN's local network sharing (for example Mullvad
+    "Local network sharing"). It does not fall back to the internet.
+  - Pairing: QR code and the 6-digit code, both on the same local network only.
+  - Phones: no "Send to my devices" or "Get from my devices" Shortcuts. The latest copy is on every
+    device. iPhone and iPad get it when the app opens. A copy on a closed iOS app is sent through
+    the Share sheet. See section 2.6 for the honest limits.
+  - Milestone M9b (relay service) and spike S6 are dropped. Decisions 2 and 7 are closed.
+- Approved setup work: Android SDK on the PC, Rust and Node on the Mac, the lab VMs (a Hyper-V
+  external switch on the PC is fine: the network drops for a few seconds once).
 
 ---
 
@@ -27,10 +67,11 @@ works without attention.
 - Syncs plain text and one image. Formatted text (HTML) is planned for v1.0 but may move to v1.1 (M11).
 - Groups of 2 to 8 devices. All devices in a group share one clipboard.
 - iPhone, iPad and Android are in v1, with the limits that iOS and Android set (section 2.6).
-- Works when a device runs a VPN and is on the same physical network (section 3.5).
+- Works when a device runs a VPN and is on the same physical network, if the VPN allows local
+  network traffic. If it does not, the app says so and shows how to turn it on (section 3.5).
 - No account and no cloud storage. Content is end-to-end encrypted between your devices.
-  **No server can read your data.** We run one relay server that sees only IP addresses and
-  ciphertext (sections 3.14 and 4.1).
+  **There is no server at all.** Devices talk directly to each other on the local network
+  (sections 3.14 and 4.1).
 - No system tray icon. A background agent starts at login. Opening the app shows the settings window.
 - Skips copies that a password manager marks as private.
 - Updates itself, with a rollback if an update is bad.
@@ -45,6 +86,8 @@ works without attention.
 - No Flatpak, Snap or AppImage. No `.rpm` in the first release (section 8.1). No Mac App Store build.
 - No Intel Mac build (it cannot be tested: there is no Intel Mac).
 - No Android APK outside Google Play.
+- **Local network only (2026-11-13).** No relay server, no internet path, no pairing over the
+  internet, no long code. Devices on different networks do not sync.
 
 ### Minimum OS versions
 
@@ -54,7 +97,7 @@ works without attention.
 | macOS | macOS 14, Apple silicon only | `SMAppService`, one test line |
 | Linux | Ubuntu 22.04 or newer and other distributions with WebKitGTK 4.1. Supported desktops: section 3.9. | Tauri 2 |
 | Android | Android 10 (API 29). Target SDK 37. | Clipboard rules, Play target rule |
-| iOS, iPadOS | 18 | Shortcuts control in Control Center, App Intents |
+| iOS, iPadOS | 18 | Current APIs for Local Network and pasteboard privacy |
 
 ---
 
@@ -86,9 +129,9 @@ when a row is done.
 
 | OS | Row | OS prompt | Why | If refused |
 |---|---|---|---|---|
-| Windows | Let your devices find this PC | One UAC prompt. It adds one firewall allow rule for the agent, for Private AND Public network profiles (many home Wi-Fi networks are set to Public). With the Store build the rule comes from the package and there is no prompt (S8). | Other devices can connect to this PC. | The agent runs outbound-only. Sync still works when the other device accepts connections or when the internet path is on. |
+| Windows | Let your devices find this PC | One UAC prompt. It adds one firewall allow rule for the agent, for Private AND Public network profiles (many home Wi-Fi networks are set to Public). With the Store build the rule comes from the package and there is no prompt (S8). | Other devices can connect to this PC. | The agent runs outbound-only. Sync still works when the other device accepts connections. |
 | Windows | Start with Windows | None. | The app works after a restart. | Sync stops after a restart until the app is opened. |
-| macOS | Find devices on your network | "Local Network" prompt. | Needed to reach devices on the LAN. | Sync works only through the internet path. The row shows how to turn it on in System Settings. |
+| macOS | Find devices on your network | "Local Network" prompt. | Needed to reach devices on the LAN. | Sync does not work on the network until this is allowed. The row shows how to turn it on in System Settings. |
 | macOS | Read what you copy | Onboarding makes one clipboard read on purpose, so the app appears in "Paste from Other Apps". The row then opens that settings page, where the user picks Allow. Shown only if macOS needs it (section 3.9). | The agent must read the clipboard without a prompt each time. | Sync from this Mac does not work. Sync to this Mac still works. |
 | macOS | Start at login | A system notice "Login item added". No question. | Works after a restart. | Same as Windows. |
 | macOS | Tell me when sync stops (optional) | Notification prompt. | The app has no tray icon, so this is the only way to warn. | No warnings. The settings window still shows the state. |
@@ -103,7 +146,7 @@ Windows clipboard access and Linux clipboard access on supported desktops need n
 On a Linux desktop that we cannot support, the app says so on this screen and stops (section 3.9).
 
 **Screen 3: Add a device.** Two choices on one screen:
-- "This is my first device" shows a code and a QR code (section 2.3).
+- "This is my first device" shows a QR code and a 6-digit code (section 2.3).
 - "I have a code" shows one input field.
 
 When pairing ends, the window shows "Done. You can close this window. Copy something to try it."
@@ -111,22 +154,21 @@ Closing the window leaves the agent running. There is no tray icon and no Dock i
 
 ### 2.3 Adding a device with a code
 
+Both devices must be on the same local network. The app says so on this screen.
+
 On a device that is already set up (or the first device):
 1. Open the app. Press "Add a device".
-2. The screen shows a **short code**: 9 digits in three groups, for example `418 207 953`, and a
-   **QR code**. Both are valid for 10 minutes. The short code allows 5 tries.
-3. Below them is a link: "The other device is not on this Wi-Fi, or it uses a VPN". It shows a
-   **long code**: 20 letters and digits in four groups, for example `K7QF2-M9XTD-4HRWA-P3ZNC`.
+2. The screen shows a **QR code** first and a **6-digit code** under it, for example `418 207`.
+   Both are valid for 10 minutes. The 6-digit code allows 5 tries.
 
 On the new device:
-4. Phones and tablets: scan the QR code (works everywhere, also through a VPN). Or type a code.
-5. Computers: type the short code (same network) or the long code (anywhere). One input field
-   takes both.
-6. Both screens show "Connected to <device name>". Done.
+3. Phones and tablets: scan the QR code, or type the 6 digits.
+4. Computers: type the 6 digits.
+5. Both screens show "Connected to <device name>". Done.
 
 Rules:
-- **The short code works only on the same local network.** It is never published on the internet
-  (section 3.6 says why). The QR code and the long code also work through the relay.
+- **Pairing works only on the same local network.** Nothing about a pairing is ever published
+  outside the LAN (section 3.6 says why).
 - Either device can show the code. A third device can be added from any device in the group.
 - There is no second confirm step. The code check itself proves both sides (section 3.6).
 - A new device takes a default name from the OS ("Max's PC"). The user can rename it later.
@@ -135,14 +177,15 @@ Rules:
 - Wrong code: "That code is not right. Check it and try again." After 5 tries: "Make a new code on
   the other device." The device that shows the code says "Someone else tried this code" if a try
   failed that the user did not make.
-- Short code and no device found within 20 seconds: "Cannot find the other device on this network.
-  On the other device, press 'The other device is not on this Wi-Fi' and type the long code."
+- No device found within 20 seconds: "Cannot find the other device. Check that both devices are on
+  the same Wi-Fi or network. If one of them uses a VPN, turn on Local network sharing in the VPN."
 
 ### 2.4 Daily use on computers
 Nothing to do. Copy on one, paste on another, usually within one second on a LAN.
-A computer that wakes from sleep gets the group's newest clip automatically if that clip is less
-than 1 hour old. Older clips are not applied on their own, so a laptop that was away does not lose
-its own clipboard to something old. (An explicit fetch on a phone has no age limit, section 3.8.)
+A computer that wakes from sleep, or joins the network again, gets the group's newest clip
+automatically if that clip is less than 1 hour old. Older clips are not applied on their own, so a
+laptop that was away does not lose its own clipboard to something old. (When a phone opens the app,
+it takes the newest clip with no age limit, section 3.8.)
 
 ### 2.5 The settings window (opening the app again)
 
@@ -150,13 +193,11 @@ One window, about 420 x 560 px.
 
 - **Top:** state line. One of: "Working", "Paused", "No other device is on right now",
   "Needs attention" (with a Fix button).
-- **Devices list:** name, type icon, state ("Connected", "Connected through the internet",
-  "Asleep or away", "Blocked by a VPN or firewall"). Each row has a menu: Rename, Remove.
+- **Devices list:** name, type icon, state ("Connected", "Asleep or away", "Blocked by a VPN or firewall"). Each row has a menu: Rename, Remove.
 - **Add a device** button.
 - **Pause** switch, with "Pause for 1 hour" and "Until I turn it on".
 - **Settings** (collapsed):
   - Start at login (on).
-  - Use the internet when the local network is blocked (on, see section 9).
   - Sync images (on).
   - Keep formatting (on, when M11 ships). Off means plain text only.
   - macOS only: "Also pass on what Apple's Universal Clipboard brings" (section 3.8, decision 8).
@@ -176,60 +217,55 @@ This is the documented clean way to leave on every OS (section 8.5).
 
 iOS and Android do not let an app read the clipboard in the background. Android lets an app write it
 in the background (to be proven in spike S7). iOS does not let an app run in the background for
-this at all. The result:
+this at all. There are no "Send" or "Get" buttons or Shortcuts: the latest copy is on every device,
+and the app does the moving. The limits are the ones that Apple and Google set:
 
 | Direction | Android | iPhone and iPad |
 |---|---|---|
-| Computer to phone | **Automatic** while the phone is awake and on the network, if S7 passes. A small permanent notification is required by Android. After deep sleep the phone catches up when it wakes. Fallback if S7 fails: a notification "Tap to copy". | **One action.** Open the app (it fetches the group's current clip and puts it on the clipboard), or run the Shortcut "Get from my devices". |
-| Phone to computer | **One tap.** Choices: "Send to my devices" in the text-selection menu (instead of Copy), the Share sheet, a Quick Settings tile "Send clipboard", or opening the app. | **One or two taps.** Choices: the Share sheet ("Send to my devices"), the Shortcut "Send clipboard", or opening the app and pressing the Paste button. |
+| Computer to phone | **Automatic** while the phone is awake and on the same network, if S7 passes. A small permanent notification is required by Android. After deep sleep the phone catches up when it wakes. Fallback if S7 fails: a notification "Tap to copy". | **When the app opens.** The app takes the group's newest clip and puts it on the clipboard. Nothing happens while the app is closed. |
+| Phone to computer | **When the app opens** (it reads the clipboard once, in the foreground, and shares it if it is new). From a closed app: the Share sheet entry "Universal Clipboard", which sends a copy of the shared text or image. | **When the app opens** (with the iOS paste setting on "Allow", no prompt; else one "Paste" prompt). From a closed app: the Share sheet entry, which sends a copy of the shared text or image. |
 | Phone to phone | Same as the rows above, per side. | Same, and see the limit below. |
 
+Honest limits, stated in the app: a phone that is closed does not send what you copied in another
+app. On iPhone and iPad, a copy made in another app reaches the other devices only after you open
+our app or use the Share sheet. This is Apple's rule, not ours.
+
 **Limit that the app states plainly: a group needs at least one computer (or Android phone) that
-is on.** An iPhone or iPad has no background agent. It can only talk to a member that is running
-at that moment. A group of only iPhones and iPads can never sync. If no always-on member is
-reachable, the phone shows "No computer is on right now. Phones can only sync while one of your
-computers is on." with a Retry button. It never shows a silent empty result.
+is on, and on the same network as the phone.** An iPhone or iPad has no background agent. It can
+only talk to a member that is running at that moment. A group of only iPhones and iPads can never
+sync. If no always-on member is reachable, the phone shows "No computer is on right now on this
+network. Phones can only sync while one of your computers is on." with a Retry button. It never
+shows a silent empty result.
 
-The app says the tap rule in plain words on the phone's first-run screen: "Phones need one tap.
-Apple and Google do not allow more."
+The app says the rule in plain words on the phone's first-run screen: "Open the app to sync your
+phone. Apple and Google do not allow more."
 
-**How the iOS Shortcuts work (changed after review).** An app cannot install a ready-made
-Shortcut, and an App Intent that runs in the background most likely cannot read or write the
-clipboard. So our intents never touch the clipboard:
-- Intent "Send to my devices" takes text (or an image) as a parameter.
-- Intent "Get latest from my devices" returns text (or an image).
-- The user adds two Shortcuts from iCloud links that our app opens: "Send clipboard" = Apple's
-  *Get Clipboard* action, then our send intent. "Get from my devices" = our get intent, then
-  Apple's *Copy to Clipboard* action. Apple's own actions do the clipboard part.
-- The user can put these Shortcuts on the Action Button (iPhone 15 Pro and newer), Back Tap
-  (iPhone only), the Home Screen, or in Control Center with Apple's Shortcuts control (iOS 18).
-  iPad has no Action Button and no Back Tap: there the page shows only Control Center and Home Screen.
-- We do not build a Control Center control of our own in v1.
-All of this is checked on a real iPhone in spike S5, because the Simulator does not enforce
-pasteboard and Local Network privacy.
+**What we do not build (changed on 2026-11-13).** No App Intents, no Shortcuts, no Quick Settings
+tile, no "Send to my devices" text-selection entry. The only share entry is the standard Share
+sheet, with the app's own name, and it sends a copy. This is checked on a real iPhone in spike S5,
+because the Simulator does not enforce pasteboard and Local Network privacy.
 
 **iPhone and iPad first run:**
 1. Welcome.
-2. Permissions: "Local Network" (needed for the LAN path; without it the phone uses the internet
-   path). Camera (asked only when the user presses "Scan QR code"; typing a code needs none).
-3. Scan the QR code from a computer, or type a code.
-4. A "Make it one tap" page: two buttons that add the two Shortcuts, then where to put them
-   (Action Button, Back Tap, Control Center, Home Screen, by device type) and where the Share sheet
-   entry is. Each has a short animation. All can be skipped.
+2. Permissions: "Local Network" (needed to find your computers; without it the phone cannot sync).
+   Camera (asked only when the user presses "Scan QR code"; typing a code needs none).
+3. Scan the QR code from a computer, or type the 6 digits. Both devices must be on the same network.
+4. A "How it works" page: "Open the app to sync. Use the Share sheet to send a copy from another
+   app." Two short animations. Can be skipped.
 5. Optional: iOS Settings > Universal Clipboard > Paste from Other Apps > Allow. With this set, the
-   app sends the clipboard when it opens, with no paste prompt.
+   app reads the clipboard when it opens, with no paste prompt.
 
 **Android first run:**
 1. Welcome.
 2. Permissions, each a fixed row with a refusal path:
    - Notifications (Android 13+), for the required service notification.
    - **Nearby devices / local network (`ACCESS_LOCAL_NETWORK`)**, required at target SDK 37.
-     Without it every LAN packet fails. If refused: the phone works through the internet path only,
-     and the row shows how to grant it later.
+     Without it every LAN packet fails, so the phone cannot sync. If refused: the row shows how to
+     grant it later.
    - No camera permission: QR scanning uses Google's code scanner, which needs none.
-3. Scan the QR code, or type a code.
-4. A "Make it one tap" page: add the Quick Settings tile. Explain the "Send to my devices" entry in
-   the selection menu.
+3. Scan the QR code, or type the 6 digits.
+4. A "How it works" page: the phone syncs when the app opens, and the Share sheet entry sends a
+   copy from another app.
 5. A plain note: "Keep battery saving off for this app if the phone misses clips." With a button
    that opens the right settings page.
 
@@ -247,9 +283,9 @@ There is no tray icon, so the rules are strict:
 |---|---|---|
 | macOS Local Network refused | "macOS blocks this app from your network." | Opens the right System Settings page. |
 | macOS paste access set to Ask or Deny | "macOS asks before this app can read what you copy." | Opens the right System Settings page. |
-| **No path at all** (LAN blocked on both sides or by the network, and the internet path is off) | "Your devices cannot reach each other on this network." | One button: "Use the internet path". A second line links to help for the cause below. |
-| Cause: VPN blocks the LAN | Help text: "Your VPN blocks the local network." | Help page shows where "Allow LAN access" is in common VPN apps (list checked in S1). |
-| Cause: Wi-Fi client isolation or a guest network | Help text: "This Wi-Fi keeps devices apart (guest network)." | Same as above: the internet path is the fix. |
+| **No path at all** (the LAN is blocked on a device or by the network) | "Your devices cannot reach each other on this network." | "Show help". It links to the cause below. |
+| Cause: VPN blocks the LAN | "Can't reach your other device? Your VPN blocks the local network." (desktop screen L12) | Help: "Turn on Local network sharing in your VPN." The help page shows where it is in common VPN apps (for example Mullvad "Local network sharing"; list checked in S1). |
+| Cause: Wi-Fi client isolation or a guest network | Help text: "This Wi-Fi keeps devices apart (guest network)." | Help: use the main Wi-Fi, or turn off client isolation in the router. |
 | Cause: both Windows PCs refused the firewall row | Help text: "Both PCs block incoming connections." | "Let your devices find this PC" (the firewall row again). |
 | This device's clock is wrong | "The date and time on this device are wrong, so its copies are ignored." | Opens the date and time settings. |
 | This device was removed by another device | "Another device removed this one." | "Set up again". If it removed all others (stolen device case): "Pair my devices again". |
@@ -279,14 +315,15 @@ There is no tray icon, so the rules are strict:
 
 Phone: native app (SwiftUI or Kotlin) + extensions  --> uc-mobile (UniFFI) --> uc-core, uc-net, uc-pair
 
-Internet: one relay server of ours (iroh-relay). Sees IP addresses and ciphertext only.
+Network: the local network only. No server of ours, no relay, no internet path.
 ```
 
 - **uc-core** (Rust library): clip model, wire codec, clock, echo and loop rules, size caps, the sync
   state machine. No OS calls. Fully testable with a fake clipboard and a fake network. It has two
   roles from the start: **full member** (desktop, Android service) and **pull-only client** (iOS,
   extensions), so phones do not force a redesign later.
-- **uc-net**: wraps iroh. Interface classification, LAN discovery, address book, reconnect.
+- **uc-net**: wraps iroh (LAN only). Interface classification, LAN discovery, address book, reconnect,
+  VPN-blocks-LAN detection.
   mDNS and socket binding sit behind traits, so iOS (`NWBrowser`) and Android (`NsdManager`,
   `Network.bindSocket` with a passed file descriptor) can plug in their own.
 - **uc-pair**: pairing protocol and the group membership chain.
@@ -297,14 +334,14 @@ Internet: one relay server of ours (iroh-relay). Sees IP addresses and ciphertex
 - **uc-ui**: Tauri 2 app. Only a window. Talks to the agent over local IPC. Holds no secrets.
 - **uc-mobile**: UniFFI bindings for Swift and Kotlin.
 - **Mobile apps**: native shells. iOS: SwiftUI app, Share Extension, App Intents. Android: Compose
-  app, foreground service, share target, process-text action, Quick Settings tile.
+  app, foreground service, share target.
 
 **Why two processes on desktop.** The agent is small (no web view, about 15 to 30 MB of memory),
 can be tested headless, and keeps running when the window closes. A hidden Tauri app would keep a
 web view runtime loaded for years.
 
 **Why native mobile shells and not Tauri mobile.** The value on phones is in the extensions (Share
-sheet, Shortcuts, tile, service). Those are native targets that Tauri does not create or manage,
+sheet, service). Those are native targets that Tauri does not create or manage,
 and a web view does not fit an iOS extension's memory limit. The phone UI is three screens. So the
 phone apps are native, and all logic stays in the shared Rust core.
 
@@ -338,19 +375,20 @@ until M16 (section 7, rules), so they never fight with the private clipsync prot
 
 ### 3.3 Transport
 
-- **iroh 1.x** (QUIC, TLS 1.3, peers are dialed by their Ed25519 public key). Today's version on
-  docs.rs is 1.4.1. The 1.0 line promises a stable wire protocol and API. If spike S1 picks the
-  unstable custom-transport feature, the exact iroh version is pinned.
+**Local network only (2026-11-13).** There is no relay, no hole punching over the internet and no
+lookup service.
+
+- **iroh 1.x** (QUIC, TLS 1.3, peers are dialed by their Ed25519 public key), used with the relay
+  turned off (`RelayMode::Disabled`) and no address lookup service (no n0 DNS, no pkarr). Today's
+  version on docs.rs is 1.4.1. The 1.0 line promises a stable wire protocol and API. If spike S1
+  picks the unstable custom-transport feature, the exact iroh version is pinned. If S1 shows that
+  iroh adds little for LAN only, plain QUIC (`quinn` with our own TLS key check) is the fallback;
+  the device key and the wire protocol stay the same.
 - ALPN `uclip/1` for sync, `uclip-pair/1` for pairing.
 - One long-lived QUIC connection per pair of online full members. Full mesh. A group has at most 8
   devices, so at most 7 connections per device. Pull-only clients (iOS) connect on demand.
-- Path order: direct LAN, then direct over the internet (hole punching), then the encrypted relay.
-- **Relay: our own `iroh-relay` (section 3.14).** The n0 public relays are for development and
-  testing only (their documentation says so), so the shipped app does not use them.
-- **No address lookup service.** Every device uses the same relay, and its address ships with the
-  app. A peer can be dialed with its public key through that relay. iroh's public DNS and pkarr
-  lookup is turned off. (Confirmed in S6.)
-- Keep-alive every 15 s on LAN paths, 25 s on relay paths. A dead path is found in under 30 s.
+- Only one path type: direct LAN. A peer is dialed by its remembered LAN addresses (section 3.4).
+- Keep-alive every 15 s. A dead path is found in under 30 s.
 - On wake from sleep, on network change, and on interface change the agent reconnects at once.
 
 ### 3.4 Discovery on the LAN
@@ -369,7 +407,8 @@ A device finds its peers with three methods. All of them feed one address book
    `HMAC(group secret, 10-minute time slot)`, truncated to 12 bytes. Only group members can
    recognise it. A stranger on the same Wi-Fi sees no stable ID and no device name.
 
-If all three fail, the relay path connects the devices when both have internet.
+If all three fail, the devices cannot find each other. The app then shows the "No path at all"
+state and its help (sections 2.7 and 3.5). There is no other path.
 
 There is **no subnet sweep** (cut after review: up to 1,024 probes look like a port scan to
 company security tools, and your own PC is onboarded to Defender for Endpoint).
@@ -380,23 +419,32 @@ On Android it uses `NsdManager`, which needs `ACCESS_LOCAL_NETWORK` at target SD
 
 ### 3.5 VPN on the same network
 
-The requirement: device A runs a VPN, device B is on the same physical LAN, sync must work.
+The requirement: device A runs a VPN, device B is on the same physical LAN, sync should work when
+the VPN allows it.
 
 **The honest picture.** Some VPNs let LAN traffic pass and some block it. We do not know the
-default of each VPN (Mullvad, for one, ships with local network sharing off). So "the VPN blocks
-the LAN" is a common case, not an edge case. In that case no app can use the LAN, and **the relay
-is what keeps the promise.** That is why our own relay is a v1 deliverable and the internet path is
-on by default. Spike S1 checks the default LAN setting of 4 or 5 large consumer VPNs, and the
-result goes into the help page that the Fix button opens.
+default of each VPN (Mullvad, for one, ships with local network sharing off, and Max has it on).
+When the VPN blocks the LAN completely, no app can use the LAN, and **this app has no other path**
+(scope change of 2026-11-13). So the app must do two things: try the physical LAN path while a VPN
+is on, and detect the blocked case and give clear help. Spike S1 checks the default LAN setting of 4
+or 5 large consumer VPNs, and the result goes into the help page.
+
+**Detecting "the VPN blocks the LAN".** The app knows a peer's remembered LAN address and that a VPN
+interface is up on this device (or on the peer, which it learned at the last connection). If no
+direct connection works for 20 seconds, the peer was seen on this LAN before, and a VPN interface is
+up, the device row shows "Blocked by a VPN or firewall" and the Fix button opens the VPN help: "Can't
+reach your other device? Turn on Local network sharing in your VPN." (Desktop screen L12.) The same
+help covers an iOS VPN with `includeAllNetworks` and without `excludeLocalNetworks`. Spike S1 defines
+and tests the detection rule (false alarms and misses), per OS.
 
 | Case | What breaks | What we do | Result | Status |
 |---|---|---|---|---|
 | Full-tunnel VPN that allows local network access | Multicast leaves through the tunnel interface. The default socket picks the VPN's source address. | Use one UDP socket per physical interface address. Send mDNS and sync traffic from those sockets. Dial remembered addresses. | Direct LAN path. | To prove in S1 per OS |
-| VPN pushes a route that overlaps the LAN subnet | Unicast to the peer goes into the tunnel. Binding to an address does not beat the route table on macOS and Linux. | Needs a socket tied to the device, which stable iroh cannot do (below). | Direct LAN path if S1 finds a way. Else the relay. | **Unproven** |
-| VPN with kill switch or "block LAN" (also iOS VPNs with `includeAllNetworks` and without `excludeLocalNetworks`, and many company VPNs) | All LAN traffic is dropped by the VPN's firewall. No app can pass it. | Fall back to the relay. Both devices still reach the internet, one of them through the VPN. | Sync works over the relay, still end-to-end encrypted. The device row shows "Connected through the internet". If the internet path is off: the "No path at all" state. | Relay path, sure |
-| Wi-Fi client isolation, guest network | Same effect as a LAN block. | Relay. | Same. | Relay path, sure |
+| VPN pushes a route that overlaps the LAN subnet | Unicast to the peer goes into the tunnel. Binding to an address does not beat the route table on macOS and Linux. | Needs a socket tied to the device, which stable iroh cannot do (below). | Direct LAN path if S1 finds a way. Else this case shows the VPN help. | **Unproven** |
+| VPN with kill switch or "block LAN" (also iOS VPNs with `includeAllNetworks` and without `excludeLocalNetworks`, and many company VPNs) | All LAN traffic is dropped by the VPN's firewall. No app can pass it. | Detect it (above) and show the help "Turn on Local network sharing in your VPN". | No sync until the user changes the VPN setting. The help is clear. | Help path, sure |
+| Wi-Fi client isolation, guest network | Same effect as a LAN block. | Help text for guest networks (section 2.7). | No sync on that network. | Help path, sure |
 | Split-tunnel VPN | Usually nothing. | Same code path. | Direct LAN path. | |
-| Mesh VPN on both devices (Tailscale, ZeroTier) | Nothing. | iroh tries every address, including the mesh ones. | Direct path. | |
+| Mesh VPN on both devices (Tailscale, ZeroTier) | Nothing. | The mesh addresses are LAN-like private addresses. The app may dial them if they are remembered. | Direct path. | To check in S1 |
 
 **What iroh can and cannot do (reviewer checked docs.rs for iroh 1.4.1 today).** The endpoint
 builder takes socket addresses with a prefix length (`bind_addr_with_opts`). It cannot take a
@@ -409,7 +457,7 @@ overlapping route** (the answer can differ per OS):
 - (a) Address binding only, with the stable API. Simple. May lose to the route table.
 - (b) The unstable custom transport with our own device-bound sockets. Pin the iroh version.
 - (c) A small fork or an upstream patch that lets the builder take a pre-bound socket.
-If none gives a direct path under an overlapping route, that case uses the relay and the plan says so.
+If none gives a direct path under an overlapping route, that case shows the VPN help and the plan says so.
 
 **Physical interface detection** (in `uc-net::ifaces`, refreshed on every network change):
 
@@ -429,32 +477,23 @@ the lab VMs already in M2, not first in M10 (section 6.5).
 ### 3.6 Pairing protocol
 
 Goal: a code that a person can type, safe against an attacker on the same network, and no way at
-all for an attacker on the internet to find or attack a short code.
+all for an attacker on the internet to find or attack a pairing.
 
-**Three ways to carry the secret. One protocol after that.**
+**Two ways to carry the secret. One protocol after that. Both work on the same LAN only.**
 
-| | Short code | Long code | QR code |
-|---|---|---|---|
-| Form | 9 digits. First 3: public "meeting number". Last 6: the secret. | 20 characters (base32 without look-alike letters), 100 secret bits | A's public key, LAN addresses, relay address, and a 128-bit secret |
-| Works | **Same LAN only** | LAN and relay | LAN and relay |
-| How B finds A | mDNS pairing service on each physical interface, tagged with a hash of the meeting number | See "long code rendezvous" below | Needs no discovery: the address is in the QR |
-| Guess limit | 5 tries, 10 minutes | 10 minutes (guessing 100 bits is not possible) | 10 minutes |
+| | Short code | QR code |
+|---|---|---|
+| Form | 6 digits, all secret. No public part. | A's public key, LAN addresses, and a 128-bit secret |
+| Works | **Same LAN only** | Same LAN only |
+| How B finds A | mDNS pairing service on each physical interface, one random pairing tag per open pairing (not derived from the code); B tries each pairing it sees on the LAN | Needs no discovery: the address is in the QR |
+| Guess limit | 5 tries, 10 minutes | 10 minutes (guessing 128 bits is not possible) |
 
-**Short code is LAN only, and this is enforced.** A accepts a short-code pairing only on a direct
-connection from a link-local or private address inside the subnet of one of its physical
-interfaces. It refuses short-code pairing on relay paths. Nothing about a short code is ever
-published outside the LAN. Reason: a 3-digit meeting number has 1,000 values. On the internet,
-anyone could list every open pairing in the world and spend the 5 tries on each.
+**Pairing is LAN only, and this is enforced.** A accepts a pairing only on a direct connection from
+a link-local or private address inside the subnet of one of its physical interfaces. Nothing about a
+pairing is ever published outside the LAN, because there is no outside path. A 6-digit code has only
+1,000,000 values; keeping it on the LAN means that only someone on the same network can try it.
 
-**Long code rendezvous (no lookup service).** Both sides derive two values from the long code with
-HKDF: a temporary Ed25519 key and the PAKE password. A opens a second, temporary iroh endpoint with
-that key, connected to our relay, for 10 minutes. B computes the same public key and dials it
-through the relay (or on the LAN). An attacker who does not know the code cannot compute the key,
-so the pairing cannot be found. Then the same PAKE runs and binds the real device keys.
-Spike S6 proves this. Fallback if S6 fails: a short-lived record under the derived key on our own
-`iroh-dns-server` (next to the relay).
-
-**Steps (all three code types):**
+**Steps (both code types):**
 1. A opens pairing for 10 minutes. One open pairing at a time.
 2. B connects with ALPN `uclip-pair/1`. QUIC encrypts the channel to a key, but B does not yet
    know that this key is the right one.
@@ -471,11 +510,11 @@ Spike S6 proves this. Fallback if S6 fails: a short-lived record under the deriv
    its device record (name, type, public key). A signs the "add B" change and spreads it.
 7. Both store the result. Pairing closes. The code is dead.
 
-**Limits:** for the short code, 5 failed tries or 10 minutes end the code. One try per connection.
+**Limits:** for the short code, 5 failed tries or 10 minutes end the code (the QR code ends after 10 minutes or one pairing). One try per connection.
 **A connection that drops after B's PAKE message counts as a failed try.** A guess has a 1 in
-1,000,000 chance per try, so at most 5 in 1,000,000 per code, and only for someone on the same LAN.
+1,000,000 chance per try, so at most 5 in 1,000,000 (about 1 in 200,000) per code, and only for someone on the same LAN.
 A LAN attacker can burn the 5 tries on purpose. We accept that: A shows "Someone else tried this
-code. Make a new code." and the user can use the QR or long code.
+code. Make a new code." and the user can use the QR code.
 
 **Crate.** RustCrypto `spake2` is not audited and has no transcript binding or key confirmation
 built in. So steps 4 and 5 are our own code around it, with written test vectors. In the protocol
@@ -549,15 +588,16 @@ Unknown message types are skipped. Devices accept the current and the previous p
 
 **Sending:** when the local clipboard changes and passes the checks, the agent sends the clip to
 every connected peer. Clips up to 256 KB are pushed at once. Larger clips are announced with
-`Latest`, and the peer asks for them with `Want`. So a phone on a slow path can skip a big image.
+`Latest`, and the peer asks for them with `Want`. So a phone on a slow Wi-Fi can skip a big image.
 
 **No queue, short memory:** nothing is written to disk. Each full member keeps only the newest clip
 in memory. On connect, both sides send `Latest`.
 - **Automatic apply** (a computer or Android phone that wakes or reconnects): the newer clip is
   applied if it is less than **1 hour** old. Reason for a limit: a device that was away should not
   have its own clipboard replaced by something old.
-- **Explicit fetch** (opening the phone app, a Shortcut, a tile, or `uclip fetch`): always returns
-  the group's current clip, **with no age limit**, as long as one always-on member still holds it.
+- **Fetch on open** (opening the phone app, or `uclip fetch` on a desktop): always returns
+  the group's current clip, **with no age limit**, as long as one always-on member on the same
+  network still holds it. This is not a button: it happens when the app opens.
 - Age is measured with the hybrid clock below, not with each device's raw wall time.
 
 **Conflict rule:** last writer wins. Every clip carries a hybrid logical clock stamp (wall time
@@ -659,7 +699,7 @@ marker is synced like any text. The help page says so.
 |---|---|
 | Plain text | Up to 1 MB. Larger: not synced, shown in "Last activity". |
 | HTML | Up to 2 MB. Larger: the HTML part is dropped, the plain text is still sent. |
-| Image | Sent as PNG. Up to 25 MB on a direct path, 5 MB on the relay path. Larger: not synced. |
+| Image | Sent as PNG. Up to 25 MB. Larger: not synced. |
 | Image safety | Before decode: check the PNG header, at most 16,384 px per side and 100 megapixels. Decoding uses memory-safe Rust crates only. |
 | Files, folders | Never synced in v1 (section 3.8). |
 | Mixed clips | Text plus image (for example from Office or a browser): all parts are sent within the caps. |
@@ -712,7 +752,7 @@ and nobody would see it.
    silent per-user installer, no UAC; macOS: the app bundle is swapped), and starts the new agent.
 5. **Health check:** within 2 minutes the new agent must start, open its IPC, load its state and
    reconnect to at least one peer that was reachable before the update (or, with no peer online,
-   reach the relay). If not, the helper **puts the old version back**, starts it, and marks that
+   come up healthy on its own: IPC open, state loaded, LAN listener bound). If not, the helper **puts the old version back**, starts it, and marks that
    version as bad so it is not tried again.
 6. Three failed updates in a row give the "could not update itself" state (section 2.7).
 
@@ -720,29 +760,17 @@ and nobody would see it.
   that is too old shows "Update needed" in its row on the other devices.
 - The test "version N, then a broken N+1, then rollback to N" is part of M9's acceptance.
 
-### 3.14 The relay service
+### 3.14 No server (formerly the relay service)
 
-- **What:** one `iroh-relay` server of our own, on a small VPS in the EU, with a domain name and a
-  TLS certificate. It forwards encrypted packets between devices that cannot reach each other
-  directly. It stores nothing and cannot read content.
-- **Why it is a v1 deliverable:** the n0 public relays are "suitable for development and testing",
-  are rate-limited and carry no uptime promise (iroh documentation, checked by the reviewer today).
-  The relay is also the only path in the kill-switch VPN case. Without it, the VPN requirement fails.
-- **Alternative:** n0's paid relay plan. Decision 7. The recommendation is our own server first:
-  it is cheap, and you already use Hetzner.
-- **Access:** a relay open to everyone can be misused. S6 checks whether `iroh-relay` can limit
-  use (rate limits per IP, and if possible an access check). At least: rate limits and traffic caps.
-- **Operations:** deployed from a script in `packaging/relay/` (Docker or a systemd unit).
-  Unattended security updates on the host. A monitor: a scheduled GitHub Action connects through
-  the relay every 15 minutes and, on failure, opens an issue and sends you a mail. An update path:
-  the relay version follows the iroh version of the app, updated in the same PR.
-- **If the relay is down:** LAN sync keeps working. Only the internet path stops. The relay
-  address is a list in the app's config, so a second relay in another region can be added later
-  with an app update.
+**Removed on 2026-11-13.** There is no relay, no VPS, no domain, no lookup service and no monitor.
+The only outside contacts are GitHub (or the system's store or package updater) for updates.
+
+- **If the local network cannot be used** (VPN blocks it, guest Wi-Fi, devices on different
+  networks): sync does not work, and the app says why and shows help (sections 2.7 and 3.5).
 - **Privacy policy:** a short page (`docs/privacy.md`, published on GitHub Pages). It says: no
-  account, no content on any server, the relay sees IP addresses and encrypted traffic and keeps
-  no logs beyond 7 days of connection counts, GitHub serves updates. The stores and SignPath need
-  this page. The installer and the Welcome screen link to it.
+  account, no content on any server, no server of ours at all, data only moves between your devices
+  on your local network, GitHub serves updates. The stores and SignPath need this page. The
+  installer and the Welcome screen link to it.
 
 ---
 
@@ -752,10 +780,11 @@ and nobody would see it.
 - Only devices in your group can read or write your clipboard. Membership starts with a PAKE code
   that you typed or scanned yourself.
 - All traffic is encrypted and authenticated end to end with the devices' own keys (QUIC, TLS 1.3).
-  The relay and anyone on the network see ciphertext only.
-- **No server can read your data.** We run one relay. It sees IP addresses, sizes and times.
-- No account, no analytics, no telemetry, no crash upload. The only outside contacts are our relay
-  and GitHub (or the system's store or package updater) for updates.
+  Anyone on the network sees ciphertext only.
+- **There is no server.** Traffic stays on the local network. Nothing of ours is on the internet,
+  so there is no relay to attack, misuse or pay for, and no device is reachable from the internet.
+- No account, no analytics, no telemetry, no crash upload. The only outside contact is GitHub (or
+  the system's store or package updater) for updates.
 - Clipboard content exists only in memory and on the OS clipboard. Never on disk, never in logs,
   never in the UI.
 - The UI process holds no keys. Only the agent does.
@@ -766,9 +795,9 @@ and nobody would see it.
 |---|---|---|
 | 1 | Stranger on the same Wi-Fi tries to connect | Not a valid member, so the connection closes before any data. |
 | 2 | Stranger on the LAN tries to pair by guessing the short code | PAKE: one guess per try, 5 tries, 10 minutes, dropped connections count. No offline guessing. They can burn the 5 tries; the user sees "Someone else tried this code". |
-| 2b | Stranger on the internet tries to find or guess a pairing | Short codes do not exist outside the LAN. Long codes and QR secrets have 100 bits or more and an address that cannot be computed without the code. |
+| 2b | Stranger on the internet tries to find or guess a pairing | Not possible: the app has no internet path and listens only on local interfaces. Pairing is accepted only from the local subnet. |
 | 3 | Man in the middle during pairing | Device keys and connection keys are in the PAKE transcript, with key confirmation. The check fails. |
-| 4 | Relay operator (us), the VPS host or an ISP reads traffic | End-to-end encryption. They see IP addresses, sizes and times only. |
+| 4 | Someone on the local network reads traffic | End-to-end encryption (QUIC, TLS 1.3 with device keys). They see addresses, sizes and times only. |
 | 5 | Tracking a person by a stable ID in discovery | mDNS names are rotating tags from the group secret. No device name, no key in the clear. |
 | 6 | A removed or stolen device keeps reading, or adds a device of its own | Removal closes its connections and rotates the group secret. The membership chain makes every change it signs after the removal invalid (3.7). Limit: a member that is offline, until its next contact. |
 | 6b | A stolen device removes all the others | It gains nothing. The others get a notification and "Pair my devices again". |
@@ -782,7 +811,7 @@ and nobody would see it.
 | 13 | Flooding with pairing requests | One open pairing, only after the user pressed "Add a device". Rate limits. |
 | 14 | Supply chain | `Cargo.lock` committed, `cargo-deny` and `cargo-audit` in CI, few dependencies, pinned GitHub Actions. iroh pinned exactly if an unstable feature is used. |
 | 15 | Secrets left behind after uninstall | Section 8.5 says per OS what is removed and what stays. |
-| 16 | Misuse of our relay by strangers | Rate limits and traffic caps (3.14). It can only move ciphertext between iroh endpoints. |
+| 16 | (Removed 2026-11-13: there is no relay.) | The attack surface is smaller: no server, no internet listener. |
 
 A `SECURITY.md` explains how to report a problem.
 
@@ -816,7 +845,7 @@ Universal-Clipboard/
     android/                 Gradle project (Kotlin, Compose)
     ios/                     Xcode project (SwiftUI app, ShareExtension, AppIntents)
   packaging/                 installer scripts, MSIX manifest, LaunchAgent plist, firewall helper,
-                             apt repository script, relay deploy script
+                             apt repository script
   spikes/                    throwaway spike code (M0), removed before v1
   tools/                     hidden-desktop test host, netns scripts, lab VM scripts, runners
   docs/
@@ -824,7 +853,7 @@ Universal-Clipboard/
     spikes/                  spike results (facts with date and source)
     help/                    user help pages
     privacy.md               privacy policy
-  .github/workflows/         ci.yml, release.yml, relay-monitor.yml
+  .github/workflows/         ci.yml, release.yml
   CLAUDE.md  README.md  SECURITY.md  LICENSE-MIT  LICENSE-APACHE
 ```
 
@@ -836,7 +865,6 @@ The display name is one config value, so the name can change without code change
 | Language | Rust, edition 2024 | 1.99 on the PC | installed |
 | Async | tokio | 1.x | |
 | Transport | iroh | 1.4.x, pinned exactly if S1 picks the unstable custom transport | docs.rs today: 1.4.1 |
-| Relay | `iroh-relay`, same version line as iroh | | S6 |
 | mDNS | `mdns-sd` (per-interface control). `iroh-mdns-address-lookup` 0.5 is the alternative if it can be limited to chosen interfaces. | latest | decide in S1 |
 | PAKE | `spake2` (RustCrypto) with our transcript and confirmation, or a maintained CPace crate | 0.4.x | decide in M0c |
 | Hash, MAC, KDF | `blake3`, `hmac` + `sha2`, `hkdf` | | verify |
@@ -900,15 +928,15 @@ adapter (they sit on your real LAN, like separate computers), all run without a 
   offline: Y never becomes a member on any device once the removal is known**; changes signed by
   such a Y are invalid; two devices remove each other; a device removes all others.
 - Pairing state machine: wrong code, 5 tries, dropped connection counts as a try, timeout, man in
-  the middle (different keys on each side), transcript test vectors, **a short-code pairing is
-  refused on a relay path and on a non-local address, and a client outside the LAN finds nothing.**
+  the middle (different keys on each side), transcript test vectors, **a pairing is
+  refused from a non-local address, and a client outside the LAN finds nothing.**
 - Private-marker detection per OS with recorded format lists.
 - Updater: bad signature refused, rollout bucket, health check fail gives rollback.
 
 ### 6.2 Integration tests on one machine (in CI)
 `uc-testkit` starts 2 to 5 agents in one process or as child processes, each with a fake clipboard
-and its own state folder, on loopback, with a local `iroh-relay` started by the test.
-Scenarios: pair two (short code, long code, QR payload), add a third, copy on each and check all
+and its own state folder, on loopback.
+Scenarios: pair two (short code, QR payload), add a third, copy on each and check all
 others, two copies at the same instant, big image, private clip, pause, remove a device (and check
 it is refused after), restart an agent, protocol version N with N-1, a pull-only client that
 fetches the current clip with no age limit, a pull-only client with no full member online
@@ -922,12 +950,12 @@ M0a checks first that the WSL kernel has WireGuard and user namespaces; if not, 
 | Scenario | Setup | Must pass |
 |---|---|---|
 | Same LAN | 3 namespaces on one bridge | Direct path, under 1 s |
-| Multicast blocked | drop 224.0.0.0/4 and ff02::/16 | Found by remembered address; a never-seen address is found through the relay |
+| Multicast blocked | drop 224.0.0.0/4 and ff02::/16 | Found by remembered address; a never-seen address is not found, and the app shows "No path at all" help |
 | VPN, LAN allowed | WireGuard interface with default route in one namespace | Direct LAN path, not through the tunnel |
-| VPN, overlapping route | tunnel route covers the LAN subnet | The result S1 promised for Linux (direct, or relay) |
-| VPN, kill switch | drop all non-tunnel traffic | Relay path; with the internet path off: the "No path at all" state |
-| Client isolation | drop traffic between the two namespaces on the bridge | Relay path |
-| Both sides inbound-blocked, no internet | drop inbound on both, no relay | The "No path at all" state, no crash, heals when one side opens |
+| VPN, overlapping route | tunnel route covers the LAN subnet | The result S1 promised for Linux (direct, or the VPN help) |
+| VPN, kill switch | drop all non-tunnel traffic | The "No path at all" state with the VPN help (detection rule from S1) |
+| Client isolation | drop traffic between the two namespaces on the bridge | The "No path at all" state with the guest-network help |
+| Both sides inbound-blocked | drop inbound on both | The "No path at all" state, no crash, heals when one side opens |
 | Address change | change one device's IP | Reconnect under 5 s through gossip or mDNS |
 | Sleep and wake | `SIGSTOP` 5 minutes, `SIGCONT` | Reconnect, newest clip arrives |
 | Lossy Wi-Fi | `tc netem` 5% loss, 100 ms delay | Sync still correct |
@@ -958,10 +986,10 @@ This is the release gate.
 
 | | Windows | macOS | Linux | Android | iPhone, iPad |
 |---|---|---|---|---|---|
-| **Windows** | Auto: PC + `win-b` | Auto: PC + Mac (real machines) | Auto: PC + `lin-gnome`, `lin-kde` | Auto: emulator on the PC, relay path and a forwarded direct address. LAN discovery: by hand on a real phone. | Auto: Simulator on the Mac (shares the Mac's LAN). By hand: your iPhone and iPad. |
-| **macOS** | | Auto: Mac + `mac-b` | Auto: Mac + `lin-kde` | Auto: emulator, relay path. | Auto: Simulator. By hand: your iPhone and iPad. |
-| **Linux** | | | Auto: `lin-gnome` + `lin-kde` | Auto: emulator, relay path. | Auto: Simulator. By hand: your iPhone with `lin-kde`. |
-| **Android** | | | | Auto: two emulators, relay path, with the PC as a member. | Auto: emulator + Simulator, relay path. |
+| **Windows** | Auto: PC + `win-b` | Auto: PC + Mac (real machines) | Auto: PC + `lin-gnome`, `lin-kde` | Auto: emulator on the PC with a forwarded direct address. LAN discovery: by hand on a real phone. | Auto: Simulator on the Mac (shares the Mac's LAN). By hand: your iPhone and iPad. |
+| **macOS** | | Auto: Mac + `mac-b` | Auto: Mac + `lin-kde` | Auto: emulator, forwarded address. | Auto: Simulator. By hand: your iPhone and iPad. |
+| **Linux** | | | Auto: `lin-gnome` + `lin-kde` | Auto: emulator, forwarded address. | Auto: Simulator. By hand: your iPhone with `lin-kde`. |
+| **Android** | | | | Auto: two emulators, forwarded addresses, with the PC as a member. | Auto: emulator + Simulator, forwarded address. |
 | **iPhone, iPad** | | | | | Auto: two Simulators with the Mac as the always-on member. By hand: your iPhone to your iPad. Also tested: no computer on gives the clear message. |
 
 Honest gaps: Android LAN discovery and the real Android background behaviour are tested by hand
@@ -988,9 +1016,9 @@ reboot check of the PC and the Mac at M10.
 ### 6.7 Mobile
 - **Shared core:** Rust tests of `uc-mobile` on the host, including the pull-only role.
 - **Android:** emulator on the PC with `-no-window`, API 29 and API 37 images. JVM unit tests,
-  instrumented tests for the service, the share target, the tile and the clipboard write.
+  instrumented tests for the service, the share target and the clipboard write.
   `ACCESS_LOCAL_NETWORK` is tested granted and refused on API 37. The emulator sits behind its own
-  NAT, so its network tests use the relay path and a forwarded direct address (`adb forward` and
+  NAT, so its network tests use a forwarded direct address (`adb forward` and
   the emulator's UDP redirect). **Real LAN discovery and OEM background limits are tested by hand:**
   by the 12 testers that Google Play's closed test needs anyway (they get a 10-minute checklist),
   or automatically if you add a test phone (decision 10).
@@ -1001,7 +1029,7 @@ reboot check of the PC and the Mac at M10.
   accepted from Simulator results.
 - **By hand, by you:** spike S5 on your real iPhone connected to the Mac (your yes is needed), and
   the TestFlight checklist (about 15 minutes per device): permissions, QR pairing, Share sheet,
-  both Shortcuts, Action Button, Control Center, VPN on the phone, "no computer is on".
+  Share sheet, app-open sync, VPN on the phone with and without local network sharing, "no computer is on".
 
 ---
 
@@ -1023,7 +1051,7 @@ Rules for every milestone:
 Order and parallel work:
 
 ```
-M0a -> M0b (8 spikes in parallel) -> M0c -> M1 -> [M2 | M3 | M4 | M5 | M6 | M8a | M9b] in parallel
+M0a -> M0b (7 spikes in parallel) -> M0c -> M1 -> [M2 | M3 | M4 | M5 | M6 | M8a] in parallel
      -> M7 -> [M8b | M9] in parallel -> M10 (desktop beta)
      -> [M11 | M12 -> (M13 | M14)] in parallel -> M15 -> M16
 ```
@@ -1047,21 +1075,21 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
 
 | Spike | Question | Machine | Go criterion |
 |---|---|---|---|
-| S1 | **iroh and interfaces:** test options (a) address bind, (b) unstable custom transport, (c) fork or patch, each with full-tunnel WireGuard, a kill switch and a **real overlapping route**, on Windows, macOS and Linux. `mdns-sd` or the iroh mDNS crate? **Windows firewall:** which alerts appear and when; does the rule for Private and Public profiles work; outbound-only mode; two PCs that both refused, with and without internet. **VPN defaults:** the LAN setting of 4 or 5 large consumer VPNs. | `win-b`, `mac-b`, `lin-kde` | One option chosen per OS. The exact result for the overlapping-route row. Relay path proven under a kill switch. Prompt list written. |
+| S1 | **iroh and interfaces:** test options (a) address bind, (b) unstable custom transport, (c) fork or patch, each with full-tunnel WireGuard, a kill switch and a **real overlapping route**, on Windows, macOS and Linux. `mdns-sd` or the iroh mDNS crate? **Windows firewall:** which alerts appear and when; does the rule for Private and Public profiles work; outbound-only mode; two PCs that both refused. **VPN defaults:** the LAN setting of 4 or 5 large consumer VPNs. | `win-b`, `mac-b`, `lin-kde` | One option chosen per OS. The exact result for the overlapping-route row. Clear VPN-blocks-LAN detection and help proven under a kill switch (detection rule written down, tested for false alarms and misses). Prompt list written. |
 | S2 | **macOS 27.2:** does the agent started by `SMAppService` get a pasteboard prompt? What does `accessBehavior` return? Apply the decision tree in 3.9. Local Network prompt: does it show the app's name for the agent? Keychain and notifications from the agent. Do the grants survive an app update? Is `com.apple.is-remote-clipboard` present on Handoff clips, and is reading them fast and silent? | Mac and `mac-b` (you click the prompts once on the Mac; this needs your yes because it is on screen) | The exact prompt list for 2.2. Go, or stop and ask you. |
 | S3 | Does a private window station give an isolated clipboard for tests on Windows? | PC | A test copies and reads in the hidden station; your clipboard is unchanged. |
 | S4 | **GNOME Wayland go/no-go:** (1) XWayland: do XFIXES events arrive for every copy with no X11 window focused, and can we write? (2) the portal. Does GNOME still ship an X11 session? Also confirm headless Sway and KWin in Docker. | `lin-gnome`, PC (Docker) | One path that needs no babysitting. Else: "KDE and X11 only" and a question to you. |
-| S5 | **iOS:** does the Rust core with iroh build through UniFFI for iOS? Does it fit a Share Extension (memory, start under 2 s) and an App Intent (time limit)? **On a real iPhone:** can a background intent read or write `UIPasteboard` (expected: no)? Do the two Shortcuts from iCloud links work from the Action Button and Control Center? Local Network prompt and iroh socket binding to Wi-Fi with a VPN on the phone. Fetch when no computer is on. | Mac + your iPhone on USB (needs your yes) | A Share Extension and both Shortcuts work against the PC. The rewrite of 2.6 is confirmed or corrected. |
-| S6 | **Relay and long code:** run our own `iroh-relay` on a test VPS. Can the app use only our relay, with n0's DNS and pkarr lookup off? Does the long-code rendezvous with a derived temporary endpoint key work, in under 5 s? Can the relay limit misuse? Cost and limits of n0's paid plan. | PC + VPS | Two devices on different networks pair with a long code and sync through our relay only. |
-| S7 | **Android:** does a background `setPrimaryClip` from the foreground service work on API 29 to 37, and does it show the clipboard preview overlay each time? Play policy for foreground service type `connectedDevice` (declaration, review video). Clipboard read with window focus in the tile's activity. `ACCESS_LOCAL_NETWORK` granted and refused. Doze and OEM killing (from documents). UniFFI build for Android. | PC (emulator) | Automatic computer to phone is silent and allowed. Else the fallback is fixed: a notification "Tap to copy". |
+| S5 | **iOS:** does the Rust core with iroh build through UniFFI for iOS? Does it fit a Share Extension (memory, start under 2 s)? **On a real iPhone:** does the app read the clipboard and write the newest clip when it opens (with paste setting Ask and Allow)? Local Network prompt and iroh socket binding to Wi-Fi with a VPN on the phone. The "no computer is on" state. | Mac + your iPhone on USB (needs your yes) | A Share Extension and sync on app open work against the PC. The rewrite of 2.6 is confirmed or corrected. |
+| S6 | (Dropped 2026-11-13: relay and long code are out of scope.) | | |
+| S7 | **Android:** does a background `setPrimaryClip` from the foreground service work on API 29 to 37, and does it show the clipboard preview overlay each time? Play policy for foreground service type `connectedDevice` (declaration, review video). Clipboard read with window focus when the app opens. `ACCESS_LOCAL_NETWORK` granted and refused. Doze and OEM killing (from documents). UniFFI build for Android. | PC (emulator) | Automatic computer to phone is silent and allowed. Else the fallback is fixed: a notification "Tap to copy". |
 | S8 | **Microsoft Store (MSIX):** can an individual in Norway open a developer account, and what does it cost? Does an MSIX package give Store signing, silent updates, a firewall rule from the manifest, a startup task and a clean uninstall, with our two-process design? | PC, `win-b` | A sideloaded MSIX on `win-b` that syncs after a reboot with no prompt. Account question answered. |
 
-- Accept: eight result pages. Sections 2 and 3 of this plan are updated where a spike changed a
+- Accept: seven result pages (S6 is dropped). Sections 2 and 3 of this plan are updated where a spike changed a
   decision. Any "stop" result goes to you before M1 starts.
 
 ### M0c. Protocol review on paper
-- Depends on: S1, S6. Model: Fable (the planning model). One short session.
-- Tasks: review the final text of 3.6 (pairing, transcript, confirmation, long-code rendezvous) and
+- Depends on: S1. Model: Fable (the planning model). One short session.
+- Tasks: review the final text of 3.6 (pairing, transcript, confirmation) and
   3.7 (membership chain, validity rule, removal cases) for protocol errors; decide SPAKE2 or
   CPace; write the test vectors' format.
 - Accept: a signed-off protocol page in `docs/`, which M3 implements word for word.
@@ -1076,21 +1104,21 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
 - Accept: unit and property tests from 6.1 pass. Three fake devices converge in every random
   order. The clipboard-manager ping-pong test passes.
 
-### M2. Networking (`uc-net`)  [parallel with M3 to M6, M8a, M9b]
-- Depends on: M1, S1, S6. Machine: PC, WSL, `win-b`, `mac-b`. Model: Opus.
+### M2. Networking (`uc-net`)  [parallel with M3 to M6, M8a]
+- Depends on: M1, S1. Machine: PC, WSL, `win-b`, `mac-b`. Model: Opus.
 - Tasks: iroh endpoint wrapper with the option S1 chose; physical interface detection for Windows,
   macOS, Linux; per-interface sockets; **traits for mDNS and for socket binding, so iOS and
   Android can plug in (results of S5 and S7 feed these)**; `LanBook`; remembered addresses; signed
-  address gossip; mDNS with rotating tags; reconnect on wake and network change; our relay only;
-  internet-path switch; path state reporting (LAN, internet, relay, no path).
+  address gossip; mDNS with rotating tags; reconnect on wake and network change; LAN only (no relay, no internet path);
+  path state reporting (LAN, blocked by VPN or firewall, no path); the VPN-blocks-LAN detection rule from S1.
 - Accept: every row of the 6.3 table passes in WSL or `lin-kde`. **On `win-b` and on `mac-b`:
   WireGuard full tunnel with LAN allowed, kill switch, and overlapping route each give the result
   that S1 wrote down.** Interface detection has unit tests with recorded adapter lists.
 
 ### M3. Pairing, membership, keys (`uc-pair`, `uc-keys`)  [parallel]
 - Depends on: M1, M0c. Machine: PC, Mac for the Keychain backend. Model: Opus.
-- Tasks: short code, long code and QR payload; PAKE with the transcript and confirmation from the
-  protocol page; try and time limits; LAN-only rule for short codes; long-code rendezvous;
+- Tasks: short code and QR payload; PAKE with the transcript and confirmation from the
+  protocol page; try and time limits; LAN-only rule for all pairing;
   membership chain with signatures, validity rule and merge; removal and secret rotation; key
   store backends (Windows, macOS, Linux with file fallback, test file store).
 - Accept: pairing and membership tests from 6.1 pass, including the man-in-the-middle test, the
@@ -1144,7 +1172,7 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
 ### M8b. Desktop UI (`apps/desktop`)  [parallel with M9]
 - Depends on: M7, M8a. Machine: PC, `win-b`. Model: Sonnet.
 - Tasks: Tauri 2 app with Svelte; onboarding with the permission rows per OS; add-device screen
-  with short code, long code and QR; settings window; every state in 2.7 with its Fix button;
+  with QR and short code; settings window; every state in 2.7 with its Fix button, including the VPN help screen (L12);
   single instance; start the agent when missing; the IPC server check; English strings in one
   file (ready for Norwegian later).
 - Accept: you approve the Playwright screenshots once; they become the baselines (1% pixel
@@ -1164,16 +1192,11 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
   **"N, then a broken N+1, then automatic rollback to N" passes on Windows and macOS.** The
   uninstall test per OS matches the table in 8.5.
 
-### M9b. Relay service  [parallel with M2 to M6]
-- Depends on: S6, decision 7. Machine: VPS. Model: Sonnet for the deploy script and the monitor,
-  Opus review of the host and relay configuration.
-- Tasks: VPS, domain and TLS; `iroh-relay` deploy script; limits against misuse; unattended host
-  updates; `relay-monitor.yml`; the update path note in `CLAUDE.md`; final privacy policy.
-- Accept: two devices on different networks sync through our relay only. The monitor has caught a
-  planned outage (relay stopped for 20 minutes) and opened an issue.
+### M9b. (Dropped 2026-11-13)
+The relay service is out of scope. Its one useful task, the final privacy policy, moves to M15.
 
 ### M10. Hardening and the release gate for desktop
-- Depends on: M8b, M9, M9b. Machine: PC, Mac, VMs. Model: Opus.
+- Depends on: M8b, M9. Machine: PC, Mac, VMs. Model: Opus.
 - Tasks: full pair table for desktops with groups of 3 to 5 devices; VPN matrix on `win-b` and
   `mac-b` with WireGuard, **plus one consumer VPN client with a WFP kill switch on Windows and one
   Network Extension VPN on macOS**; sleep and wake; network switch; removal; the 24-hour soak test
@@ -1199,23 +1222,23 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
 - Accept: host tests pass. A sample call from Swift and from Kotlin pairs with a desktop agent.
 
 ### M13. Android app  [parallel with M14]
-- Depends on: M12. Machine: PC. Model: Sonnet for UI, Opus for the service, clipboard and tile.
+- Depends on: M12. Machine: PC. Model: Sonnet for UI, Opus for the service and clipboard.
 - Tasks: Compose UI (onboarding with the two permission rows, QR scan with Google's code scanner,
   devices, settings); foreground service with background clipboard write, or the "Tap to copy"
-  notification if S7 said so; share target; `PROCESS_TEXT` action "Send to my devices"; Quick
-  Settings tile with a short focus activity that reads the clipboard; boot start; sensitive flag;
-  battery page; relay-only mode when the local network permission is refused.
+  notification if S7 said so; share target (a Share sheet entry that sends a copy); read the clipboard once when the app opens;
+  boot start; sensitive flag; battery page; a clear state when the local network permission is
+  refused (the phone cannot sync until it is granted).
 - Accept: emulator tests pass headless on API 29 and API 37, with the local network permission
   granted and refused. Computer to phone works as S7 decided. Each phone to computer path works in
   one tap. The LAN checklist is ready for the Play testers (or passes on the test phone).
 
 ### M14. iOS and iPadOS app  [parallel with M13]
-- Depends on: M12. Machine: Mac. Model: Opus for the extension and intents, Sonnet for SwiftUI.
-- Tasks: SwiftUI app (onboarding, QR scan with the camera prompt, devices, settings, "Make it one
-  tap" page by device type); fetch and write on open (`.localOnly`); `UIPasteControl` send; Share
-  Extension; App Intents "Send to my devices" (takes text or image) and "Get latest from my
-  devices" (returns it); the two Shortcuts published as iCloud links; the "No computer is on" state;
-  shared Keychain group. No Control Center control of our own.
+- Depends on: M12. Machine: Mac. Model: Opus for the extension, Sonnet for SwiftUI.
+- Tasks: SwiftUI app (onboarding, QR scan with the camera prompt, devices, settings, "How it
+  works" page); on open: fetch the newest clip and write it (`.localOnly`), and read the clipboard
+  (`UIPasteControl` or the Allow setting) and share it if it is new; Share Extension that sends a
+  copy; the "No computer is on" state; shared Keychain group. No App Intents, no Shortcuts, no
+  Control Center control.
 - Accept: Simulator tests pass headless and pair with the PC over the LAN. Your real-device
   checklist passes through TestFlight on the iPhone and the iPad.
 
@@ -1224,7 +1247,7 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
 - Tasks: App Store Connect, Play Console and Microsoft Store listings, privacy labels, privacy
   policy link, the Play foreground-service declaration, screenshots; TestFlight build; Play closed
   test (12 testers, 14 days); README (with the `readme` skill) with the honest platform list; help
-  pages for each permission and each error, the VPN help page from S1; a short page "What phones
+  pages for each permission and each error, the VPN help page from S1 (including where "Local network sharing" is in Mullvad and other VPNs), the final privacy policy; a short page "What phones
   can and cannot do".
 - Accept: all store builds are in review or approved. The README covers install and pairing in
   under one screen per OS.
@@ -1236,14 +1259,14 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
 - Accept: release files signed and published. The prototype's scheduled task and LaunchAgent are removed.
 
 **Time estimate (raised after review, with the cuts in section 11 applied):**
-- M0 (bootstrap, lab, 8 spikes, paper review): 1.5 to 2 weeks.
-- Desktop beta (M10): 7 to 9 weeks from the start.
+- M0 (bootstrap, lab, 7 spikes, paper review): 1.5 to 2 weeks.
+- Desktop beta (M10): 6 to 8 weeks from the start (no relay work).
 - Phones and rich text (M11 to M14): 4 to 5 weeks more.
 - Stores and your two weeks of daily use (M15, M16): 3 to 4 weeks, partly waiting time we do not
   control (store reviews, the Play 14-day test, signing approvals).
-- **Plan for 14 to 18 weeks to v1.0.** The first estimate (8 to 12 weeks) did not include the
-  relay, the VM lab, two more spikes, the Store package or the store review loops.
-- Running cost after launch: about 6 to 7 EUR per month (relay and domain), plus the Apple fee.
+- **Plan for 13 to 17 weeks to v1.0** (one week less than before, because there is no relay or spike S6). The first estimate (8 to 12 weeks) did not include the
+  VM lab, two more spikes, the Store package or the store review loops.
+- Running cost after launch: no server cost (there is no server). Only the Apple fee and the one-time or yearly store fees in section 8.2.
 
 ---
 
@@ -1284,9 +1307,6 @@ So, in this order:
 | Google Play Console | about 25 USD once | Android on Play. New personal accounts must run a closed test (12 testers, 14 days) before going public. |
 | Microsoft Store developer account | free or a small one-time fee for individuals (unverified, S8) | Windows Store channel |
 | Windows signing for the exe | 0 (SignPath Foundation, later) or roughly 70 to 120 EUR per year (Certum, unverified) | No SmartScreen warning on the GitHub exe |
-| Relay VPS | about 5 EUR per month (small Hetzner server) | Internet path, VPN kill-switch case |
-| Domain | about 10 to 15 EUR per year | Relay TLS name, privacy policy address |
-| n0 paid relay plan | unknown, checked in S6 | Alternative to our own relay |
 | Android test phone (optional) | about 100 EUR once, used | Automatic Android LAN and background tests (decision 10) |
 | GitHub Actions, Releases, Pages | 0 for a public repo | CI, downloads, apt repository, privacy page |
 
@@ -1343,12 +1363,12 @@ user can remove it there. M9's acceptance has an uninstall test per desktop OS t
 | # | Decision | Recommendation |
 |---|---|---|
 | 1 | **Product name.** "Universal Clipboard" will probably be refused by Apple. | Use one neutral name everywhere (Copybridge, after a name check). Keep the repo name for now. |
-| 2 | **Internet path on by default?** It is what makes "VPN blocks the LAN" and guest Wi-Fi work, and it also syncs when a laptop is away from home. Data stays end-to-end encrypted, but our relay sees IP addresses. | On by default, with a clear switch. Without it the VPN promise fails for many VPNs. |
-| 3 | **iOS keyboard extension and Android accessibility service.** They could cut one tap, but they need "Full Access" or a sensitive permission, and store review is strict. | Not in v1. Decide after real use of the Share sheet and Shortcuts. |
+| 2 | (Closed 2026-11-13.) There is no internet path. Local network only. | Done. A VPN that blocks the LAN gets clear help instead. |
+| 3 | **iOS keyboard extension and Android accessibility service.** They could cut one tap, but they need "Full Access" or a sensitive permission, and store review is strict. | Not in v1. Decide after real use of the Share sheet and app-open sync. |
 | 4 | **Accounts to open:** Apple Developer Program (99 USD per year), Google Play Console (25 USD), Microsoft Store developer account (after S8 says it is possible). SignPath comes later (8.1). | Open Apple and Google at the start of M0, because approval takes days to weeks. |
 | 5 | **Mockup tools** (your rule: you choose). | `impeccable` for the screens. A simple logo with the local image stack. |
 | 6 | **GNOME on Wayland** if spike S4 finds no clean path. This is the default desktop of Ubuntu and Fedora. | The build stops and asks you. My advice then: ship with "Linux: KDE and X11 desktops only" stated plainly, and revisit after v1. |
-| 7 | **Relay: our own server or n0's paid plan.** We now run a server (it cannot read data). It costs about 6 to 7 EUR per month with the domain and needs a little care. | Our own `iroh-relay` on a small Hetzner server in the EU. Recheck n0's plan in S6. |
+| 7 | (Closed 2026-11-13.) There is no relay. | Done. |
 | 8 | **Forward clips that arrive on a Mac through Apple's own Universal Clipboard?** It would give automatic iPhone to Mac to PC sync for Apple users, with no tap. | Yes, as a setting that is on by default, but only if S2 shows the read is fast and silent. Else off. |
 | 9 | **The VM lab.** A Hyper-V external switch on the PC (a few seconds of network interruption, once), four VMs (about 150 GB disk, memory only while tests run), a macOS VM on the Mac. | Yes. Without it, three of your five pairs are tested only with fakes. |
 | 10 | **A cheap Android test phone on USB** (about 100 EUR used). You have no Android device, and the emulator cannot test the real LAN or OEM background limits. | Yes, if Android matters to you. Else the Play testers do a checklist by hand. |
@@ -1359,20 +1379,20 @@ user can remove it there. M9's acceptance has an uninstall test per desktop OS t
 
 | Risk | Effect | What we do |
 |---|---|---|
-| iroh cannot tie sockets to a device with its stable API | The overlapping-route VPN case has no direct path | S1 tests three options on three OS. Worst case: that case uses the relay. |
-| Many VPNs block the LAN by default | The LAN path fails often with a VPN | Our own relay, internet path on by default, one Fix button, a help page with real VPN settings. |
-| The relay is a single server | Internet path down when it is down | Monitor, LAN keeps working, relay list in config for a second region later. |
+| iroh cannot tie sockets to a device with its stable API | The overlapping-route VPN case has no direct path | S1 tests three options on three OS. Worst case: that case shows the VPN help, and the user turns on local network sharing. |
+| Many VPNs block the LAN by default | With such a VPN, devices cannot sync until the user turns on local network sharing | Clear detection (S1), one Fix button, a help page with real VPN settings (Mullvad "Local network sharing" and others). Limit stated plainly: no internet fallback. |
+| Devices on different networks never sync (by design) | A laptop away from home does not get clips | Stated in the README and the app. A possible later version may add an internet path; it is out of scope now. |
 | macOS pasteboard prompt on every read | Mac to others not usable | S2 with a fixed decision tree. Stop and ask you if it fails. |
 | GNOME Wayland has no clean path | "Linux" means KDE and X11 only | S4 is a go/no-go. Honest text. Your decision. |
 | Android background write is blocked, noisy or refused by Play | Computer to Android is one tap, not automatic | S7 before any Android code. Fallback: "Tap to copy" notification. |
-| iOS Shortcuts cannot do what we need on real hardware | iPhone needs "open the app" for both directions | S5 on your real iPhone. The Share sheet and app-open paths do not depend on Shortcuts. |
+| iOS gives no background access | iPhone syncs only when the app is open or through the Share sheet | Stated plainly in the app (section 2.6). S5 on your real iPhone checks app-open sync. |
 | Phone experience disappoints (one tap, not zero; needs a computer that is on) | Users expect Apple-like magic | Say it plainly in the app and the store text. Decision 8 gives Apple users a no-tap path. |
 | Store review rejects the app (name, background service type, permissions) | Delay for phones | Neutral name. Smallest permission set. Desktop ships first and does not depend on the stores. |
 | The GitHub exe is unsigned for months | SmartScreen warning | The Store is the main Windows channel. SignPath after the public beta. |
 | A bad silent update | Every device breaks, nobody sees it | Staged rollout, health check, automatic rollback, tested in M9. |
 | Password managers that set no private marker | A password is synced | Honest help text. Pause switch. A per-app ignore list is a candidate for v1.1. |
 | Competing apps improve (UniClipboard, CrossPaste) | Less reason to build | Our edge is setup, no tray, VPN handling and honesty. Recheck them before M15. |
-| Size of v1 (five platforms, a relay, a lab) | Schedule slips | Desktop beta is a full product at M10. Phones follow. Rich text can move to v1.1. |
+| Size of v1 (five platforms, a lab) | Schedule slips | Desktop beta is a full product at M10. Phones follow. Rich text can move to v1.1. |
 
 ---
 
@@ -1404,7 +1424,8 @@ Checked on 2026-11-13 by the reviewer (taken over into this revision, not fetche
 - iroh 1.4.1 binds to addresses only; no pre-bound sockets and no device binding; the custom
   transport hook is behind `unstable-custom-transports`. (docs.rs page above)
 - n0 public relays are "suitable for development and testing", rate-limited, with no uptime or
-  performance guarantee. (https://docs.iroh.computer/concepts/relays)
+  performance guarantee. (https://docs.iroh.computer/concepts/relays) This no longer matters: the
+  app uses no relay since 2026-11-13.
 - Android: `ACCESS_LOCAL_NETWORK` is a required runtime permission at target SDK 37; without it
   LAN packets fail. (https://developer.android.com/privacy-and-security/local-network-permission)
 - SignPath Foundation terms: project already released, verifiable reputation, code signing policy,
@@ -1422,9 +1443,9 @@ Not checked, from general knowledge, to verify in the named spike or milestone:
 - Whether GNOME still ships an X11 session, and whether Mutter passes all Wayland copies to
   XWayland clients (S4).
 - iOS: extension memory limits against the iroh core, pasteboard access from background intents,
-  Shortcuts from iCloud links, Action Button and Back Tap device limits (S5).
-- Using only our own relay with lookup off, relay misuse limits, the derived-key rendezvous, n0's
-  paid plan (S6).
+  clipboard read and write on app open, Local Network behaviour (S5).
+- That iroh works with the relay disabled and no address lookup (S1). The S6 items (own relay,
+  long-code rendezvous, paid plan) are dropped.
 - Android: clipboard preview overlay on background writes, Play policy for `connectedDevice`,
   OEM background killing (S7).
 - Microsoft Store: individual accounts in Norway, firewall rules and startup tasks in MSIX (S8).
@@ -1485,3 +1506,9 @@ AND the cuts applied).
 
 **Added beyond the review:** decision 12 (your iPhone for S5), the relay misuse threat (row 16),
 the "update failed" state, and the backup copy of the updater key.
+
+**Revision 3 (2026-11-13, scope change to local network only).** Everything about the relay, the
+internet path, the long code and the iOS Shortcuts was removed or rewritten. The review notes above
+describe revision 2 and are kept as history. Where they mention a relay, the long code or
+"long-code rendezvous" (points 1, 2 and 18 and the "Applied with a change" entry), read them as
+superseded by the section "Decisions after approval".

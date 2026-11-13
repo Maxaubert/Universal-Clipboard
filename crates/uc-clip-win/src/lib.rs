@@ -1,0 +1,1 @@
+//! Windows clipboard backend.

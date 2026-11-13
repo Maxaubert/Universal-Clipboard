@@ -1,0 +1,11 @@
+[package]
+name = "uc-cli"
+description = "Universal Clipboard: the uclip test and debug CLI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
