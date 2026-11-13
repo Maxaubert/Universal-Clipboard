@@ -764,6 +764,18 @@ The only outside contacts are GitHub (or the system's store or package updater) 
   Anyone on the network sees ciphertext only.
 - **There is no server.** Traffic stays on the local network. Nothing of ours is on the internet,
   so there is no relay to attack, misuse or pay for, and no device is reachable from the internet.
+- **Never reachable from outside the local network (hard requirements, added 2026-11-14):**
+  - No port mapping of any kind: no UPnP, NAT-PMP or PCP. iroh's port mapper, relay, hole punching
+    and DNS/pkarr discovery are all OFF (M2 asserts this in a test). The app never asks a router to
+    open a port.
+  - The LAN rule of `docs/protocol.md` 4.8 applies to the SYNC port too, not only to pairing: a
+    connection from an address outside the private ranges and the on-link subnets of a physical
+    interface is closed before the TLS handshake finishes. This also covers public IPv6 addresses,
+    which some routers let in from the internet.
+  - The firewall rule allows inbound only from the local subnet (Windows `RemoteAddress=LocalSubnet`,
+    profile Private), never Public. On a public Wi-Fi network the app does not listen at all.
+  - Even a device that reaches the port without being paired gets nothing: unknown keys are dropped
+    before any clipboard data moves.
 - No account, no analytics, no telemetry, no crash upload. The only outside contact is GitHub (or
   the system's store or package updater) for updates.
 - Clipboard content exists only in memory and on the OS clipboard. Never on disk, never in logs,
