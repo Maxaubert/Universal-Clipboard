@@ -363,7 +363,27 @@ phone apps are native, and all logic stays in the shared Rust core.
   `$XDG_RUNTIME_DIR/uclip/`. The UI checks the peer's user ID.
 - Calls: `status`, `subscribe`, `pair.start`, `pair.join`, `pair.cancel`, `devices.list`,
   `devices.rename`, `devices.remove`, `pause.set`, `settings.get`, `settings.set`, `diagnostics`,
-  `leave`. The same API drives the headless tests through a small CLI, `uclip`.
+  `leave`. The same API drives the headless tests through the CLI.
+- **The CLI `uc` is a full user interface, not only a test tool (Max, 2026-11-14).** Everything the
+  settings window can do, the CLI can do, on every desktop OS, so the app works on a computer with
+  no screen (a server, a headless Linux box) and over SSH. The command is `uc`; if a `uc` command
+  already exists on that machine at install time, the installer names it `uclip` instead and says
+  so. Commands (each also has `--json` for scripts):
+  - `uc status`: Working / Paused / Needs attention, the reason, and the device count.
+  - `uc devices` (list with OS, name, Connected / Asleep, this device marked), `uc rename <device>
+    <name>`, `uc remove <device>` (asks to confirm; `--yes` to skip).
+  - `uc pair show`: prints the 6-digit code and draws the QR code in the terminal, waits for the
+    other device, then shows "Mac mini is added". `uc pair enter [code]`: asks for the code if not
+    given. `uc pair cancel`.
+  - `uc pause`, `uc resume`.
+  - `uc settings` (show all), `uc settings set <key> <value>` (start at sign-in, image size cap and
+    the other settings of the window).
+  - `uc diagnostics`: the same report as the window, without clipboard content.
+  - `uc setup`: the first-run steps (permissions, start at sign-in) for a computer that never opens
+    the window, with the same plain text as the setup screens.
+  - `uc leave`: remove this device from the group.
+  - `uc help`, `uc --version`. Plain English output, short lines, no colour codes when not a TTY.
+- The CLI talks only to the local agent through the IPC socket or pipe above. It holds no keys.
 - Two users logged in on one computer: each has an own agent, pipe or socket, state folder and UDP
   port. If the chosen UDP port is in use, the agent picks a new one and tells its peers.
 
@@ -576,7 +596,7 @@ in memory. On connect, both sides send `Latest`.
 - **Automatic apply** (a computer or Android phone that wakes or reconnects): the newer clip is
   applied if it is less than **1 hour** old. Reason for a limit: a device that was away should not
   have its own clipboard replaced by something old.
-- **Fetch on open** (opening the phone app, or `uclip fetch` on a desktop): always returns
+- **Fetch on open** (opening the phone app): always returns
   the group's current clip, **with no age limit**, as long as one always-on member on the same
   network still holds it. This is not a button: it happens when the app opens.
 - Age is measured with the hybrid clock below, not with each device's raw wall time.
@@ -830,7 +850,7 @@ Universal-Clipboard/
     uc-clip-win/  uc-clip-mac/  uc-clip-linux/
     uc-update/               update check, verify, rollout, health check, rollback
     uc-agent/                the background program + IPC server
-    uc-cli/                  `uclip` test and debug CLI (talks to the agent)
+    uc-cli/                  `uc` CLI, full user interface (talks to the agent)
     uc-mobile/               UniFFI bindings
     uc-testkit/              in-process multi-agent harness, network sim helpers
   apps/
@@ -1153,8 +1173,9 @@ Model: Opus, except S3 and the Docker session images in S4 (Sonnet).
   in 3.2; profiles; pause; settings; diagnostics report; logs without content; autostart register
   and unregister per OS; single agent per user, two users on one machine; port-in-use handling;
   Windows firewall order rule and outbound-only mode; sleep and wake hooks; "leave" that tells
-  the group; the `uclip` CLI.
-- Accept: the cross-OS runner (6.5) pairs the PC, the Mac and the four VMs through the CLI and
+  the group; the full `uc` CLI from 3.2 (every command, `--json`, terminal QR, `uc setup`).
+- Accept: every action of the settings window works from `uc` on Windows, macOS and Linux (a test
+  maps each UI action to its command). The cross-OS runner (6.5) pairs the PC, the Mac and the four VMs through the CLI and
   passes the copy matrix for text and images, for every desktop cell of the pair table. Agents
   come back after a reboot in `win-b`, `mac-b` and both Linux VMs. Idle CPU under 0.5%, memory
   under 40 MB.
