@@ -14,8 +14,10 @@ function Assert-LabAdmin {
 function Get-LabRoot { New-Item -ItemType Directory -Force $script:LabRoot | Out-Null; $script:LabRoot }
 
 function Get-LabPubKeys {
-    # Only the PC's own id_*.pub keys. Never other keys.
-    Get-ChildItem "$env:USERPROFILE\.ssh\id_*.pub" | ForEach-Object { (Get-Content $_ -Raw).Trim() }
+    # ONLY the lab key id_ed25519_hyperv.pub ("claude-hyperv-ubuntu"). Never id_ed25519 ("pc-to-mac") or any other key.
+    $f = "$env:USERPROFILE\.ssh\id_ed25519_hyperv.pub"
+    if (-not (Test-Path $f)) { throw "Lab key not found: $f" }
+    ,@((Get-Content $f -Raw).Trim())
 }
 
 function New-LabSeedIso {
@@ -54,7 +56,7 @@ function New-LabVm {
     $vhd = Join-Path $dir "$Name.vhdx"
     New-VHD -Path $vhd -SizeBytes 64GB -Dynamic | Out-Null
     $vm = New-VM -Name $Name -Generation 2 -MemoryStartupBytes 4GB -VHDPath $vhd -SwitchName 'uc-lab' -Path $dir
-    Set-VM $vm -ProcessorCount $Cpu -DynamicMemory -MemoryMinimumBytes 2GB -MemoryMaximumBytes 4GB -AutomaticStartAction StartIfRunning -AutomaticStopAction ShutDown -CheckpointType Disabled
+    Set-VM $vm -ProcessorCount $Cpu -DynamicMemory -MemoryMinimumBytes 2GB -MemoryMaximumBytes 4GB -AutomaticStartAction Nothing -AutomaticStopAction ShutDown -CheckpointType Disabled
     if ($Windows) {
         Set-VMFirmware $vm -EnableSecureBoot On
         Set-VMKeyProtector -VMName $Name -NewLocalKeyProtector

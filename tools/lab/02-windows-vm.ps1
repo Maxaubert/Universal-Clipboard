@@ -1,8 +1,10 @@
-# Creates uc-win-b (Windows 11) with an unattended install. Needs a Windows 11 ISO (-IsoPath). Run elevated.
-param([Parameter(Mandatory)][string]$IsoPath, [string]$UnattendTemplate = "$PSScriptRoot\autounattend.xml.template")
+# Creates uc-win-b (Windows 11) with an unattended install. Default ISO: <lab root>\iso\Win11_English_x64.iso (official Microsoft ISO). Run elevated.
+param([string]$IsoPath, [string]$UnattendTemplate = "$PSScriptRoot\autounattend.xml.template")
 Import-Module "$PSScriptRoot\Lab.psm1" -Force
 Assert-LabAdmin
 $root = Get-LabRoot
+if (-not $IsoPath) { $IsoPath = Join-Path $root 'iso\Win11_English_x64.iso' }
+if (-not (Test-Path $IsoPath)) { throw "Windows 11 ISO not found: $IsoPath" }
 $keys = (Get-LabPubKeys) -join "`n"
 $stage = Join-Path $root 'uc-win-b-seed'
 New-Item -ItemType Directory -Force $stage | Out-Null
