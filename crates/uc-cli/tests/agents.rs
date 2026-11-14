@@ -207,8 +207,13 @@ fn setup_and_autostart_in_the_sandbox() {
     let v = a.uc_json(&["setup", "--yes"]);
     assert_eq!(v["sandboxed"], true);
     let rows = v["rows"].as_array().unwrap();
-    let auto = rows.iter().find(|r| r["row"] == "autostart").unwrap();
-    assert_eq!(auto["state"], "done");
+    let auto = rows.iter().find(|r| r["row"] == "autostart");
+    if cfg!(target_os = "macos") {
+        // macOS: a setting (on by default), not a setup row; setup turns it on when done.
+        assert!(auto.is_none(), "{rows:?}");
+    } else {
+        assert_eq!(auto.unwrap()["state"], "done");
+    }
     let at = uc_agent::autostart::Autostart::new(&a.profile, "x".into(), &a.dir);
     assert!(at.is_enabled());
     a.uc_json(&["settings", "set", "start-at-login", "off"]);

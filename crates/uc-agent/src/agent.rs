@@ -1889,6 +1889,11 @@ impl Core {
                 "state": "refused",
             }));
         }
+        // macOS: start at login is a setting (on by default, Settings and `uc settings`), not a
+        // setup question; it is turned on when setup finishes ("done" below).
+        if cfg!(target_os = "macos") {
+            return rows;
+        }
         let auto = self.autostart.is_enabled();
         rows.push(json!({
             "row": "autostart",
@@ -1949,6 +1954,15 @@ impl Core {
                 self.save();
             }
             "done" => {
+                // macOS: start at login follows the setting (on by default) once setup is done.
+                if cfg!(target_os = "macos")
+                    && !self.state.setup_done
+                    && self.state.settings.start_at_login
+                    && !self.autostart.is_enabled()
+                    && let Err(e) = self.autostart.enable()
+                {
+                    tracing::warn!(error = %e, "start at login");
+                }
                 self.state.setup_done = true;
                 self.save();
             }

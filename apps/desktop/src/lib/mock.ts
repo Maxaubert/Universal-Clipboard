@@ -74,25 +74,13 @@ export function makeWorld(s: Scenario): World {
     devices: homeDevices(),
     setup: {
       done: true,
-      rows: [
-        {
-          row: 'autostart',
-          title: 'Start with Windows',
-          why: 'The app works after a restart.',
-          state: 'done',
-        },
-        // macOS lists only "Start at login" unless macOS blocks the network or paste.
-        ...(isMac
-          ? []
-          : [
-              {
-                row: 'firewall',
-                title: 'Let your devices find this PC',
-                why: 'Other devices can connect to this PC.',
-                state: 'done' as const,
-              },
-            ]),
-      ],
+      // macOS asks nothing in setup (start at login is a setting, on by default).
+      rows: isMac
+        ? []
+        : [
+            { row: 'autostart', title: 'Start with Windows', why: 'The app works after a restart.', state: 'done' },
+            { row: 'firewall', title: 'Let your devices find this PC', why: 'Other devices can connect to this PC.', state: 'done' },
+          ],
     },
     settings: baseSettings(),
     offer: { code: '418 207', qr: 'UCLIP1:mock-qr-payload-0123456789', expires_ms: 0, notice: null },
@@ -228,7 +216,10 @@ export function createMockApi(initial?: Scenario): Api {
         return structuredClone(w.setup);
       case 'setup.step': {
         const row = String(p.row);
-        if (row === 'done') w.setup.done = true;
+        if (row === 'done') {
+          w.setup.done = true;
+          if (isMac) w.settings['start-at-login'].value = 'on';
+        }
         const r = w.setup.rows.find((x) => x.row === row);
         if (r) r.state = p.answer ? 'done' : 'refused';
         if (row === 'autostart') w.settings['start-at-login'].value = p.answer ? 'on' : 'off';

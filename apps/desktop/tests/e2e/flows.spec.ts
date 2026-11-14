@@ -238,6 +238,16 @@ test('macOS frame: no drawn controls, full-width drag strip, headers clear of th
   expect(card.x + card.width - (gear.x + gear.width)).toBeLessThanOrEqual(30);
 });
 
+test('macOS setup: no permissions step, 4 steps, start at login on after Get started', async ({ page }) => {
+  await page.goto('/?scenario=fresh&platform=mac');
+  await expect(page.getByRole('img', { name: 'Step 1 of 4' })).toBeVisible();
+  await page.getByRole('button', { name: 'Get started' }).click();
+  await expect(page.getByRole('img', { name: 'Step 2 of 4' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Add a device' })).toBeVisible();
+  const calls = await page.evaluate(() => window.__ucMock!.calls.filter((c) => c.call === 'setup.step').map((c) => c.params));
+  expect(calls).toEqual([{ row: 'done', answer: true }]);
+});
+
 test('no send, get or fetch anywhere in the window', async ({ page }) => {
   for (const [scenario, route] of [['home', ''], ['fresh', 'add'], ['home', 'settings'], ['home', 'device'], ['paused', '']]) {
     await open(page, scenario, route || undefined);

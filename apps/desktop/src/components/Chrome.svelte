@@ -3,7 +3,7 @@
   import { getApi } from '../lib/ipc';
   import { inTauri, isMac } from '../lib/platform';
   import { S } from '../lib/strings';
-  import { stepOf, store } from '../lib/store.svelte';
+  import { STEPS, stepOf, store } from '../lib/store.svelte';
 
   let { children }: { children: Snippet } = $props();
   const step = $derived(stepOf(store.route));
@@ -36,10 +36,10 @@
   {#if step > 0}
     <div
       role="img"
-      aria-label={`Step ${step} of 5`}
+      aria-label={`Step ${step} of ${STEPS}`}
       style="position: absolute; top: 19px; left: 0; right: 0; z-index: 1; display: flex; justify-content: center; gap: 5px; pointer-events: none;"
     >
-      {#each [1, 2, 3, 4, 5] as i}
+      {#each Array.from({ length: STEPS }, (_, k) => k + 1) as i}
         <span
           style={`display: block; height: 6px; border-radius: 3px; width: ${i === step ? 22 : 8}px; background: ${i <= step ? '#1D1C1A' : '#BDB8B1'};`}
         ></span>
