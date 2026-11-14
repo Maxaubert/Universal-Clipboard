@@ -151,6 +151,12 @@ impl Autostart {
         }
         #[cfg(target_os = "macos")]
         if self.in_bundle() {
+            // The login item would point into the disk image or a translocated copy.
+            if crate::launch::app_location_problem().is_some() {
+                return Err(std::io::Error::other(
+                    "Move Universal Clipboard to the Applications folder and open it from there first.",
+                ));
+            }
             return sm::register();
         }
         #[cfg(windows)]

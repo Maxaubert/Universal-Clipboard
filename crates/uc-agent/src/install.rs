@@ -165,6 +165,12 @@ pub fn install_hook(p: &Profile, dir: &Path) -> std::io::Result<(String, Vec<Str
     }
     #[cfg(not(windows))]
     {
+        // A link to the disk image or a translocated copy breaks when that path goes away.
+        if !p.is_test() && crate::launch::app_location_problem().is_some() {
+            return Err(std::io::Error::other(
+                "Move Universal Clipboard to the Applications folder and open it from there first.",
+            ));
+        }
         let src = dir.join("uc");
         let link_dir = unix_link_dir(p);
         std::fs::create_dir_all(&link_dir)?;
@@ -303,6 +309,9 @@ pub fn uninstall_hook(p: &Profile, dir: &Path) -> Vec<String> {
     // 2. Stop the agent.
     if !stop_agent(p, Duration::from_secs(5)) {
         lines.push("The background service did not stop in time.".into());
+    }
+    if !p.is_test() {
+        crate::launch::stop_session_job();
     }
     // 3. Start at login.
     let state = p.state_dir();

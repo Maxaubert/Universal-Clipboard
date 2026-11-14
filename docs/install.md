@@ -70,6 +70,34 @@ The installer names the CLI `uclip` when a `uc` command already exists, and says
 | macOS | Drag the app to the Trash; macOS drops the login item. The help text says to use "Remove this device and forget everything" first. | not testable without a VM |
 | Linux | `apt remove`: files and links go, `postrm` prints what stays (autostart entry, state, keyring) and how to clean up. The supervisor of a running agent ends when the binary is gone. | Docker |
 
+## How the agent is started on macOS (2026-11-14, Mac review)
+
+Code: `crates/uc-agent/src/launch.rs`. Checked on the Mac mini (macOS 27.2).
+
+- **Always a launchd job** (real profile, inside the bundle). `uc`, the window and the update
+  helper never start `uc-agent` as their own child: macOS would give the Local Network and
+  "Paste from Other Apps" permissions to the terminal or the window. The agent always runs as
+  the session-only job `io.github.maxaubert.uclip.agent.run`, loaded from `<state>/launchd/`
+  (gone after logout): `kickstart` when it is loaded with the same program, else `bootstrap`
+  (`bootout` first only when the app moved). An agent that holds `agent.lock` is never
+  touched. Test profiles, Windows and Linux start a detached child as before.
+- **The login item is only a launcher.** Started by `SMAppService` (`XPC_SERVICE_NAME` is the
+  label), `uc-agent` starts the session job and exits 0. So turning start at login off
+  (unregister) never ends the running agent. Registering it runs it once at once.
+- **"Already running" under launchd exits 0**, so `KeepAlive {SuccessfulExit=false}` does not
+  restart a second agent every 10 s.
+- **Update marker** `<state>/update/applying` (holds the helper's PID): the helper writes it
+  when it stops the old agent and removes it when the new files are in place, right before it
+  starts the new agent (also on rollback). While it is there, `uc` and the window start nothing
+  and an agent that launchd restarts exits 0. It is stale (and removed) when the helper is gone
+  or after 15 min. The window refreshes when its event stream reconnects, so it leaves "agent
+  is down" by itself. Remove this device (`--uninstall-hook`) also unloads the session job.
+- **App location:** run from a read-only volume under `/Volumes` (the DMG) or App
+  Translocation (another drive is fine), the agent refuses
+  start at login, the `uc` link and self-update, and the status is "Needs attention"
+  (`app-location`): move the app to Applications. The helper also checks that the bundle can
+  be written before it stops the agent.
+
 ## Firewall helper (Windows exe build)
 
 `uc-agent --firewall add|remove|check [--exe PATH]`. One inbound rule "Universal Clipboard" for

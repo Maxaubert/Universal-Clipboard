@@ -1965,6 +1965,14 @@ impl Core {
                 "Set up again: \"uc pair enter\" with a code from another device.".into(),
             ));
         }
+        if !self.profile.is_test() && crate::launch::app_location_problem().is_some() {
+            return Some((
+                "app-location",
+                "The app is running from the disk image or Downloads.".into(),
+                "Quit it, drag Universal Clipboard into the Applications folder, and open it from there."
+                    .into(),
+            ));
+        }
         if self.net_error.as_deref() == Some("setup") {
             return Some((
                 "setup",

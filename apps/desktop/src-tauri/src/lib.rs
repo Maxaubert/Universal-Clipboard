@@ -82,6 +82,9 @@ async fn event_loop(app: tauri::AppHandle) {
         if let Ok(mut c) = Client::connect(&p).await
             && matches!(c.call("subscribe", json!({})).await, Ok(Ok(_)))
         {
+            // (Re)connected, for example to the new agent after an update: the page checks
+            // again, so it leaves the "agent is down" screen by itself.
+            let _ = app.emit("uc-event", json!({"event": "status", "data": {}}));
             while let Some(e) = c.next_event().await {
                 let _ = app.emit("uc-event", json!({"event": e.event, "data": e.data}));
             }
