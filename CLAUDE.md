@@ -6,6 +6,7 @@ Desktop design (locked): `docs/design/desktop`.
 Core library choices (M1): `docs/core.md`.
 Networking choices (M2, plain QUIC, LAN only): `docs/net.md`. Spike S1 so far: `docs/spikes/s1-interfaces.md`.
 Windows clipboard backend and `tools/winhost` (M4): `docs/windows.md`.
+Linux clipboard backends (M6), live tests in Docker: `docs/linux.md`.
 Pairing and membership protocol (signed off, M3 implements it word for word): `docs/protocol.md`.
 Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 macOS clipboard backend (M5): `docs/clip-mac.md`.
