@@ -6,6 +6,7 @@ Desktop design (locked): `docs/design/desktop`.
 Core library choices (M1): `docs/core.md`.
 Networking choices (M2, plain QUIC, LAN only): `docs/net.md`. Spike S1 so far: `docs/spikes/s1-interfaces.md`.
 Pairing and membership protocol (signed off, M3 implements it word for word): `docs/protocol.md`.
+Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 
 ## Rules
 - Code goes on a branch and a PR. Never push code to main. `docs/*.md` may go to main.
