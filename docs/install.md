@@ -11,7 +11,7 @@ on Max's PC or Mac: install and uninstall tests run on CI runners and in Docker.
 
 | OS | Files | Script | Where it is tested |
 |---|---|---|---|
-| Windows | `UniversalClipboard-<v>-windows-x64-setup.exe` (NSIS, per user; one UAC prompt only for the firewall rule) | `packaging/windows/build.ps1` | CI: silent install with `/ADDFIREWALL` (the rule is made by the installer), uninstall, update over the top, name rule, no rule without `/ADDFIREWALL` (`packaging/windows/test-install.ps1`) |
+| Windows | `UniversalClipboard-<v>-windows-x64-setup.exe` (NSIS, per user; one UAC prompt only for the firewall rule) | `packaging/windows/build.ps1` | CI: silent install with `/ADDFIREWALL` (the rule is made by the installer), install over the top while the agent and a stand-in window run, a locked file fails the install, update over the top (every exe hash-compared with the build), uninstall, name rule, no rule without `/ADDFIREWALL` (`packaging/windows/test-install.ps1`) |
 | Windows | `UniversalClipboard-<v>-windows-x64.msix` (Store build, unsigned) | same | CI: signed with a throwaway certificate, installed, alias run, removed |
 | macOS | `UniversalClipboard-<v>-macos-aarch64.dmg` and `...app.tar.gz` (the update archive) | `packaging/macos/build-app.sh` | CI: DMG verified and mounted read-only, bundle signature checked. The Mac mini: bundle built over ssh (no DMG, `SKIP_DMG=1`, nothing opened) |
 | Linux | `universal-clipboard_<v>_amd64.deb` | `packaging/linux/build-deb.sh` | Docker: `packaging/linux/test-deb.sh` (also checks the window and its libraries) in `ubuntu:22.04`, `ubuntu:24.04`, `debian:12` |
@@ -38,6 +38,25 @@ built yet: it needs an apt key and GitHub Pages. Until then, apt updates do not 
   (`HKCU\Environment`). Switches: `/S`, `/UPDATE` (the updater: no stop, nothing opened),
   `/ADDFIREWALL` (also add the firewall rule in a silent install), `/D=<folder>`, uninstaller
   `/REMOVEFIREWALL`.
+- **Windows (NSIS), replacing a running app (bug and fix 2026-11-14):** a silent install over
+  the top used to replace `uc.exe` and the window but not `uc-agent.exe`, with exit code 0.
+  Cause: the installer stopped the agent first and closed the window second, and the open
+  window started the agent again, so `uc-agent.exe` was in use and NSIS skipped it. Now
+  (`packaging/windows/nsis/close-app.ps1`, packed into the setup exe, only processes that run
+  from the install folder): 1. close the window (5 s, then end it), 2. stop the agent
+  (`uc-agent --stop`, not with `/UPDATE`), 3. wait up to 15 s until no `uc-agent.exe`, `uc.exe`,
+  `uclip.exe` or window from the folder runs, then end them (the last resort). 4. Every program
+  file must open for writing, else nothing is replaced: silent mode tries 3 times, then exits
+  with code 2; interactive mode shows Retry/Cancel. 5. The old program files are deleted
+  before the copy and each new one must be there after it, so a failed write is an error
+  (exit 2), never a silent mix of old and new. The uninstaller also closes the window before
+  `--uninstall-hook` (a restarted agent made the state folder and the Run value again).
+- **The self-updater on Windows** is safe from the same race: the helper writes the update
+  marker (`<state>/update/applying`, see "How the agent is started on macOS") before it stops
+  the agent, on every OS, and the window starts the agent only through `uc_cli::connect`,
+  which starts nothing while the marker is there. The setup exe then closes the window to
+  replace it. If a file is still in use, the setup exits 2 and the helper rolls back to the
+  old version (and marks the new one bad) instead of leaving a mixed install.
 - **Windows (MSIX):** manifest `packaging/windows/msix/AppxManifest.xml.in`. Apps: Settings
   (the window), Agent (no list entry, startup task `UcAgentStartup`), Cli (aliases `uc.exe`
   and `uclip.exe`). Firewall rule at package level: inbound UDP, Profile private. `runFullTrust`

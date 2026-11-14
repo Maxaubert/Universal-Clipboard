@@ -9,11 +9,15 @@
 #>
 param(
   [Parameter(Mandatory = $true)] [string]$Setup,
-  [string]$Msix
+  [string]$Msix,
+  # The files the setup exe was built from (build.ps1 leaves them in <out>\stage-windows).
+  [string]$Stage
 )
 $ErrorActionPreference = "Stop"
 if (-not $env:CI) { throw "CI only: this test changes the machine (see the header)." }
 $Setup = (Resolve-Path $Setup).Path
+if (-not $Stage) { $Stage = Join-Path (Split-Path $Setup) "stage-windows" }
+$Stage = (Resolve-Path $Stage).Path
 $dir = Join-Path $env:LOCALAPPDATA "Programs\Universal Clipboard"
 $state = Join-Path $env:LOCALAPPDATA "UniversalClipboard"
 $uninstKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UniversalClipboard"
@@ -23,6 +27,20 @@ function UserPath { (Get-ItemProperty HKCU:\Environment -Name Path -ErrorAction 
 function Run($exe, $argList) {
   $p = Start-Process -FilePath $exe -ArgumentList $argList -Wait -PassThru -NoNewWindow
   return $p.ExitCode
+}
+
+# Every program file in the install folder is the new build, byte for byte.
+$exes = "uc-agent.exe", "uc.exe", "Universal Clipboard.exe"
+function Hash($f) { (Get-FileHash -Algorithm SHA256 $f).Hash }
+function AssertNew($why) {
+  foreach ($e in $exes) {
+    $f = Join-Path $dir $e
+    if (-not (Test-Path $f)) { Fail "${why}: $e missing" }
+    if ((Hash $f) -ne (Hash (Join-Path $Stage $e))) { Fail "${why}: $e is not the new build" }
+  }
+}
+function OursRunning($name) {
+  @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq $name -and $_.ExecutablePath -like "$dir\*" })
 }
 
 function RulePresent {
@@ -62,15 +80,65 @@ if ($fw.rule -ne "present" -or -not $fw.incoming) { Fail "agent firewall check: 
 & $uc settings set start-at-login on | Out-Host
 if (-not (Get-ItemProperty $runKey -Name UniversalClipboard -ErrorAction SilentlyContinue)) { Fail "Run value missing" }
 if (-not (Test-Path (Join-Path $state "state.json"))) { Fail "state.json missing" }
+AssertNew "first install"
 
-# --- 4. An update over the top (/UPDATE) keeps the state.
+# --- 4. Over the top while the app runs (bug 2026-11-14: "setup.exe /S" replaced uc.exe and
+#        the window but not uc-agent.exe, exit 0, and the old agent kept running). The open
+#        window starts the agent again when it goes away; the stand-in does the same: a copy
+#        of cmd.exe named "Universal Clipboard.exe" in the install folder that runs
+#        "uc status" (which starts the agent, like the window) every second.
+#        First make every installed program differ from the new build ("the old version").
+$null = Run $agent "--stop"
+foreach ($e in "uc-agent.exe", "uc.exe") { [IO.File]::AppendAllText((Join-Path $dir $e), "old") }
+Copy-Item (Join-Path $env:WINDIR "System32\cmd.exe") (Join-Path $dir "Universal Clipboard.exe") -Force
+$restart = Join-Path $env:RUNNER_TEMP "uc-window-standin.cmd"
+Set-Content $restart "@echo off`r`n:loop`r`n`"%UC_TEST_DIR%\uc.exe`" status >nul 2>&1`r`nping -n 2 127.0.0.1 >nul`r`ngoto loop`r`n"
+$env:UC_TEST_DIR = $dir
+$standin = Start-Process -FilePath (Join-Path $dir "Universal Clipboard.exe") -ArgumentList "/d /c `"$restart`"" -WindowStyle Hidden -PassThru
+function WaitAgent($want, $why) {
+  $t = [Diagnostics.Stopwatch]::StartNew()
+  while ($t.Elapsed.TotalSeconds -lt 20) {
+    if (((OursRunning "uc-agent.exe").Count -gt 0) -eq $want) { return }
+    Start-Sleep -Milliseconds 250
+  }
+  Fail $why
+}
+WaitAgent $true "the stand-in window did not start the agent"
+# The race itself: stop the agent, and the stand-in starts it again.
+$null = Run $agent "--stop"
+WaitAgent $true "the stand-in window did not start the agent again"
+$code = Run $Setup "/S /D=$dir"
+if ($code -ne 0) { Fail "install over the running app: exit code $code" }
+AssertNew "install over the running app"
+if (-not $standin.HasExited) { Fail "the installer left the window running" }
+if ((OursRunning "uc-agent.exe").Count -gt 0) { Fail "an agent still runs after the install" }
+if (-not (Test-Path (Join-Path $state "state.json"))) { Fail "the install removed the state" }
+
+# --- 5. A program file that stays in use fails the install with an exit code, and nothing is
+#        replaced (here the test holds uc.exe open; the installer cannot end this process).
+[IO.File]::AppendAllText((Join-Path $dir "uc-agent.exe"), "old")
+$lock = [IO.File]::Open((Join-Path $dir "uc.exe"), "Open", "ReadWrite", "None")
+try {
+  $code = Run $Setup "/S /D=$dir"
+} finally {
+  $lock.Close()
+}
+if ($code -eq 0) { Fail "a locked uc.exe did not fail the install" }
+Write-Host "locked file: install exit code $code (expected non-zero)"
+if ((Hash (Join-Path $dir "uc-agent.exe")) -eq (Hash (Join-Path $Stage "uc-agent.exe"))) { Fail "a failed install replaced some files" }
+foreach ($e in $exes) { if (-not (Test-Path (Join-Path $dir $e))) { Fail "a failed install removed $e" } }
+
+# --- 6. An update over the top (/UPDATE, as the update helper runs it) keeps the state and
+#        replaces every program.
 & $uc --version | Out-Host
 $null = Run $agent "--stop"
+foreach ($e in "uc-agent.exe", "uc.exe") { [IO.File]::AppendAllText((Join-Path $dir $e), "old") }
 if ((Run $Setup "/S /UPDATE /D=$dir") -ne 0) { Fail "update install" }
+AssertNew "update"
 if (-not (Test-Path (Join-Path $state "state.json"))) { Fail "an update removed the state" }
 if (-not (RulePresent)) { Fail "an update removed the firewall rule" }
 
-# --- 5. Uninstall (silent, also remove the firewall rule).
+# --- 7. Uninstall (silent, also remove the firewall rule).
 & $uc status --json | Out-Null
 if ((Run (Join-Path $dir "Uninstall.exe") "/S /REMOVEFIREWALL _?=$dir") -ne 0) { Fail "uninstall exit code" }
 Start-Sleep -Seconds 2
@@ -87,7 +155,7 @@ netsh advfirewall firewall show rule name="Universal Clipboard" | Out-Null
 if ($LASTEXITCODE -eq 0) { Fail "firewall rule left behind" }
 Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
 
-# --- 6. Name rule: another "uc" on PATH, so ours is "uclip". Also: a silent install without
+# --- 8. Name rule: another "uc" on PATH, so ours is "uclip". Also: a silent install without
 #        /ADDFIREWALL adds no rule (it never shows a UAC prompt).
 $fake = Join-Path $env:RUNNER_TEMP "fake-uc"
 New-Item -ItemType Directory -Force $fake | Out-Null
@@ -100,7 +168,7 @@ if (-not (Test-Path (Join-Path $dir "uclip.exe")) -or (Test-Path (Join-Path $dir
 if ((Run (Join-Path $dir "Uninstall.exe") "/S _?=$dir") -ne 0) { Fail "uninstall 2" }
 Write-Host "NSIS install/uninstall test: PASS"
 
-# --- 7. MSIX: sign with a throwaway certificate, install, run the alias, remove.
+# --- 9. MSIX: sign with a throwaway certificate, install, run the alias, remove.
 if ($Msix) {
   $Msix = (Resolve-Path $Msix).Path
   $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=UniversalClipboardDev" -KeyUsage DigitalSignature `
