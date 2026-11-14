@@ -11,7 +11,7 @@ on Max's PC or Mac: install and uninstall tests run on CI runners and in Docker.
 
 | OS | Files | Script | Where it is tested |
 |---|---|---|---|
-| Windows | `UniversalClipboard-<v>-windows-x64-setup.exe` (NSIS, per user, no admin) | `packaging/windows/build.ps1` | CI: silent install, uninstall, update over the top, name rule, firewall rule (`packaging/windows/test-install.ps1`) |
+| Windows | `UniversalClipboard-<v>-windows-x64-setup.exe` (NSIS, per user; one UAC prompt only for the firewall rule) | `packaging/windows/build.ps1` | CI: silent install with `/ADDFIREWALL` (the rule is made by the installer), uninstall, update over the top, name rule, no rule without `/ADDFIREWALL` (`packaging/windows/test-install.ps1`) |
 | Windows | `UniversalClipboard-<v>-windows-x64.msix` (Store build, unsigned) | same | CI: signed with a throwaway certificate, installed, alias run, removed |
 | macOS | `UniversalClipboard-<v>-macos-aarch64.dmg` and `...app.tar.gz` (the update archive) | `packaging/macos/build-app.sh` | CI: DMG verified and mounted read-only, bundle signature checked. The Mac mini: bundle built over ssh (no DMG, `SKIP_DMG=1`, nothing opened) |
 | Linux | `universal-clipboard_<v>_amd64.deb` | `packaging/linux/build-deb.sh` | Docker: `packaging/linux/test-deb.sh` (also checks the window and its libraries) in `ubuntu:22.04`, `ubuntu:24.04`, `debian:12` |
@@ -36,7 +36,8 @@ built yet: it needs an apt key and GitHub Pages. Until then, apt updates do not 
   (or `uclip.exe`), the window, `Uninstall.exe`, `cli-name.txt`. Uninstall entry in
   `HKCU\...\Uninstall\UniversalClipboard`. The folder goes on the user PATH
   (`HKCU\Environment`). Switches: `/S`, `/UPDATE` (the updater: no stop, nothing opened),
-  `/D=<folder>`, uninstaller `/REMOVEFIREWALL`.
+  `/ADDFIREWALL` (also add the firewall rule in a silent install), `/D=<folder>`, uninstaller
+  `/REMOVEFIREWALL`.
 - **Windows (MSIX):** manifest `packaging/windows/msix/AppxManifest.xml.in`. Apps: Settings
   (the window), Agent (no list entry, startup task `UcAgentStartup`), Cli (aliases `uc.exe`
   and `uclip.exe`). Firewall rule at package level: inbound UDP, Profile private. `runFullTrust`
@@ -48,7 +49,8 @@ built yet: it needs an apt key and GitHub Pages. Until then, apt updates do not 
   `io.github.maxaubert.uclip.agent`, the CLI as `...cli`.
 - **Linux:** `/usr/lib/universal-clipboard/`, links `/usr/bin/uc-agent` and `/usr/bin/uc` (or
   `uclip`), the icon, and a menu entry when the window is built. Start at login is per user
-  (XDG autostart, made by `uc setup` or the window), never by the package.
+  (XDG autostart, made by the agent on its first run, decision 2026-11-14), never by the
+  package.
 
 ## The `uc` name rule (plan 3.2)
 
@@ -105,10 +107,26 @@ the agent program: UDP, **Private profile only, remote LocalSubnet only**, never
 4.1). Add and remove need an administrator: when not elevated, the helper starts itself with
 `runas` (one UAC prompt) and waits. Exit codes: 0 done, 1 failed, 3 the user said no.
 
-- `uc setup` runs it when the user says yes to "Let your devices find this PC". A "No" in the
-  UAC prompt counts as no: the agent runs in outbound-only mode. The agent itself never shows
-  a UAC prompt. The window (M8b) should do the same as `uc setup`.
+- **Decision 2026-11-14 (Max): the NSIS installer adds the rule at install time.** Windows
+  setup asks nothing that shows a system prompt later. After the files and the install hook,
+  the installer runs `uc-agent --firewall check`; when the rule is missing it runs
+  `--firewall add` (one UAC prompt, the helper elevates only itself; the install stays per
+  user). "No" (exit 3) or a failure (exit 1) does not stop the install. A silent install
+  (`/S`, also the updater) never prompts unless `/ADDFIREWALL` is given; an update keeps the
+  `uc-agent.exe` path the rule is tied to, so it keeps working.
+- The agent checks the rule at each network start (`netsh ... show rule`, no administrator, no
+  window). There: it accepts incoming connections. Missing: outbound-only mode, and `uc status`
+  (and the IPC `status` reply, field `note`) shows a non-blocking note with the fix. Only when
+  the device is in a group and no other device is connected does the status become "Needs
+  attention" (`fix_code` `firewall`). The network never waits for a setup answer.
+- The fix: `uc firewall add` (runs the helper, one UAC prompt, then IPC `firewall.check`) and
+  the window's Fix (the shell command `firewall_add`, the same code: `uc_cli::add_firewall_rule`).
+  `uc firewall check` shows the state. The agent itself never shows a UAC prompt.
+- Old `state.json` files have a `firewall` field (the setup row before 2026-11-14). They still
+  load; the field is ignored.
 - Test profiles never elevate and use their own rule name (`Universal Clipboard test <name>`).
+  The agent in a test profile never looks at the real rule: `UCLIP_TEST_FIREWALL_RULE=absent`
+  (or `present`) fakes the check (`crates/uc-cli/tests/agents.rs`).
   The real add, check and remove run only on CI (`UCLIP_TEST_FIREWALL=1`, elevated runner).
 - The MSIX manifest **cannot** limit remote addresses: `RemoteAddress` on `desktop2:Rule` is
   rejected by makeappx ("not defined in the DTD/Schema", checked 2026-11-14). The Store build

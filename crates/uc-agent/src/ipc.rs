@@ -42,6 +42,7 @@ pub const CALLS: &[&str] = &[
     "leave",
     "setup.status",
     "setup.step",
+    "firewall.check",
     "version",
 ];
 

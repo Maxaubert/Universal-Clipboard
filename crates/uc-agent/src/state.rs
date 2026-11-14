@@ -24,19 +24,6 @@ pub enum Pause {
     Forever,
 }
 
-/// The answer to the Windows firewall row (plan 2.2). Other OSes keep `Unanswered`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Firewall {
-    /// Not asked yet: on Windows the network does not start (order rule).
-    #[default]
-    Unanswered,
-    /// The user allowed incoming connections.
-    Allowed,
-    /// The user refused: outbound-only mode.
-    Refused,
-}
-
 /// A notice to show until the user acts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -113,10 +100,11 @@ pub struct StateFile {
     pub book: String,
     /// A notice for the user.
     pub notice: Option<Notice>,
-    /// The Windows firewall row.
-    pub firewall: Firewall,
     /// `uc setup` or the window's setup finished once.
     pub setup_done: bool,
+    /// Start at login was turned on by default once (decision 2026-11-14, Max). After that,
+    /// the user's own choice stands: the agent never turns it on again by itself.
+    pub autostart_default_done: bool,
     /// Last activity, newest last, at most [`ACTIVITY_MAX`].
     pub activity: Vec<Activity>,
     /// The pairing-code lockout ladder.
@@ -217,6 +205,26 @@ mod tests {
             lockout_notice(back.left_ms(now)),
             "Too many wrong codes. Try again in 5 minutes."
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Files from before 2026-11-14 have a `firewall` field (the old Windows setup row). They
+    /// still load; the field is ignored (the agent checks the rule itself now).
+    #[test]
+    fn old_files_with_the_firewall_row_load() {
+        let dir = std::env::temp_dir().join(format!("uc-state-fw-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            StateFile::path(&dir),
+            br#"{"version":1,"port":7,"firewall":"refused","setup_done":true}"#,
+        )
+        .unwrap();
+        let s = StateFile::load(&dir);
+        assert_eq!(s.port, 7);
+        assert!(s.setup_done);
+        assert!(!s.autostart_default_done);
+        assert!(!dir.join("state.json.bad").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

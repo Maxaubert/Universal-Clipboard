@@ -6,11 +6,12 @@
 
   let error = $state<string | null>(null);
 
-  // Nothing to ask (macOS: start at login is a setting, on by default): finish setup and go
-  // straight to adding a device.
+  // Nothing to ask (decision 2026-11-14: the installer adds the Windows firewall rule, start
+  // at login is a setting, on by default): finish setup and go straight to adding a device.
+  // The permissions screen shows only when the OS blocks something (macOS rows).
   async function start() {
     error = null;
-    if ((store.setup?.rows ?? []).length > 0) {
+    if (store.needsPerms) {
       store.go('perms');
       return;
     }

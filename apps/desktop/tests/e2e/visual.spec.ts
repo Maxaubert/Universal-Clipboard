@@ -20,11 +20,19 @@ interface Screen {
   scenario: string;
   route?: string;
   act?: (page: Page) => Promise<void>;
+  /** A higher limit where the app differs from the design on purpose. */
+  maxDiff?: number;
 }
 
+// Decision 2026-11-14: no OS asks anything in setup, so the setup screens show 4 steps, not the
+// design's 5 (a few pixels of the step dots differ). The permissions screen shows only when
+// macOS blocks something ('mac-blocked'): L02 shows the two macOS rows instead of the design's
+// Windows rows.
 const screens: Screen[] = [
   { id: 'L01', file: 'L01-welcome', scenario: 'fresh', route: 'welcome' },
-  { id: 'L02', file: 'L02-permissions', scenario: 'fresh', route: 'perms' },
+  // L02: the macOS rows (other titles and icons) differ from the design's Windows rows on
+  // purpose; the layout is the same. 0.93% on 2026-11-14.
+  { id: 'L02', file: 'L02-permissions', scenario: 'mac-blocked', route: 'perms', maxDiff: 2 },
   { id: 'L03', file: 'L03-add', scenario: 'fresh', route: 'add' },
   { id: 'L04', file: 'L04-show-code', scenario: 'fresh', route: 'show' },
   {
@@ -102,7 +110,7 @@ for (const s of screens) {
     const r = compare(design, app);
     fs.writeFileSync(path.join(outDir, `${s.file}.png`), r.png);
     results.push({ id: s.id, file: s.file, percent: r.percent });
-    expect(r.percent, `${s.id} differs from the design by ${r.percent.toFixed(2)}%`).toBeLessThanOrEqual(MAX_DIFF_PERCENT);
+    expect(r.percent, `${s.id} differs from the design by ${r.percent.toFixed(2)}%`).toBeLessThanOrEqual(s.maxDiff ?? MAX_DIFF_PERCENT);
   });
 }
 
