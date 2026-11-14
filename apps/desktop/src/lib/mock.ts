@@ -13,9 +13,10 @@ import type {
   Status,
 } from './types';
 
-// 'fresh' is a new Windows PC: no setup rows (decision 2026-11-14), so the window skips the
-// permissions screen. 'fresh-mac' is a new Mac: the two macOS rows.
-export type Scenario = 'fresh' | 'fresh-mac' | 'home' | 'paused' | 'attention' | 'vpn' | 'lockout' | 'down';
+// 'fresh' is a new device: no setup rows on any OS (decision 2026-11-14), so the window skips
+// the permissions screen. 'mac-blocked' is a new Mac where macOS blocks the local network and
+// paste access: the only case with rows (the agent shows them only then).
+export type Scenario = 'fresh' | 'mac-blocked' | 'home' | 'paused' | 'attention' | 'vpn' | 'lockout' | 'down';
 
 interface World {
   status: Status;
@@ -74,14 +75,14 @@ export function makeWorld(s: Scenario): World {
   const w: World = {
     status: baseStatus(),
     devices: homeDevices(),
-    // Windows has no setup rows left: the installer adds the firewall rule and start at
+    // No setup rows on any OS: the installer adds the Windows firewall rule, and start at
     // login is on by default (decision 2026-11-14).
     setup: { done: true, rows: [] },
     settings: baseSettings(),
     offer: { code: '418 207', qr: 'UCLIP1:mock-qr-payload-0123456789', expires_ms: 0, notice: null },
     down: false,
   };
-  if (s === 'fresh' || s === 'fresh-mac') {
+  if (s === 'fresh' || s === 'mac-blocked') {
     w.devices = [dev("Max's PC", 'Windows', 'This device', true)];
     w.status = {
       ...w.status,
@@ -93,7 +94,7 @@ export function makeWorld(s: Scenario): World {
     };
     w.setup.done = false;
   }
-  if (s === 'fresh-mac') {
+  if (s === 'mac-blocked') {
     w.devices = [dev("Max's Mac", 'macOS', 'This device', true)];
     w.status.this_device = "Max's Mac";
     w.setup.rows = [
@@ -101,13 +102,13 @@ export function makeWorld(s: Scenario): World {
         row: 'local-network',
         title: 'Find devices on your network',
         why: 'Needed to reach devices on your network.',
-        state: 'todo',
+        state: 'refused',
       },
       {
         row: 'paste',
         title: 'Read what you copy',
         why: 'The app must read the clipboard without asking each time.',
-        state: 'todo',
+        state: 'refused',
       },
     ];
   }

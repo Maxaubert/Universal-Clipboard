@@ -67,7 +67,7 @@ describe('Needs attention', () => {
 });
 
 describe('Setup', () => {
-  it('skips the permissions screen when no rows are left (Windows)', async () => {
+  it('skips the permissions screen when there are no rows (every OS)', async () => {
     const m = await open('fresh');
     await fireEvent.click(await screen.findByRole('button', { name: 'Get started' }));
     expect(await screen.findByRole('heading', { name: 'Add a device' })).toBeTruthy();
@@ -75,11 +75,11 @@ describe('Setup', () => {
     expect(m.calls.some((c) => c.call === 'setup.step' && c.params.row === 'done')).toBe(true);
     expect(m.world.setup.done).toBe(true);
   });
-  it('shows the two macOS rows', async () => {
-    await open('fresh-mac');
+  it('shows the macOS rows only when macOS blocks something, as part of step 1', async () => {
+    await open('mac-blocked');
     await fireEvent.click(await screen.findByRole('button', { name: 'Get started' }));
     expect(await screen.findByRole('heading', { name: 'Two permissions' })).toBeTruthy();
-    expect(screen.getByRole('img', { name: 'Step 2 of 5' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Step 1 of 4' })).toBeTruthy();
     expect(document.querySelector('[data-row="local-network"]')).not.toBeNull();
     expect(document.querySelector('[data-row="paste"]')).not.toBeNull();
     expect(document.querySelector('[data-row="firewall"]')).toBeNull();

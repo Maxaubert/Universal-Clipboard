@@ -1,11 +1,16 @@
 <script lang="ts">
   import Art from '../components/Art.svelte';
   import { S } from '../lib/strings';
+  import { failureText } from '../lib/ipc';
   import { store } from '../lib/store.svelte';
 
-  // Windows and Linux have no setup rows left (decision 2026-11-14): skip the permissions
-  // screen and mark setup as done.
+  let error = $state<string | null>(null);
+
+  // Nothing to ask (decision 2026-11-14: the installer adds the Windows firewall rule, start
+  // at login is a setting, on by default): finish setup and go straight to adding a device.
+  // The permissions screen shows only when the OS blocks something (macOS rows).
   async function start() {
+    error = null;
     if (store.needsPerms) {
       store.go('perms');
       return;
@@ -13,10 +18,10 @@
     try {
       await store.api!.call('setup.step', { row: 'done', answer: true });
       await store.refresh();
-    } catch {
-      /* only a flag; the next screens work without it */
+      store.go('add');
+    } catch (e) {
+      error = failureText(e);
     }
-    store.go('add');
   }
 </script>
 
@@ -30,6 +35,7 @@
       type="button"
       style="height: 46px; padding: 0 26px; border: 0; border-radius: 10px; background: #1D1C1A; color: #FFFFFF; font-size: 15px; font-weight: 600;"
       onclick={start}>{S.getStarted}</button>
+    {#if error}<div class="err" role="alert" style="margin-top: 12px;">{error}</div>{/if}
   </div>
   <div style="margin-top: auto; margin-left: -14px; margin-right: -14px;">
     <Art name="welcome" />

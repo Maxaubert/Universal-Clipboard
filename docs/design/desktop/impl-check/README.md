@@ -6,12 +6,12 @@ is hidden in both (the design has a fixed picture, the app draws the real code).
 
 | Screen | File | Different pixels | Picture |
 |---|---|---|---|
-| L01 | L01-welcome | 0.00% | ![L01](L01-welcome.png) |
-| L02 | L02-permissions | 0.91% | ![L02](L02-permissions.png) |
-| L03 | L03-add | 0.00% | ![L03](L03-add.png) |
-| L04 | L04-show-code | 0.00% | ![L04](L04-show-code.png) |
-| L05 | L05-enter-code | 0.00% | ![L05](L05-enter-code.png) |
-| L06 | L06-connected | 0.00% | ![L06](L06-connected.png) |
+| L01 | L01-welcome | 0.06% | ![L01](L01-welcome.png) |
+| L02 | L02-permissions | 0.93% | ![L02](L02-permissions.png) |
+| L03 | L03-add | 0.06% | ![L03](L03-add.png) |
+| L04 | L04-show-code | 0.06% | ![L04](L04-show-code.png) |
+| L05 | L05-enter-code | 0.06% | ![L05](L05-enter-code.png) |
+| L06 | L06-connected | 0.06% | ![L06](L06-connected.png) |
 | L07 | L07-home | 0.00% | ![L07](L07-home.png) |
 | L08 | L08-device | 0.00% | ![L08](L08-device.png) |
 | L09 | L09-settings | 0.00% | ![L09](L09-settings.png) |

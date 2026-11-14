@@ -7,20 +7,17 @@
   import type { SetupRow } from '../lib/types';
 
   let error = $state<string | null>(null);
-  // Only macOS has rows left (decision 2026-11-14): Find devices on your network, Read what
-  // you copy. Elsewhere the welcome screen skips this one.
+  // No OS asks anything in setup any more (decision 2026-11-14). Rows appear only when the
+  // OS blocks something (macOS: Local Network, paste access); otherwise Welcome skips this.
   const rows = $derived(askRows(store.setup));
 
   const label = (r: SetupRow) => S.rowTitles[r.row] ?? r.title;
-  const wifi =
-    '<path d="M2 8.8a15 15 0 0 1 20 0"></path><path d="M5 12.5a10 10 0 0 1 14 0"></path><path d="M8.5 16.4a5 5 0 0 1 7 0"></path><path d="M12 20h.01"></path>';
-  const clipboard =
-    '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>';
 
   function icon(r: SetupRow): string {
-    if (r.row === 'local-network') return wifi;
-    if (r.row === 'paste') return clipboard;
-    return r.row === 'firewall' ? art.permFirewall : art.permStart;
+    if (r.row === 'firewall') return art.permFirewall;
+    if (r.row === 'local-network') return art.permNetwork;
+    if (r.row === 'paste') return art.permPaste;
+    return art.permStart;
   }
 
   async function allow(r: SetupRow) {
@@ -49,7 +46,7 @@
   <BackBar onback={() => store.goBack('welcome')} />
   <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 32px;">
     <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;">
-      <h1 style="font-size: 28px; line-height: 1.15;">{S.permTitle}</h1>
+      <h1 style="font-size: 28px; line-height: 1.15;">{S.permTitle(rows.length)}</h1>
       <p style="margin: 0; font-size: 15px; color: #3F3C38;">{S.permSub}</p>
     </div>
     <div style="display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;">
@@ -60,7 +57,7 @@
           data-state={r.state}
           style={`width: 190px; height: 200px; box-sizing: border-box; background: #FFFFFF; border: 1px solid ${done ? '#D9D6D1' : '#1D1C1A'}; border-radius: 14px; padding: 18px 14px 16px 14px; display: flex; flex-direction: column; align-items: center; text-align: center;`}
         >
-          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-top: 10px;">{@html icon(r)}</svg>
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" color="#1D1C1A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-top: 10px;">{@html icon(r)}</svg>
           <div style="margin-top: 16px; font-size: 14px; font-weight: 600; line-height: 1.3;">{label(r)}</div>
           {#if done}
             <div style="margin-top: auto; height: 34px; display: flex; align-items: center;">

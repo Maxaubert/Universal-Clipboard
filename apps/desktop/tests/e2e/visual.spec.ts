@@ -24,26 +24,27 @@ interface Screen {
   maxDiff?: number;
 }
 
-// The setup screens use a new Mac ('fresh-mac'): only macOS still has the permissions screen
-// and the 5-step indicator of the design (decision 2026-11-14). L02 then shows the two macOS
-// rows instead of the design's Windows rows.
+// Decision 2026-11-14: no OS asks anything in setup, so the setup screens show 4 steps, not the
+// design's 5 (a few pixels of the step dots differ). The permissions screen shows only when
+// macOS blocks something ('mac-blocked'): L02 shows the two macOS rows instead of the design's
+// Windows rows.
 const screens: Screen[] = [
-  { id: 'L01', file: 'L01-welcome', scenario: 'fresh-mac', route: 'welcome' },
+  { id: 'L01', file: 'L01-welcome', scenario: 'fresh', route: 'welcome' },
   // L02: the macOS rows (other titles and icons) differ from the design's Windows rows on
-  // purpose; the layout is the same. 0.91% on 2026-11-14.
-  { id: 'L02', file: 'L02-permissions', scenario: 'fresh-mac', route: 'perms', maxDiff: 2 },
-  { id: 'L03', file: 'L03-add', scenario: 'fresh-mac', route: 'add' },
-  { id: 'L04', file: 'L04-show-code', scenario: 'fresh-mac', route: 'show' },
+  // purpose; the layout is the same. 0.93% on 2026-11-14.
+  { id: 'L02', file: 'L02-permissions', scenario: 'mac-blocked', route: 'perms', maxDiff: 2 },
+  { id: 'L03', file: 'L03-add', scenario: 'fresh', route: 'add' },
+  { id: 'L04', file: 'L04-show-code', scenario: 'fresh', route: 'show' },
   {
     id: 'L05',
     file: 'L05-enter-code',
-    scenario: 'fresh-mac',
+    scenario: 'fresh',
     route: 'enter',
     act: async (p) => {
       await p.getByRole('textbox', { name: 'Code' }).pressSequentially('4182');
     },
   },
-  { id: 'L06', file: 'L06-connected', scenario: 'fresh-mac', route: 'connected' },
+  { id: 'L06', file: 'L06-connected', scenario: 'fresh', route: 'connected' },
   { id: 'L07', file: 'L07-home', scenario: 'home' },
   { id: 'L08', file: 'L08-device', scenario: 'home', route: 'device' },
   { id: 'L09', file: 'L09-settings', scenario: 'home', route: 'settings' },

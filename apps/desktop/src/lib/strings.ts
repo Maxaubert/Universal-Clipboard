@@ -1,4 +1,6 @@
 // All English text of the window, in one place (ready for a Norwegian file later).
+import { isMac } from './platform';
+
 export const S = {
   appName: 'Universal Clipboard',
   minimize: 'Minimize',
@@ -10,7 +12,8 @@ export const S = {
   welcomeSub: 'Copy once. Paste anywhere.',
   getStarted: 'Get started',
 
-  permTitle: 'Two permissions',
+  // Rows appear only when the OS blocks something (macOS: up to two), so the count varies.
+  permTitle: (n: number) => `${['No', 'One', 'Two', 'Three', 'Four'][n] ?? n} permission${n === 1 ? '' : 's'}`,
   permSub: 'You only do this once.',
   allow: 'Allow',
   rowTitles: {} as Record<string, string>,
@@ -60,8 +63,9 @@ export const S = {
   renameLabel: 'Device name',
 
   settingsTitle: 'Settings',
-  startAtSignIn: 'Start at sign-in',
-  startAtSignInLabel: 'Start when you sign in',
+  // macOS says "login" (System Settings > General > Login Items); Windows says "sign in".
+  startAtSignIn: isMac ? 'Open at login' : 'Start at sign-in',
+  startAtSignInLabel: isMac ? 'Open when you log in' : 'Start when you sign in',
   skipPasswords: 'Skip passwords',
   skipPasswordsLabel: 'Skip password manager copies, always on',
   version: (v: string) => `Version ${v}`,

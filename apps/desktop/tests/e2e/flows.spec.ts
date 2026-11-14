@@ -8,31 +8,30 @@ async function open(page: Page, scenario: string, route?: string) {
   await page.waitForFunction(() => !!window.__ucMock);
 }
 
-const steps = (page: Page, n: number) => expect(page.getByRole('img', { name: `Step ${n} of 5` })).toBeVisible();
-// Windows and Linux: no permissions screen, 4 steps (decision 2026-11-14).
-const steps4 = (page: Page, n: number) => expect(page.getByRole('img', { name: `Step ${n} of 4` })).toBeVisible();
+// No permissions step on any OS, 4 steps (decision 2026-11-14).
+const steps = (page: Page, n: number) => expect(page.getByRole('img', { name: `Step ${n} of 4` })).toBeVisible();
 const mockCalls = (page: Page) => page.evaluate(() => window.__ucMock!.calls.map((c) => c.call));
 
-test('Windows setup has no permissions screen: welcome, add, show a code (4 steps)', async ({ page }) => {
+test('setup has no permissions screen (Windows, Linux, macOS): welcome, add, show a code (4 steps)', async ({ page }) => {
   await open(page, 'fresh');
-  await steps4(page, 1);
+  await steps(page, 1);
   await page.getByRole('button', { name: 'Get started' }).click();
-  await steps4(page, 2);
+  await steps(page, 2);
   await expect(page.getByRole('heading', { name: 'Add a device' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Two permissions' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Show a code' }).click();
-  await steps4(page, 3);
+  await steps(page, 3);
   await expect(page.getByTestId('code')).toHaveText('418 207');
   expect(await page.evaluate(() => window.__ucMock!.world.setup.done)).toBe(true);
 });
 
-test('whole setup flow (macOS): welcome, permissions, add, show a code, connected, home', async ({ page }) => {
-  await open(page, 'fresh-mac');
+test('whole setup flow (macOS blocks network and paste): welcome, permissions, add, show a code, connected, home', async ({ page }) => {
+  await open(page, 'mac-blocked');
   await steps(page, 1);
   await expect(page.getByRole('heading', { name: 'Your latest copy, on every device.' })).toBeVisible();
   await page.getByRole('button', { name: 'Get started' }).click();
 
-  await steps(page, 2);
+  await steps(page, 1);
   await expect(page.getByRole('heading', { name: 'Two permissions' })).toBeVisible();
   await page.getByRole('button', { name: 'Find devices on your network' }).click();
   await expect(page.locator('[data-row="local-network"]').getByRole('img', { name: 'Allowed' })).toBeVisible();
@@ -40,11 +39,11 @@ test('whole setup flow (macOS): welcome, permissions, add, show a code, connecte
   await expect(page.locator('[data-row="paste"]').getByRole('img', { name: 'Allowed' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  await steps(page, 3);
+  await steps(page, 2);
   await expect(page.getByRole('heading', { name: 'Add a device' })).toBeVisible();
   await page.getByRole('button', { name: 'Show a code' }).click();
 
-  await steps(page, 4);
+  await steps(page, 3);
   await expect(page.getByTestId('code')).toHaveText('418 207');
   await expect(page.getByRole('img', { name: 'QR code to scan with your other device' })).toBeVisible();
   await page.evaluate(() => {
@@ -53,7 +52,7 @@ test('whole setup flow (macOS): welcome, permissions, add, show a code, connecte
     m.emit('pair.added', { name: 'Mac mini' });
   });
 
-  await steps(page, 5);
+  await steps(page, 4);
   await expect(page.getByRole('heading', { name: 'Mac mini is added' })).toBeVisible();
   await page.getByRole('button', { name: 'Go to my devices' }).click();
   await expect(page.getByTestId('headline')).toHaveText('Working');
@@ -64,7 +63,7 @@ test('whole setup flow (macOS): welcome, permissions, add, show a code, connecte
 test('enter a code: wrong code, then the right one', async ({ page }) => {
   await open(page, 'fresh', 'add');
   await page.getByRole('button', { name: 'Enter a code' }).click();
-  await steps4(page, 3);
+  await steps(page, 3);
   await expect(page.getByRole('button', { name: 'Connect' })).toBeDisabled();
   await page.getByRole('textbox', { name: 'Code' }).pressSequentially('418207');
   await expect(page.getByRole('group')).toHaveAttribute('aria-label', 'Code, 6 of 6 digits entered');
@@ -81,7 +80,7 @@ test('enter a code: wrong code, then the right one', async ({ page }) => {
   });
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.getByRole('heading', { name: 'Mac mini is added' })).toBeVisible();
-  await steps4(page, 4);
+  await steps(page, 4);
 });
 
 test('enter a code in a group asks before leaving it', async ({ page }) => {
@@ -177,7 +176,7 @@ test('settings: start at sign-in, and remove this device forgets everything', as
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByRole('alertdialog')).toContainText('Remove this device and forget everything?');
   await page.getByRole('button', { name: 'Remove and forget' }).click();
-  await steps4(page, 1);
+  await steps(page, 1);
   expect(await mockCalls(page)).toContain('leave');
 });
 
@@ -234,6 +233,34 @@ test('title bar: custom controls and a drag region, no native decorations', asyn
   await page.getByRole('button', { name: 'Maximize' }).click();
   await page.getByRole('button', { name: 'Close' }).click();
   expect(await page.evaluate(() => window.__ucMock!.windowLog)).toEqual(['minimize', 'maximize', 'close']);
+});
+
+test('macOS frame: no drawn controls, full-width drag strip, headers clear of the traffic lights', async ({ page }) => {
+  await page.goto('/?scenario=home&route=settings&platform=mac');
+  await expect(page.getByTestId('card')).toBeVisible();
+  for (const name of ['Minimize', 'Maximize', 'Close']) {
+    await expect(page.getByRole('button', { name })).toHaveCount(0);
+  }
+  const card = (await page.getByTestId('card').boundingBox())!;
+  const drag = (await page.locator('[data-tauri-drag-region]').boundingBox())!;
+  expect(Math.round(drag.width)).toBe(Math.round(card.width) - 2);
+  // The native lights are 16 px buttons at x 17, 40 and 63, so they end at 79 px; the back
+  // button starts after them.
+  const back = (await page.getByRole('button', { name: 'Back' }).boundingBox())!;
+  expect(back.x - card.x).toBeGreaterThanOrEqual(83);
+  await page.goto('/?scenario=attention&platform=mac');
+  const gear = (await page.getByRole('button', { name: 'Settings' }).boundingBox())!;
+  expect(card.x + card.width - (gear.x + gear.width)).toBeLessThanOrEqual(30);
+});
+
+test('macOS setup: no permissions step, 4 steps, Get started only marks setup done', async ({ page }) => {
+  await page.goto('/?scenario=fresh&platform=mac');
+  await expect(page.getByRole('img', { name: 'Step 1 of 4' })).toBeVisible();
+  await page.getByRole('button', { name: 'Get started' }).click();
+  await expect(page.getByRole('img', { name: 'Step 2 of 4' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Add a device' })).toBeVisible();
+  const calls = await page.evaluate(() => window.__ucMock!.calls.filter((c) => c.call === 'setup.step').map((c) => c.params));
+  expect(calls).toEqual([{ row: 'done', answer: true }]);
 });
 
 test('no send, get or fetch anywhere in the window', async ({ page }) => {

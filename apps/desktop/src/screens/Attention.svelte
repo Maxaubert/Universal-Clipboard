@@ -28,7 +28,7 @@
 </script>
 
 <div style="flex: 1; display: flex; flex-direction: column; padding: 4px 28px 28px 28px;">
-  <div style="height: 36px; flex: none; display: flex; align-items: center; justify-content: flex-end; margin-right: 92px;">
+  <div style="height: 36px; flex: none; display: flex; align-items: center; justify-content: flex-end; margin-right: var(--wc);">
     <button type="button" class="iconbtn" aria-label={S.settings} onclick={() => store.go('settings')}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html art.gear}</svg>
     </button>

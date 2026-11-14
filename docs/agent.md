@@ -129,8 +129,10 @@ only), `device-name` (a `rename` change when in a group).
   turns it on once (`state.json` `autostart_default_done`); a later "off" from the settings or
   `uc settings set start-at-login off` is never undone. Setups from before the decision keep
   their answer. Test profiles do this in their sandbox.
-- **Setup rows left:** macOS only (local network, paste access), plus "desktop" when a Linux
-  desktop blocks the clipboard. On Windows and Linux `uc setup` only marks setup as done.
+- **Setup rows left:** none of their own on any OS. macOS shows "local-network" only when the
+  network failed (Allow retries it) and "paste" only when paste access is not "allow" (macOS
+  lets the launchd agent do both without a prompt, checked 2026-11-14 on macOS 27.2); "desktop"
+  when a Linux desktop blocks the clipboard. Otherwise `uc setup` only marks setup as done.
 - **macOS paste access (plan 3.9):** the agent reads `accessBehavior`; "Ask" or "Deny" gives
   "Needs attention". The "detect first" step uses the pasteboard **type list**, which reads no
   content and shows no prompt (M5 checked this); the `detect*` pattern methods add nothing for

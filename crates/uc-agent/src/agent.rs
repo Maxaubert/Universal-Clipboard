@@ -1878,27 +1878,37 @@ impl Core {
 
     /// The setup rows that are left. Decision 2026-11-14 (Max): nothing that shows a system
     /// prompt later is asked here. The Windows firewall rule comes from the installer, and
-    /// start at login is on by default (a switch in the settings), so Windows and Linux have
-    /// no rows (only "desktop" when the clipboard is blocked). macOS keeps its two rows.
+    /// start at login is on by default (a switch in the settings, see `default_autostart`),
+    /// so no OS has a row of its own. Rows appear only when something is blocked: macOS
+    /// Local Network or paste access, or "desktop" when the clipboard cannot be used.
     fn setup_rows(&self) -> Vec<Value> {
         let mut rows = Vec::new();
+        // macOS: the agent is a launchd job, and macOS lets it use the local network and read
+        // the clipboard without a prompt (checked 2026-11-14 on macOS 27.2 with a never-seen
+        // signing identity: Local Network entry created as allowed, paste access "allow").
+        // So these rows appear only when macOS actually blocks something; no Allow button
+        // that does nothing.
         if cfg!(target_os = "macos") {
+            if self.net_error.is_some() {
+                rows.push(json!({
+                    "row": "local-network",
+                    "title": "Find devices on your network",
+                    "why": "Needed to reach devices on your network.",
+                    "if_refused": "Sync does not work on the network until this is allowed in System Settings > Privacy & Security > Local Network.",
+                    "state": "refused",
+                }));
+            }
             let access = self.clip.paste_access().unwrap_or("allow");
-            rows.push(json!({
-                "row": "local-network",
-                "title": "Find devices on your network",
-                "why": "Needed to reach devices on your network.",
-                "if_refused": "Sync does not work on the network until this is allowed in System Settings > Privacy & Security > Local Network.",
-                "state": if self.net.is_some() { "done" } else { "todo" },
-            }));
-            rows.push(json!({
-                "row": "paste",
-                "title": "Read what you copy",
-                "why": "The app must read the clipboard without asking each time.",
-                "if_refused": "Sync from this Mac does not work. Sync to this Mac still works.",
-                "state": match access { "allow" => "done", "deny" => "refused", _ => "todo" },
-                "access": access,
-            }));
+            if access != "allow" {
+                rows.push(json!({
+                    "row": "paste",
+                    "title": "Read what you copy",
+                    "why": "The app must read the clipboard without asking each time.",
+                    "if_refused": "Sync from this Mac does not work. Sync to this Mac still works.",
+                    "state": match access { "deny" | "ask" => "refused", _ => "todo" },
+                    "access": access,
+                }));
+            }
         }
         if let Some(e) = &self.clip_error {
             rows.push(json!({
@@ -1961,8 +1971,16 @@ impl Core {
                     let _ = self.clip.read();
                 }
             }
-            "local-network" => {}
+            "local-network" => {
+                // Shown only after the network failed: try again (the user may have just
+                // allowed it in System Settings).
+                if yes {
+                    self.start_net();
+                }
+            }
             "done" => {
+                // Start at login is already on from the first run (`default_autostart`, every
+                // OS), so finishing setup is only a flag.
                 self.state.setup_done = true;
                 self.save();
             }

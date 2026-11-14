@@ -1,13 +1,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { getApi } from '../lib/ipc';
+  import { inTauri, isMac } from '../lib/platform';
   import { S } from '../lib/strings';
-  import { stepOf, store } from '../lib/store.svelte';
+  import { STEPS, stepOf, store } from '../lib/store.svelte';
 
   let { children }: { children: Snippet } = $props();
-  const withPerms = $derived(store.needsPerms);
-  const step = $derived(stepOf(store.route, withPerms));
-  const total = $derived(withPerms ? 5 : 4);
+  const step = $derived(stepOf(store.route));
 
   async function act(a: 'minimize' | 'toggleMaximize' | 'close') {
     const api = await getApi();
@@ -19,6 +18,9 @@
 
 <div class="card" data-testid="card">
   <div class="drag" data-tauri-drag-region></div>
+  {#if isMac}
+    {#if !inTauri}<div class="lights" aria-hidden="true"><span></span><span></span><span></span></div>{/if}
+  {:else}
   <div style="position: absolute; top: 8px; right: 8px; z-index: 1; display: flex; gap: 2px;">
     <button type="button" class="wc" aria-label={S.minimize} style={btn} onclick={() => act('minimize')}>
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg>
@@ -30,13 +32,14 @@
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg>
     </button>
   </div>
+  {/if}
   {#if step > 0}
     <div
       role="img"
-      aria-label={`Step ${step} of ${total}`}
+      aria-label={`Step ${step} of ${STEPS}`}
       style="position: absolute; top: 19px; left: 0; right: 0; z-index: 1; display: flex; justify-content: center; gap: 5px; pointer-events: none;"
     >
-      {#each Array.from({ length: total }, (_, k) => k + 1) as i}
+      {#each Array.from({ length: STEPS }, (_, k) => k + 1) as i}
         <span
           style={`display: block; height: 6px; border-radius: 3px; width: ${i === step ? 22 : 8}px; background: ${i <= step ? '#1D1C1A' : '#BDB8B1'};`}
         ></span>

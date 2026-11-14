@@ -9,7 +9,7 @@ of its own. The agent does the work (`docs/agent.md`).
 | Part | Where |
 |---|---|
 | 12 screens, from the locked design `docs/design/desktop/L01` to `L12` | `src/screens/` |
-| Title bar, 5-step indicator, back bar, logos, QR drawing | `src/components/` |
+| Title bar, 4-step indicator, back bar, logos, QR drawing | `src/components/` |
 | Pictures taken from the design files (generated once) | `src/lib/art.ts`, `scripts/gen-art.mjs` |
 | All English text in one file | `src/lib/strings.ts` |
 | The only way to talk to the agent | `src/lib/ipc.ts` |
@@ -35,7 +35,7 @@ The font is Figtree, bundled from `@fontsource/figtree`. Nothing loads from the 
 
 | Screen | Calls |
 |---|---|
-| L01 Welcome, L02 Permissions | `setup.status`, `setup.step` (a row, then `done`). L02 only on macOS: Windows and Linux have no rows left (decision 2026-11-14), so Get started marks setup done and goes to L03, and the step indicator has 4 steps instead of 5. |
+| L01 Welcome, L02 Permissions | `setup.status`, `setup.step` (a row, then `done`). No OS asks anything in setup (decision 2026-11-14), so Get started marks setup done and goes to L03, and the step indicator has 4 steps instead of the design's 5 on every OS. L02 shows only when macOS blocks the local network or paste access (the agent sends those rows only then); it is part of step 1. |
 | L03 Add a device | none |
 | L04 Show a code | `pair.start`, `pair.cancel`; events `pair.added`, `pair.tried`, `pair.closed` |
 | L05 Enter a code | `pair.join` (asks "Leave your other devices and join these?" on `in-group`) |
@@ -48,7 +48,19 @@ The font is Figtree, bundled from `@fontsource/figtree`. Nothing loads from the 
 
 Window rules: the window opens only when the user starts the app. Closing it ends the window
 process and leaves the agent running. A second start brings the first window to the front.
-The title bar is our own (no native frame) with a drag strip.
+Windows and Linux: the title bar is our own (no native frame) with a drag strip and drawn
+minimize, maximize and close buttons. macOS (2026-11-14): a native window
+(`src-tauri/tauri.macos.conf.json`: `titleBarStyle` Overlay, hidden title, traffic lights at
+18, 24: the 16 px buttons then sit 14 px from the top, centered on the 36 px header band), so rounded corners, shadow and the traffic lights are the system's. `html.mac`
+(`src/lib/platform.ts`, from the webview's user agent) hides the drawn buttons, makes the drag
+strip full width and moves headers right by `--tl` (72 px; the lights end 79 px from the left) so the back button clears the
+lights; "Start at sign-in" reads "Open at login". Preview it in the browser build with
+`?platform=mac` (the lights are drawn there). Setup has no permissions step on any OS (4 steps,
+not 5): macOS lets the agent, a launchd job, use the local network and the clipboard without a
+prompt (checked 2026-11-14), the Windows installer adds the firewall rule, and start at login is
+a setting, on by default, turned on by the agent's first run on every OS (`docs/agent.md`).
+"Get started" sends `setup.step done`. The macOS network and paste rows appear only when macOS
+blocks them. The locked design screenshots are the Windows frame.
 
 ## Tests
 
@@ -61,9 +73,9 @@ Run from `apps/desktop`:
   device detail, rename and remove, settings, paused, needs attention, VPN help, the title bar
   and the agent-down screen. Nothing opens on screen.
 - `visual.spec.ts` takes a picture of each screen and compares it with the locked design
-  rendered in the same browser (limit 1% of pixels). The setup screens use the mock's new Mac
-  (`fresh-mac`, 5 steps as in the design). L02 shows the two macOS rows, not the design's
-  Windows rows, so its limit is 2% (0.91% on 2026-11-14). The side-by-side pictures are in
+  rendered in the same browser (limit 1% of pixels). The setup screens show 4 step dots where
+  the design has 5 (a few pixels). L02 uses the mock's `mac-blocked` (macOS blocks the network
+  and paste access) and shows those two rows, not the design's Windows rows, so its limit is 2%. The side-by-side pictures are in
   `docs/design/desktop/impl-check/`.
 - `cargo test` in `src-tauri`: the call list matches the agent.
 
