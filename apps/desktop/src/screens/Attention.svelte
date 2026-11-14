@@ -8,7 +8,7 @@
   const st = $derived(store.status);
   const code = $derived(st?.fix_code ?? '');
   // Codes with a button that does the fix. The others show the steps the agent gives.
-  const oneClick = $derived(['vpn', 'firewall', 'removed', 'setup'].includes(code));
+  const oneClick = $derived(['vpn', 'firewall', 'removed'].includes(code));
   let error = $state<string | null>(null);
 
   async function fix() {
@@ -16,10 +16,10 @@
     try {
       if (code === 'vpn') store.go('vpn');
       else if (code === 'firewall') {
-        await store.api!.call('setup.step', { row: 'firewall', answer: true });
+        // The same path as `uc firewall add`: the helper (one UAC prompt), then a check.
+        await store.api!.firewallAdd();
         await store.refresh();
       } else if (code === 'removed') store.go('add');
-      else if (code === 'setup') store.go('perms');
       else await store.refresh();
     } catch (e) {
       error = failureText(e);

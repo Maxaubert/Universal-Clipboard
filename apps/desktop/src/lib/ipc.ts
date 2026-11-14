@@ -1,11 +1,14 @@
 // The only way the window talks to the agent: JSON-line calls proxied by Tauri commands
 // (src-tauri) to the pipe or socket. Outside Tauri (the Vite build in tests and in a browser)
 // a mock agent answers instead. There is no call that sends or fetches clipboard content.
-import type { AgentEvent, IpcFailure } from './types';
+import type { AgentEvent, FirewallCheck, IpcFailure } from './types';
 
 export interface Api {
   call<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
   onEvent(cb: (e: AgentEvent) => void): () => void;
+  /** Windows: add the firewall rule (the helper, one UAC prompt), then `firewall.check`. The
+   * same path as `uc firewall add`. Not an agent call: the window shell runs the helper. */
+  firewallAdd(): Promise<FirewallCheck>;
   window: {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<void>;
@@ -31,6 +34,7 @@ export const ALLOWED_CALLS = [
   'leave',
   'setup.status',
   'setup.step',
+  'firewall.check',
   'version',
 ] as const;
 
@@ -56,6 +60,10 @@ function tauriApi(): Api {
       }
       const { invoke } = await core();
       return (await invoke('ipc_call', { call: name, params })) as T;
+    },
+    async firewallAdd() {
+      const { invoke } = await core();
+      return (await invoke('firewall_add')) as FirewallCheck;
     },
     onEvent(cb) {
       let off: (() => void) | null = null;

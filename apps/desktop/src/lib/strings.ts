@@ -13,7 +13,7 @@ export const S = {
   permTitle: 'Two permissions',
   permSub: 'You only do this once.',
   allow: 'Allow',
-  rowTitles: { autostart: 'Start when you sign in', firewall: 'Allow through the firewall' } as Record<string, string>,
+  rowTitles: {} as Record<string, string>,
   allowed: 'Allowed',
   continue: 'Continue',
 

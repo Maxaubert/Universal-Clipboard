@@ -13,9 +13,18 @@ export type Route =
   | 'settings'
   | 'vpn';
 
-/** Step of the 5-step indicator for the setup screens, else 0 (no indicator). */
-export function stepOf(r: Route): number {
-  return { welcome: 1, perms: 2, add: 3, show: 4, enter: 4, connected: 5 }[r as string] ?? 0;
+/** Step of the setup indicator for the setup screens, else 0 (no indicator). Without the
+ * permissions screen (Windows and Linux have no rows, decision 2026-11-14) there are 4 steps. */
+export function stepOf(r: Route, withPerms = true): number {
+  const steps: Record<string, number> = withPerms
+    ? { welcome: 1, perms: 2, add: 3, show: 4, enter: 4, connected: 5 }
+    : { welcome: 1, add: 2, show: 3, enter: 3, connected: 4 };
+  return steps[r as string] ?? 0;
+}
+
+/** Setup rows the permissions screen asks ("desktop" only explains, Needs attention shows it). */
+export function askRows(s: SetupStatus | null): SetupStatus['rows'] {
+  return (s?.rows ?? []).filter((r) => r.row !== 'desktop');
 }
 
 class Store {
@@ -113,6 +122,11 @@ class Store {
     const prev = this.back[this.back.length - 1];
     this.back = this.back.slice(0, -1);
     this.route = prev ?? fallback;
+  }
+
+  /** True when the permissions screen (L02) has rows to ask: macOS only today. */
+  get needsPerms(): boolean {
+    return askRows(this.setup).length > 0;
   }
 
   get thisDevice(): Device | undefined {

@@ -35,7 +35,7 @@ The font is Figtree, bundled from `@fontsource/figtree`. Nothing loads from the 
 
 | Screen | Calls |
 |---|---|
-| L01 Welcome, L02 Permissions | `setup.status`, `setup.step` (a row, then `done`) |
+| L01 Welcome, L02 Permissions | `setup.status`, `setup.step` (a row, then `done`). L02 only on macOS: Windows and Linux have no rows left (decision 2026-11-14), so Get started marks setup done and goes to L03, and the step indicator has 4 steps instead of 5. |
 | L03 Add a device | none |
 | L04 Show a code | `pair.start`, `pair.cancel`; events `pair.added`, `pair.tried`, `pair.closed` |
 | L05 Enter a code | `pair.join` (asks "Leave your other devices and join these?" on `in-group`) |
@@ -43,7 +43,7 @@ The font is Figtree, bundled from `@fontsource/figtree`. Nothing loads from the 
 | L07 Home, L10 Paused | `status`, `devices.list`, `pause.set` |
 | L08 Device | `devices.rename`, `devices.remove` |
 | L09 Settings | `settings.get`, `settings.set` (`start-at-login`), `leave` |
-| L11 Needs attention | `status` (reason and fix code), `setup.step` for the firewall |
+| L11 Needs attention | `status` (reason and fix code). Fix for `firewall`: the shell command `firewall_add` (the helper, one UAC prompt, the same code as `uc firewall add`), then `firewall.check` |
 | L12 VPN help | none |
 
 Window rules: the window opens only when the user starts the app. Closing it ends the window
@@ -61,7 +61,9 @@ Run from `apps/desktop`:
   device detail, rename and remove, settings, paused, needs attention, VPN help, the title bar
   and the agent-down screen. Nothing opens on screen.
 - `visual.spec.ts` takes a picture of each screen and compares it with the locked design
-  rendered in the same browser (limit 1% of pixels). The side-by-side pictures are in
+  rendered in the same browser (limit 1% of pixels). The setup screens use the mock's new Mac
+  (`fresh-mac`, 5 steps as in the design). L02 shows the two macOS rows, not the design's
+  Windows rows, so its limit is 2% (0.91% on 2026-11-14). The side-by-side pictures are in
   `docs/design/desktop/impl-check/`.
 - `cargo test` in `src-tauri`: the call list matches the agent.
 
@@ -71,7 +73,7 @@ or a VM).
 
 ## Not done here
 
-- Installers, signing, the "is it our signed agent" pipe check, the firewall helper: M9.
+- Installers, signing, the "is it our signed agent" pipe check: M9.
 - A real-agent run of the shell (needs a window). The same IPC client is tested through `uc`.
 - Norwegian text: all strings are in `strings.ts`, ready.
 - Settings beyond the two in the locked design (image size, formatting, name): use `uc settings`.

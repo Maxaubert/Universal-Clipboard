@@ -9,19 +9,35 @@ async function open(page: Page, scenario: string, route?: string) {
 }
 
 const steps = (page: Page, n: number) => expect(page.getByRole('img', { name: `Step ${n} of 5` })).toBeVisible();
+// Windows and Linux: no permissions screen, 4 steps (decision 2026-11-14).
+const steps4 = (page: Page, n: number) => expect(page.getByRole('img', { name: `Step ${n} of 4` })).toBeVisible();
 const mockCalls = (page: Page) => page.evaluate(() => window.__ucMock!.calls.map((c) => c.call));
 
-test('whole setup flow: welcome, permissions, add, show a code, connected, home', async ({ page }) => {
+test('Windows setup has no permissions screen: welcome, add, show a code (4 steps)', async ({ page }) => {
   await open(page, 'fresh');
+  await steps4(page, 1);
+  await page.getByRole('button', { name: 'Get started' }).click();
+  await steps4(page, 2);
+  await expect(page.getByRole('heading', { name: 'Add a device' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Two permissions' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show a code' }).click();
+  await steps4(page, 3);
+  await expect(page.getByTestId('code')).toHaveText('418 207');
+  expect(await page.evaluate(() => window.__ucMock!.world.setup.done)).toBe(true);
+});
+
+test('whole setup flow (macOS): welcome, permissions, add, show a code, connected, home', async ({ page }) => {
+  await open(page, 'fresh-mac');
   await steps(page, 1);
   await expect(page.getByRole('heading', { name: 'Your latest copy, on every device.' })).toBeVisible();
   await page.getByRole('button', { name: 'Get started' }).click();
 
   await steps(page, 2);
   await expect(page.getByRole('heading', { name: 'Two permissions' })).toBeVisible();
-  await expect(page.locator('[data-row="autostart"]').getByRole('img', { name: 'Allowed' })).toBeVisible();
-  await page.getByRole('button', { name: 'Allow through the firewall' }).click();
-  await expect(page.locator('[data-row="firewall"]').getByRole('img', { name: 'Allowed' })).toBeVisible();
+  await page.getByRole('button', { name: 'Find devices on your network' }).click();
+  await expect(page.locator('[data-row="local-network"]').getByRole('img', { name: 'Allowed' })).toBeVisible();
+  await page.getByRole('button', { name: 'Read what you copy' }).click();
+  await expect(page.locator('[data-row="paste"]').getByRole('img', { name: 'Allowed' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await steps(page, 3);
@@ -48,7 +64,7 @@ test('whole setup flow: welcome, permissions, add, show a code, connected, home'
 test('enter a code: wrong code, then the right one', async ({ page }) => {
   await open(page, 'fresh', 'add');
   await page.getByRole('button', { name: 'Enter a code' }).click();
-  await steps(page, 4);
+  await steps4(page, 3);
   await expect(page.getByRole('button', { name: 'Connect' })).toBeDisabled();
   await page.getByRole('textbox', { name: 'Code' }).pressSequentially('418207');
   await expect(page.getByRole('group')).toHaveAttribute('aria-label', 'Code, 6 of 6 digits entered');
@@ -65,7 +81,7 @@ test('enter a code: wrong code, then the right one', async ({ page }) => {
   });
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.getByRole('heading', { name: 'Mac mini is added' })).toBeVisible();
-  await steps(page, 5);
+  await steps4(page, 4);
 });
 
 test('enter a code in a group asks before leaving it', async ({ page }) => {
@@ -161,7 +177,7 @@ test('settings: start at sign-in, and remove this device forgets everything', as
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByRole('alertdialog')).toContainText('Remove this device and forget everything?');
   await page.getByRole('button', { name: 'Remove and forget' }).click();
-  await steps(page, 1);
+  await steps4(page, 1);
   expect(await mockCalls(page)).toContain('leave');
 });
 

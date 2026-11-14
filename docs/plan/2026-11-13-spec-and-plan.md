@@ -129,15 +129,18 @@ when a row is done.
 
 | OS | Row | OS prompt | Why | If refused |
 |---|---|---|---|---|
-| Windows | Let your devices find this PC | One UAC prompt. It adds one firewall allow rule for the agent, for Private AND Public network profiles (many home Wi-Fi networks are set to Public). With the Store build the rule comes from the package and there is no prompt (S8). | Other devices can connect to this PC. | The agent runs outbound-only. Sync still works when the other device accepts connections. |
-| Windows | Start with Windows | None. | The app works after a restart. | Sync stops after a restart until the app is opened. |
+| Windows | ~~Let your devices find this PC~~ **Not a setup row any more (decision 2026-11-14, Max): the NSIS installer adds the rule at install time (one UAC prompt during the install, none afterwards; Private, LocalSubnet; `docs/install.md`). The agent checks the rule at network start: missing gives outbound-only mode and a non-blocking note with the fix (`uc firewall add`, Fix in the window).** Old text: | One UAC prompt. It adds one firewall allow rule for the agent, for Private AND Public network profiles (many home Wi-Fi networks are set to Public). With the Store build the rule comes from the package and there is no prompt (S8). | Other devices can connect to this PC. | The agent runs outbound-only. Sync still works when the other device accepts connections. |
+| Windows | ~~Start with Windows~~ **Not a setup row any more (decision 2026-11-14, Max): on by default from the first run; a switch in the settings and `uc settings set start-at-login`.** | None. | The app works after a restart. | Sync stops after a restart until the app is opened. |
 | macOS | Find devices on your network | "Local Network" prompt. | Needed to reach devices on the LAN. | Sync does not work on the network until this is allowed. The row shows how to turn it on in System Settings. |
 | macOS | Read what you copy | Onboarding makes one clipboard read on purpose, so the app appears in "Paste from Other Apps". The row then opens that settings page, where the user picks Allow. Shown only if macOS needs it (section 3.9). | The agent must read the clipboard without a prompt each time. | Sync from this Mac does not work. Sync to this Mac still works. |
-| macOS | Start at login | A system notice "Login item added". No question. | Works after a restart. | Same as Windows. |
+| macOS | ~~Start at login~~ **On by default from the first run (decision 2026-11-14, Max), not a row.** | A system notice "Login item added". No question. | Works after a restart. | Same as Windows. |
 | macOS | Tell me when sync stops (optional) | Notification prompt. | The app has no tray icon, so this is the only way to warn. | No warnings. The settings window still shows the state. |
-| Linux | Start at login | None. | Works after a restart. | Same as Windows. |
+| Linux | ~~Start at login~~ **On by default from the first run (decision 2026-11-14, Max), not a row. Linux has no setup rows, so the window skips this screen.** | None. | Works after a restart. | Same as Windows. |
 
-**Order rule on Windows:** the agent does not start its network endpoint before the user has
+**Order rule on Windows** (changed by decision 2026-11-14, Max): the agent no longer waits for a
+firewall answer. The installer adds the rule before the agent first runs; when the rule is
+missing the agent runs outbound-only (it does not listen for incoming connections). Old text:
+the agent does not start its network endpoint before the user has
 answered the firewall row. If it listened earlier, Windows could show its own "Windows Security
 Alert" from an invisible process, and a dismissal there creates a block rule that beats our allow
 rule (reviewer's knowledge, verified in S1).

@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Install and uninstall test for the Windows packages (plan 8.5). CI ONLY: it installs for
-  the current user, writes the real Run value, adds a firewall rule (needs an administrator)
+  the current user, writes the real Run value, adds a firewall rule (the installer's /ADDFIREWALL; needs an administrator)
   and installs an MSIX with a throwaway certificate. Never run it on a computer someone uses.
 
 .EXAMPLE
@@ -25,8 +25,16 @@ function Run($exe, $argList) {
   return $p.ExitCode
 }
 
-# --- 1. Silent install.
-if ((Run $Setup "/S") -ne 0) { Fail "install exit code" }
+function RulePresent {
+  netsh advfirewall firewall show rule name="Universal Clipboard" | Out-Null
+  return $LASTEXITCODE -eq 0
+}
+# Start clean: no rule from an earlier run.
+netsh advfirewall firewall delete rule name="Universal Clipboard" | Out-Null
+
+# --- 1. Silent install with /ADDFIREWALL: the installer adds the firewall rule (decision
+#        2026-11-14; the runner is elevated, so no UAC prompt).
+if ((Run $Setup "/S /ADDFIREWALL") -ne 0) { Fail "install exit code" }
 foreach ($f in "uc-agent.exe", "uc.exe", "Universal Clipboard.exe", "Uninstall.exe", "cli-name.txt") {
   if (-not (Test-Path (Join-Path $dir $f))) { Fail "$f missing" }
 }
@@ -36,25 +44,31 @@ if ((UserPath) -notlike "*$dir*") { Fail "install folder not on the user PATH" }
 & (Join-Path $dir "uc.exe") --version
 if ($LASTEXITCODE -ne 0) { Fail "uc --version" }
 
-# --- 2. The real app on this runner: start the agent through uc, turn on start at login.
+# --- 2. The firewall rule from the installer: Private, LocalSubnet, never Public.
+if (-not (RulePresent)) { Fail "the installer did not add the firewall rule" }
+$rule = netsh advfirewall firewall show rule name="Universal Clipboard" verbose | Out-String
+if ($rule -notmatch "Private" -or $rule -match "Public" -or $rule -notmatch "LocalSubnet") { Fail "firewall rule scope: $rule" }
+$agent = Join-Path $dir "uc-agent.exe"
+if ((Run $agent "--firewall check") -ne 0) { Fail "firewall check" }
+
+# --- 3. The real app on this runner: start the agent through uc. Start at login is on from
+#        the first run (no setup question), the network accepts incoming (the rule is there).
 $uc = Join-Path $dir "uc.exe"
 & $uc status --json | Out-Host
 if ($LASTEXITCODE -ne 0) { Fail "uc status" }
+if (-not (Get-ItemProperty $runKey -Name UniversalClipboard -ErrorAction SilentlyContinue)) { Fail "Run value missing after the first run" }
+$fw = & $uc firewall check --json | ConvertFrom-Json
+if ($fw.rule -ne "present" -or -not $fw.incoming) { Fail "agent firewall check: $($fw | ConvertTo-Json -Compress)" }
 & $uc settings set start-at-login on | Out-Host
 if (-not (Get-ItemProperty $runKey -Name UniversalClipboard -ErrorAction SilentlyContinue)) { Fail "Run value missing" }
 if (-not (Test-Path (Join-Path $state "state.json"))) { Fail "state.json missing" }
-
-# --- 3. Firewall helper (the runner is elevated, so no UAC prompt).
-$agent = Join-Path $dir "uc-agent.exe"
-if ((Run $agent "--firewall add --exe `"$agent`"") -ne 0) { Fail "firewall add" }
-$rule = netsh advfirewall firewall show rule name="Universal Clipboard" verbose | Out-String
-if ($rule -notmatch "Private" -or $rule -match "Public" -or $rule -notmatch "LocalSubnet") { Fail "firewall rule scope: $rule" }
 
 # --- 4. An update over the top (/UPDATE) keeps the state.
 & $uc --version | Out-Host
 $null = Run $agent "--stop"
 if ((Run $Setup "/S /UPDATE /D=$dir") -ne 0) { Fail "update install" }
 if (-not (Test-Path (Join-Path $state "state.json"))) { Fail "an update removed the state" }
+if (-not (RulePresent)) { Fail "an update removed the firewall rule" }
 
 # --- 5. Uninstall (silent, also remove the firewall rule).
 & $uc status --json | Out-Null
@@ -73,13 +87,15 @@ netsh advfirewall firewall show rule name="Universal Clipboard" | Out-Null
 if ($LASTEXITCODE -eq 0) { Fail "firewall rule left behind" }
 Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
 
-# --- 6. Name rule: another "uc" on PATH, so ours is "uclip".
+# --- 6. Name rule: another "uc" on PATH, so ours is "uclip". Also: a silent install without
+#        /ADDFIREWALL adds no rule (it never shows a UAC prompt).
 $fake = Join-Path $env:RUNNER_TEMP "fake-uc"
 New-Item -ItemType Directory -Force $fake | Out-Null
 Set-Content (Join-Path $fake "uc.cmd") "@echo other"
 $env:PATH = "$fake;$env:PATH"
 if ((Run $Setup "/S") -ne 0) { Fail "install 2" }
 if ((Get-Content (Join-Path $dir "cli-name.txt")) -ne "uclip") { Fail "cli name should be uclip" }
+if (RulePresent) { Fail "a silent install without /ADDFIREWALL added the firewall rule" }
 if (-not (Test-Path (Join-Path $dir "uclip.exe")) -or (Test-Path (Join-Path $dir "uc.exe"))) { Fail "uclip.exe" }
 if ((Run (Join-Path $dir "Uninstall.exe") "/S _?=$dir") -ne 0) { Fail "uninstall 2" }
 Write-Host "NSIS install/uninstall test: PASS"

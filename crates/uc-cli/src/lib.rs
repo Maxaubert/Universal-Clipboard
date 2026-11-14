@@ -69,12 +69,18 @@ pub enum Cmd {
     },
     /// The diagnostic report (no clipboard content, no keys).
     Diagnostics,
-    /// The first-run steps (permissions, start at sign-in) for a computer that never opens the
-    /// window.
+    /// The first-run steps for a computer that never opens the window (macOS: two
+    /// permissions; Windows and Linux have none left, so it only marks setup as done).
     Setup {
         /// Answer yes to every step.
         #[arg(long)]
         yes: bool,
+    },
+    /// Windows: the firewall rule that lets your other devices connect to this PC.
+    Firewall {
+        /// add or check.
+        #[command(subcommand)]
+        action: FirewallCmd,
     },
     /// Remove this device from your devices and forget everything.
     Leave {
@@ -101,6 +107,15 @@ pub enum PairCmd {
     },
     /// Stop showing the code.
     Cancel,
+}
+
+/// `uc firewall ...`.
+#[derive(Debug, Subcommand)]
+pub enum FirewallCmd {
+    /// Add the rule. Windows asks for permission once (the installer normally did this).
+    Add,
+    /// Is the rule there? Without it, this PC only connects out.
+    Check,
 }
 
 /// `uc settings set ...`.
@@ -133,6 +148,7 @@ impl Cmd {
             Cmd::Settings { action: Some(_) } => vec!["settings.set"],
             Cmd::Diagnostics => vec!["diagnostics"],
             Cmd::Setup { .. } => vec!["setup.status", "setup.step"],
+            Cmd::Firewall { .. } => vec!["firewall.check"],
             Cmd::Leave { .. } => vec!["leave"],
             Cmd::Help => vec![],
         }
@@ -224,12 +240,18 @@ pub const UI_ACTIONS: &[(&str, &[&str], &str)] = &[
         "leave",
     ),
     (
-        "Needs attention: Fix (permissions)",
-        &["uc", "setup"],
-        "setup.step",
+        "Needs attention: Fix (firewall rule)",
+        &["uc", "firewall", "add"],
+        "firewall.check",
     ),
     (
-        "First run: permissions and start at login",
+        "Firewall rule state",
+        &["uc", "firewall", "check"],
+        "firewall.check",
+    ),
+    ("First run: done", &["uc", "setup"], "setup.step"),
+    (
+        "First run: permissions (macOS)",
         &["uc", "setup", "--yes"],
         "setup.status",
     ),
@@ -470,6 +492,7 @@ pub async fn run(cli: Cli) -> Result<(), Fail> {
             out(j, &v, || v["report"].as_str().unwrap_or("").to_string());
         }
         Cmd::Setup { yes } => setup(&mut c, &p, j, yes).await?,
+        Cmd::Firewall { action } => firewall(&mut c, &p, j, action).await?,
         Cmd::Leave { yes } => {
             if !yes {
                 match yes_no(
@@ -497,6 +520,15 @@ fn status_text(v: &Value) -> String {
     }
     if let Some(f) = v["fix"].as_str() {
         s.push_str(&format!("\nFix: {f}"));
+    }
+    if let Some(n) = v["note"].as_object()
+        && v["fix_code"] != v["note"]["code"]
+    {
+        s.push_str(&format!(
+            "\nNote: {}\nFix: {}",
+            n.get("text").and_then(Value::as_str).unwrap_or(""),
+            n.get("fix").and_then(Value::as_str).unwrap_or("")
+        ));
     }
     s.push_str(&format!(
         "\nDevices: {} ({} connected). This device: {}.",
@@ -680,11 +712,6 @@ async fn setup(c: &mut Client, p: &Profile, j: bool, all_yes: bool) -> Result<()
                 None => return Err(Fail("Add --yes to answer yes to every step.".into(), 2)),
             }
         };
-        let answer = if id == "firewall" && answer {
-            firewall_rule(p, j)
-        } else {
-            answer
-        };
         call(c, "setup.step", json!({"row": id, "answer": answer})).await?;
         if !j {
             if answer {
@@ -717,32 +744,65 @@ async fn setup(c: &mut Client, p: &Profile, j: bool, all_yes: bool) -> Result<()
     Ok(())
 }
 
-/// "Let your devices find this PC": add the firewall rule with the one-time helper (one UAC
-/// prompt). The Store build has the rule in its package, and test profiles never elevate, so
-/// both skip the helper. A "No" in the UAC prompt counts as "no" (outbound-only mode).
-fn firewall_rule(p: &Profile, j: bool) -> bool {
+/// Run the one-time helper `uc-agent --firewall add` (one UAC prompt) next to this program.
+/// Used by `uc firewall add` and the window's Fix. Returns the helper's exit code: 0 done,
+/// 1 failed, 3 the user said no. Test profiles never elevate, and builds that need no rule of
+/// ours (macOS, Linux, the Store package) have nothing to add: both return 0 at once.
+pub fn add_firewall_rule(p: &Profile) -> i32 {
     if p.is_test() || !uc_agent::firewall::needs_helper() {
-        return true;
+        return 0;
     }
-    let agent = uc_agent::install::real_exe()
-        .map(|e| {
-            e.with_file_name(if cfg!(windows) {
-                "uc-agent.exe"
-            } else {
-                "uc-agent"
-            })
+    let Ok(agent) = uc_agent::install::real_exe().map(|e| {
+        e.with_file_name(if cfg!(windows) {
+            "uc-agent.exe"
+        } else {
+            "uc-agent"
         })
-        .unwrap_or_default();
-    if !j {
-        println!("  Windows asks for permission once, to add the firewall rule.");
-    }
-    let st = std::process::Command::new(&agent)
+    }) else {
+        return 1;
+    };
+    match std::process::Command::new(&agent)
         .arg("--firewall")
         .arg("add")
         .arg("--exe")
         .arg(&agent)
-        .status();
-    matches!(st, Ok(s) if s.success())
+        .status()
+    {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(_) => 1,
+    }
+}
+
+/// `uc firewall add|check`.
+async fn firewall(c: &mut Client, p: &Profile, j: bool, action: FirewallCmd) -> Result<(), Fail> {
+    if let FirewallCmd::Add = action {
+        if !j && !p.is_test() && uc_agent::firewall::needs_helper() {
+            println!("Windows asks for permission once, to add the firewall rule.");
+        }
+        match add_firewall_rule(p) {
+            0 => {}
+            3 => {
+                return Err(Fail(
+                    "You said no. This PC only connects out; sync works when the other device accepts connections."
+                        .into(),
+                    3,
+                ));
+            }
+            _ => return Err(Fail("The firewall rule could not be added.".into(), 1)),
+        }
+    }
+    let v = call(c, "firewall.check", json!({})).await?;
+    out(j, &v, || match v["rule"].as_str() {
+        Some("present") => {
+            "The firewall rule is there. Your other devices can connect to this PC.".into()
+        }
+        Some("absent") => {
+            "The firewall rule is missing. This PC only connects out. Add it: uc firewall add"
+                .into()
+        }
+        _ => "This build needs no firewall rule of its own.".into(),
+    });
+    Ok(())
 }
 
 fn print_help() {
@@ -761,7 +821,8 @@ fn print_help() {
   uc settings                    show all settings
   uc settings set <key> <value>  change a setting
   uc diagnostics                 report for help (no clipboard content, no keys)
-  uc setup                       first-run steps
+  uc setup                       first-run steps (macOS permissions)
+  uc firewall add | check        Windows: let your other devices connect to this PC
   uc leave [--yes]               remove this device and forget everything
   uc --version
 

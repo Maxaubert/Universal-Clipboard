@@ -20,23 +20,30 @@ interface Screen {
   scenario: string;
   route?: string;
   act?: (page: Page) => Promise<void>;
+  /** A higher limit where the app differs from the design on purpose. */
+  maxDiff?: number;
 }
 
+// The setup screens use a new Mac ('fresh-mac'): only macOS still has the permissions screen
+// and the 5-step indicator of the design (decision 2026-11-14). L02 then shows the two macOS
+// rows instead of the design's Windows rows.
 const screens: Screen[] = [
-  { id: 'L01', file: 'L01-welcome', scenario: 'fresh', route: 'welcome' },
-  { id: 'L02', file: 'L02-permissions', scenario: 'fresh', route: 'perms' },
-  { id: 'L03', file: 'L03-add', scenario: 'fresh', route: 'add' },
-  { id: 'L04', file: 'L04-show-code', scenario: 'fresh', route: 'show' },
+  { id: 'L01', file: 'L01-welcome', scenario: 'fresh-mac', route: 'welcome' },
+  // L02: the macOS rows (other titles and icons) differ from the design's Windows rows on
+  // purpose; the layout is the same. 0.91% on 2026-11-14.
+  { id: 'L02', file: 'L02-permissions', scenario: 'fresh-mac', route: 'perms', maxDiff: 2 },
+  { id: 'L03', file: 'L03-add', scenario: 'fresh-mac', route: 'add' },
+  { id: 'L04', file: 'L04-show-code', scenario: 'fresh-mac', route: 'show' },
   {
     id: 'L05',
     file: 'L05-enter-code',
-    scenario: 'fresh',
+    scenario: 'fresh-mac',
     route: 'enter',
     act: async (p) => {
       await p.getByRole('textbox', { name: 'Code' }).pressSequentially('4182');
     },
   },
-  { id: 'L06', file: 'L06-connected', scenario: 'fresh', route: 'connected' },
+  { id: 'L06', file: 'L06-connected', scenario: 'fresh-mac', route: 'connected' },
   { id: 'L07', file: 'L07-home', scenario: 'home' },
   { id: 'L08', file: 'L08-device', scenario: 'home', route: 'device' },
   { id: 'L09', file: 'L09-settings', scenario: 'home', route: 'settings' },
@@ -102,7 +109,7 @@ for (const s of screens) {
     const r = compare(design, app);
     fs.writeFileSync(path.join(outDir, `${s.file}.png`), r.png);
     results.push({ id: s.id, file: s.file, percent: r.percent });
-    expect(r.percent, `${s.id} differs from the design by ${r.percent.toFixed(2)}%`).toBeLessThanOrEqual(MAX_DIFF_PERCENT);
+    expect(r.percent, `${s.id} differs from the design by ${r.percent.toFixed(2)}%`).toBeLessThanOrEqual(s.maxDiff ?? MAX_DIFF_PERCENT);
   });
 }
 

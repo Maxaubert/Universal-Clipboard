@@ -37,6 +37,11 @@ describe('types and strings', () => {
     expect(stepOf('home')).toBe(0);
     expect(stepOf('settings')).toBe(0);
   });
+  it('has 4 steps without the permissions screen (Windows, Linux)', () => {
+    expect(['welcome', 'add', 'show', 'connected'].map((r) => stepOf(r as never, false))).toEqual([1, 2, 3, 4]);
+    expect(stepOf('enter', false)).toBe(3);
+    expect(stepOf('perms', false)).toBe(0);
+  });
   it('has no em-dash in any string', () => {
     const all = Object.values(S).map((v) => (typeof v === 'function' ? v('x') : v));
     for (const t of all) expect(t).not.toContain('—');
@@ -50,6 +55,11 @@ describe('mock agent', () => {
     expect(st.state).toBe('working');
     expect(st.devices).toBe(6);
     await expect(api.call('debug.copy')).rejects.toMatchObject({ code: 'unknown-call' });
+  });
+  it('has no setup rows on Windows and two on macOS', async () => {
+    expect((await createMockApi('fresh').call<{ rows: unknown[] }>('setup.status')).rows).toEqual([]);
+    const mac = await createMockApi('fresh-mac').call<{ rows: { row: string }[] }>('setup.status');
+    expect(mac.rows.map((r) => r.row)).toEqual(['local-network', 'paste']);
   });
   it('refuses a short code', async () => {
     const api = createMockApi('fresh');

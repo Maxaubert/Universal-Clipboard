@@ -7,7 +7,7 @@ is hidden in both (the design has a fixed picture, the app draws the real code).
 | Screen | File | Different pixels | Picture |
 |---|---|---|---|
 | L01 | L01-welcome | 0.00% | ![L01](L01-welcome.png) |
-| L02 | L02-permissions | 0.00% | ![L02](L02-permissions.png) |
+| L02 | L02-permissions | 0.91% | ![L02](L02-permissions.png) |
 | L03 | L03-add | 0.00% | ![L03](L03-add.png) |
 | L04 | L04-show-code | 0.00% | ![L04](L04-show-code.png) |
 | L05 | L05-enter-code | 0.00% | ![L05](L05-enter-code.png) |

@@ -1,4 +1,5 @@
-; Universal Clipboard: per-user Windows installer (plan 2.1, 8.1, 8.5). No admin prompt.
+; Universal Clipboard: per-user Windows installer (plan 2.1, 8.1, 8.5). It installs without an
+; administrator; only the firewall rule asks Windows for one UAC prompt (see below).
 ;
 ; Build: makensis /DVERSION=0.1.0 /DSRC=<folder with the exes> /DOUT=<setup.exe> installer.nsi
 ; (packaging/windows/build.ps1 does this.)
@@ -7,13 +8,22 @@
 ;   /S                 silent
 ;   /UPDATE            used by the updater: do not stop the agent (the helper did), do not
 ;                      start anything at the end
+;   /ADDFIREWALL       also add the firewall rule in a silent install (/S). Without it a
+;                      silent install never shows a UAC prompt. The updater does not pass it:
+;                      the rule is tied to the uc-agent.exe path, which an update keeps.
 ;   /REMOVEFIREWALL    uninstaller only: also remove the firewall rule without asking
 ;   /D=<folder>        install folder (last, no quotes)
 ;
 ; The logic lives in uc-agent (tested in Rust): --install-hook puts "uc" on PATH (or "uclip"
 ; when a "uc" already exists), --uninstall-hook tells the group, stops the agent and removes
-; start at login, the state folder and the keys. The firewall rule needs an administrator, so
-; the uninstaller only offers it (one UAC prompt).
+; start at login, the state folder and the keys.
+;
+; Firewall rule (decision 2026-11-14, Max): the app must not show a system prompt after the
+; install. So the installer adds the inbound rule (Private, LocalSubnet, UDP, for uc-agent.exe)
+; with "uc-agent --firewall add", which elevates only itself: one UAC prompt during an
+; interactive install, none when the rule is there already. "No" (exit 3) or a failure (exit 1)
+; does not stop the install: the agent then runs outbound-only and shows a note with the fix
+; ("uc firewall add"). The install itself stays per user. The uninstaller offers removal.
 
 Unicode true
 SetCompressor /SOLID lzma
@@ -57,13 +67,13 @@ VIAddVersionKey "LegalCopyright" "MIT OR Apache-2.0"
 !define MUI_ABORTWARNING
 
 !define MUI_WELCOMEPAGE_TITLE "${NAME}"
-!define MUI_WELCOMEPAGE_TEXT "Copy on one device, paste on another.$\r$\n$\r$\nThis installs ${NAME} for you only. It needs no administrator.$\r$\n$\r$\nNo account, no server. Your clipboard only moves between your own devices on your local network.$\r$\n$\r$\nPrivacy: ${PRIVACY}"
+!define MUI_WELCOMEPAGE_TEXT "Copy on one device, paste on another.$\r$\n$\r$\nThis installs ${NAME} for you only. Windows asks for permission once, to let your other devices connect to this PC through the firewall.$\r$\n$\r$\nNo account, no server. Your clipboard only moves between your own devices on your local network.$\r$\n$\r$\nPrivacy: ${PRIVACY}"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open ${NAME}"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenApp
-!define MUI_FINISHPAGE_TEXT "${NAME} is installed.$\r$\n$\r$\nWithout the window, open a new terminal and run: uc setup"
+!define MUI_FINISHPAGE_TEXT "${NAME} is installed.$\r$\n$\r$\nWithout the window, open a new terminal and run: uc pair show"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -72,14 +82,25 @@ VIAddVersionKey "LegalCopyright" "MIT OR Apache-2.0"
 !insertmacro MUI_LANGUAGE "English"
 
 Var IsUpdate
+Var AddFirewall
 
 Function .onInit
   StrCpy $IsUpdate "0"
+  StrCpy $AddFirewall "0"
   ${GetParameters} $R0
   ClearErrors
   ${GetOptions} $R0 "/UPDATE" $R1
   ${IfNot} ${Errors}
     StrCpy $IsUpdate "1"
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $R0 "/ADDFIREWALL" $R1
+  ${IfNot} ${Errors}
+    StrCpy $AddFirewall "1"
+  ${EndIf}
+  ; Interactive installs always add the rule (one UAC prompt); silent ones only on request.
+  ${IfNot} ${Silent}
+    StrCpy $AddFirewall "1"
   ${EndIf}
 FunctionEnd
 
@@ -110,6 +131,25 @@ Section "Install"
   Pop $0
   Pop $1
   DetailPrint "$1"
+
+  ; The firewall rule (decision 2026-11-14): one UAC prompt now, none later.
+  nsExec::Exec '"$INSTDIR\uc-agent.exe" --firewall check'
+  Pop $0
+  ${If} $0 == "0"
+    DetailPrint "Firewall rule: already there."
+  ${ElseIf} $AddFirewall == "1"
+    DetailPrint "Adding the firewall rule. Windows asks for permission once."
+    ExecWait '"$INSTDIR\uc-agent.exe" --firewall add --exe "$INSTDIR\uc-agent.exe"' $0
+    ${If} $0 == "0"
+      DetailPrint "Firewall rule: added. Your other devices can connect to this PC."
+    ${ElseIf} $0 == "3"
+      DetailPrint "Firewall rule: not added (you said no). This PC only connects out. Add it later: uc firewall add"
+    ${Else}
+      DetailPrint "Firewall rule: could not be added ($0). This PC only connects out. Try: uc firewall add"
+    ${EndIf}
+  ${Else}
+    DetailPrint "Firewall rule: not added (silent install without /ADDFIREWALL)."
+  ${EndIf}
 
   ${If} ${FileExists} "$INSTDIR\${UI_EXE}"
     CreateShortCut "$SMPROGRAMS\${NAME}.lnk" "$INSTDIR\${UI_EXE}" "" "$INSTDIR\icon.ico"

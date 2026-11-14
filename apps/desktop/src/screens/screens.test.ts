@@ -44,18 +44,46 @@ describe('Home', () => {
 });
 
 describe('Needs attention', () => {
-  it('shows the reason and Fix runs the firewall step', async () => {
+  it('shows the reason and Fix adds the firewall rule like "uc firewall add"', async () => {
     const m = await open('attention');
     expect(await screen.findByTestId('reason')).toHaveTextContent('Firewall is blocking it.');
     await fireEvent.click(screen.getByRole('button', { name: 'Fix' }));
     await waitFor(() => expect(screen.getByTestId('headline')).toHaveTextContent('Working'));
-    expect(m.calls.some((c) => c.call === 'setup.step' && c.params.row === 'firewall')).toBe(true);
+    expect(m.calls.map((c) => c.call)).toEqual(expect.arrayContaining(['firewall.add', 'firewall.check']));
+    expect(m.calls.some((c) => c.call === 'setup.step')).toBe(false);
+  });
+  it('shows the answer when the user says no in the UAC prompt', async () => {
+    const m = await open('attention');
+    m.firewallAddResult = 3;
+    await fireEvent.click(await screen.findByRole('button', { name: 'Fix' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('You said no.');
   });
   it('sends a VPN problem to the VPN help screen', async () => {
     await open('vpn');
     await fireEvent.click(await screen.findByRole('button', { name: 'Fix' }));
     expect(await screen.findByText("Can't reach your other device?")).toBeTruthy();
     expect(screen.getByText('Turn on Local network sharing in your VPN')).toBeTruthy();
+  });
+});
+
+describe('Setup', () => {
+  it('skips the permissions screen when no rows are left (Windows)', async () => {
+    const m = await open('fresh');
+    await fireEvent.click(await screen.findByRole('button', { name: 'Get started' }));
+    expect(await screen.findByRole('heading', { name: 'Add a device' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Step 2 of 4' })).toBeTruthy();
+    expect(m.calls.some((c) => c.call === 'setup.step' && c.params.row === 'done')).toBe(true);
+    expect(m.world.setup.done).toBe(true);
+  });
+  it('shows the two macOS rows', async () => {
+    await open('fresh-mac');
+    await fireEvent.click(await screen.findByRole('button', { name: 'Get started' }));
+    expect(await screen.findByRole('heading', { name: 'Two permissions' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Step 2 of 5' })).toBeTruthy();
+    expect(document.querySelector('[data-row="local-network"]')).not.toBeNull();
+    expect(document.querySelector('[data-row="paste"]')).not.toBeNull();
+    expect(document.querySelector('[data-row="firewall"]')).toBeNull();
+    expect(document.querySelector('[data-row="autostart"]')).toBeNull();
   });
 });
 

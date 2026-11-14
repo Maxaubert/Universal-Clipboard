@@ -5,7 +5,9 @@
   import { stepOf, store } from '../lib/store.svelte';
 
   let { children }: { children: Snippet } = $props();
-  const step = $derived(stepOf(store.route));
+  const withPerms = $derived(store.needsPerms);
+  const step = $derived(stepOf(store.route, withPerms));
+  const total = $derived(withPerms ? 5 : 4);
 
   async function act(a: 'minimize' | 'toggleMaximize' | 'close') {
     const api = await getApi();
@@ -31,10 +33,10 @@
   {#if step > 0}
     <div
       role="img"
-      aria-label={`Step ${step} of 5`}
+      aria-label={`Step ${step} of ${total}`}
       style="position: absolute; top: 19px; left: 0; right: 0; z-index: 1; display: flex; justify-content: center; gap: 5px; pointer-events: none;"
     >
-      {#each [1, 2, 3, 4, 5] as i}
+      {#each Array.from({ length: total }, (_, k) => k + 1) as i}
         <span
           style={`display: block; height: 6px; border-radius: 3px; width: ${i === step ? 22 : 8}px; background: ${i <= step ? '#1D1C1A' : '#BDB8B1'};`}
         ></span>

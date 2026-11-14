@@ -3,19 +3,24 @@
   import * as art from '../lib/art';
   import { failureText } from '../lib/ipc';
   import { S } from '../lib/strings';
-  import { store } from '../lib/store.svelte';
+  import { askRows, store } from '../lib/store.svelte';
   import type { SetupRow } from '../lib/types';
 
   let error = $state<string | null>(null);
-  // The design shows "Start when you sign in" first.
-  const rows = $derived(
-    [...(store.setup?.rows ?? [])].sort((a, b) => Number(b.row === 'autostart') - Number(a.row === 'autostart')),
-  );
+  // Only macOS has rows left (decision 2026-11-14): Find devices on your network, Read what
+  // you copy. Elsewhere the welcome screen skips this one.
+  const rows = $derived(askRows(store.setup));
 
   const label = (r: SetupRow) => S.rowTitles[r.row] ?? r.title;
+  const wifi =
+    '<path d="M2 8.8a15 15 0 0 1 20 0"></path><path d="M5 12.5a10 10 0 0 1 14 0"></path><path d="M8.5 16.4a5 5 0 0 1 7 0"></path><path d="M12 20h.01"></path>';
+  const clipboard =
+    '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>';
 
   function icon(r: SetupRow): string {
-    return r.row === 'autostart' ? art.permStart : r.row === 'firewall' ? art.permFirewall : art.permStart;
+    if (r.row === 'local-network') return wifi;
+    if (r.row === 'paste') return clipboard;
+    return r.row === 'firewall' ? art.permFirewall : art.permStart;
   }
 
   async function allow(r: SetupRow) {

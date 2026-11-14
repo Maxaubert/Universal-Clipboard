@@ -2,6 +2,22 @@
   import Art from '../components/Art.svelte';
   import { S } from '../lib/strings';
   import { store } from '../lib/store.svelte';
+
+  // Windows and Linux have no setup rows left (decision 2026-11-14): skip the permissions
+  // screen and mark setup as done.
+  async function start() {
+    if (store.needsPerms) {
+      store.go('perms');
+      return;
+    }
+    try {
+      await store.api!.call('setup.step', { row: 'done', answer: true });
+      await store.refresh();
+    } catch {
+      /* only a flag; the next screens work without it */
+    }
+    store.go('add');
+  }
 </script>
 
 <div style="flex: 1; display: flex; flex-direction: column; padding: 84px 28px 28px 28px;">
@@ -13,7 +29,7 @@
     <button
       type="button"
       style="height: 46px; padding: 0 26px; border: 0; border-radius: 10px; background: #1D1C1A; color: #FFFFFF; font-size: 15px; font-weight: 600;"
-      onclick={() => store.go('perms')}>{S.getStarted}</button>
+      onclick={start}>{S.getStarted}</button>
   </div>
   <div style="margin-top: auto; margin-left: -14px; margin-right: -14px;">
     <Art name="welcome" />

@@ -32,8 +32,11 @@ use crate::ipc::{self, Event, Incoming, IpcError, Reply};
 use crate::pairing::{self, PairMsg};
 use crate::profile::Profile;
 use crate::settings;
-use crate::state::{Activity, Firewall, Notice, PairLockout, Pause, StateFile};
+use crate::state::{Activity, Notice, PairLockout, Pause, StateFile};
 
+/// The fix for a missing Windows firewall rule (one UAC prompt).
+const FIREWALL_FIX: &str =
+    "Run \"uc firewall add\" (or Fix in the window). Windows asks for permission once.";
 const SECRET_NAME: &str = "group-secret";
 const PREV_SECRET_NAME: &str = "group-secret-prev";
 /// Settle time after a clipboard change (plan 3.8).
@@ -206,6 +209,9 @@ pub struct Core {
     poller: uc_clip_mac::poll::Poller,
     net: Option<Net>,
     net_error: Option<String>,
+    /// The Windows inbound rule, checked at network start: `Some(false)` = missing, so the
+    /// network runs outbound-only. `None` = this build needs no rule of ours.
+    fw_rule: Option<bool>,
     disc: Option<Arc<dyn uc_net::Discovery>>,
     policy: Policy,
     ifaces: Vec<Interface>,
@@ -384,6 +390,7 @@ impl Core {
             poller: uc_clip_mac::poll::Poller::new(),
             net: None,
             net_error: None,
+            fw_rule: None,
             disc: None,
             policy: Policy::default(),
             ifaces: Vec::new(),
@@ -417,6 +424,7 @@ impl Core {
         };
         core.reset_engine();
         core.apply_settings();
+        core.default_autostart();
         if core.state.pause == Pause::Forever
             || matches!(core.state.pause, Pause::Until(t) if t > now_ms())
         {
@@ -488,25 +496,54 @@ impl Core {
         self.clip.set_forward_remote(fwd);
     }
 
-    fn net_allowed(&self) -> Result<(), String> {
-        // Windows order rule (plan 2.2): no network before the firewall row was answered.
-        if cfg!(windows) && !self.profile.is_test() && self.state.firewall == Firewall::Unanswered {
-            return Err("setup".into());
+    /// Decision 2026-11-14 (Max): start at login is on by default and is no longer a setup
+    /// question. The first run turns it on once (test profiles in their sandbox). When the
+    /// user turned it off, or a setup from before this decision answered it, it is left alone.
+    /// A failed try (for example a Mac app still on the disk image) is tried again next start.
+    fn default_autostart(&mut self) {
+        if self.state.autostart_default_done {
+            return;
         }
-        Ok(())
+        if self.state.setup_done
+            || !self.state.settings.start_at_login
+            || self.autostart.managed_by_windows()
+        {
+            self.state.autostart_default_done = true;
+            self.save();
+            return;
+        }
+        match self.autostart.enable() {
+            Ok(()) => {
+                self.state.autostart_default_done = true;
+                self.save();
+            }
+            Err(e) => tracing::warn!(error = %e, "start at login could not be turned on"),
+        }
+    }
+
+    /// Is the Windows inbound rule there? `None` when this build needs none (macOS, Linux,
+    /// the Store package). Test profiles never look at the real rule and never elevate:
+    /// `UCLIP_TEST_FIREWALL_RULE=present|absent` fakes the answer, else they need none.
+    fn check_firewall_rule(&self) -> Option<bool> {
+        if let Some(v) = self.profile.test_env("UCLIP_TEST_FIREWALL_RULE") {
+            return Some(v != "absent");
+        }
+        if self.profile.is_test() {
+            return None;
+        }
+        crate::firewall::present(&self.profile)
     }
 
     fn start_net(&mut self) {
         self.net = None;
         self.peers.clear();
         self.paths.clear();
-        if let Err(e) = self.net_allowed() {
-            self.net_error = Some(e);
-            return;
-        }
+        // Decision 2026-11-14 (Max): the network never waits for a setup answer. The rule
+        // (added by the installer) decides: there, accept incoming; missing, outbound-only.
+        self.fw_rule = self.check_firewall_rule();
         let fast = self.profile.fast();
         let mut cfg = NetConfig::new(self.key.signing_key().clone(), self.port);
-        cfg.accept_incoming = self.state.firewall != Firewall::Refused;
+        cfg.accept_incoming = self.fw_rule != Some(false);
         if fast {
             cfg.backoff_max = Duration::from_secs(1);
             cfg.path_delay = Duration::from_secs(2);
@@ -1502,6 +1539,7 @@ impl Core {
             },
             "setup.status" => Ok(self.setup_status()),
             "setup.step" => self.setup_step(&p),
+            "firewall.check" => Ok(self.firewall_check()),
             "debug.copy" => {
                 let t = p.get("text").and_then(Value::as_str).unwrap_or_default();
                 match self.clip.debug_copy(t) {
@@ -1838,22 +1876,12 @@ impl Core {
 
     // ------------------------------------------------------------ setup
 
+    /// The setup rows that are left. Decision 2026-11-14 (Max): nothing that shows a system
+    /// prompt later is asked here. The Windows firewall rule comes from the installer, and
+    /// start at login is on by default (a switch in the settings), so Windows and Linux have
+    /// no rows (only "desktop" when the clipboard is blocked). macOS keeps its two rows.
     fn setup_rows(&self) -> Vec<Value> {
         let mut rows = Vec::new();
-        if cfg!(windows) {
-            let state = match self.state.firewall {
-                Firewall::Unanswered => "todo",
-                Firewall::Allowed => "done",
-                Firewall::Refused => "refused",
-            };
-            rows.push(json!({
-                "row": "firewall",
-                "title": "Let your devices find this PC",
-                "why": "Other devices can connect to this PC.",
-                "if_refused": "This PC only connects out. Sync still works when the other device accepts connections.",
-                "state": state,
-            }));
-        }
         if cfg!(target_os = "macos") {
             let access = self.clip.paste_access().unwrap_or("allow");
             rows.push(json!({
@@ -1880,15 +1908,38 @@ impl Core {
                 "state": "refused",
             }));
         }
-        let auto = self.autostart.is_enabled();
-        rows.push(json!({
-            "row": "autostart",
-            "title": if cfg!(windows) { "Start with Windows" } else { "Start at login" },
-            "why": "The app works after a restart.",
-            "if_refused": "Sync stops after a restart until the app is opened.",
-            "state": if auto { "done" } else if self.state.setup_done { "refused" } else { "todo" },
-        }));
         rows
+    }
+
+    /// The firewall rule as text for replies and the report.
+    fn fw_rule_text(&self) -> &'static str {
+        match self.fw_rule {
+            Some(true) => "present",
+            Some(false) => "absent",
+            None => "not-needed",
+        }
+    }
+
+    /// IPC `firewall.check` (`uc firewall check`, and after `uc firewall add` or the window's
+    /// Fix): look at the rule again and restart the network when the answer changed.
+    fn firewall_check(&mut self) -> Value {
+        let now = self.check_firewall_rule();
+        if now != self.fw_rule {
+            self.start_net();
+            self.emit("status", json!({}));
+        }
+        json!({ "rule": self.fw_rule_text(), "incoming": self.fw_rule != Some(false) })
+    }
+
+    /// The non-blocking note for a missing firewall rule (status `note`).
+    fn firewall_note(&self) -> Option<Value> {
+        (self.fw_rule == Some(false)).then(|| {
+            json!({
+                "code": "firewall",
+                "text": "Other devices cannot connect to this PC. It only connects out, so sync works when the other device accepts connections.",
+                "fix": FIREWALL_FIX,
+            })
+        })
     }
 
     fn setup_status(&self) -> Value {
@@ -1903,18 +1954,6 @@ impl Core {
         let row = p.get("row").and_then(Value::as_str).unwrap_or_default();
         let yes = p.get("answer").and_then(Value::as_bool).unwrap_or(false);
         match row {
-            "firewall" if cfg!(windows) => {
-                // The caller adds the rule first ("uc setup" and the window run
-                // `uc-agent --firewall add`, one UAC prompt; the Store package has it), and
-                // sends "no" when the user refused the prompt (outbound-only mode).
-                self.state.firewall = if yes {
-                    Firewall::Allowed
-                } else {
-                    Firewall::Refused
-                };
-                self.save();
-                self.start_net();
-            }
             "paste" if cfg!(target_os = "macos") => {
                 // Plan 2.2: one read on purpose, so the app appears in "Paste from Other
                 // Apps". The content is dropped at once.
@@ -1923,16 +1962,6 @@ impl Core {
                 }
             }
             "local-network" => {}
-            "autostart" => {
-                let r = if yes {
-                    self.autostart.enable()
-                } else {
-                    self.autostart.disable()
-                };
-                r.map_err(|e| IpcError::new("autostart", format!("Start at login: {e}")))?;
-                self.state.settings.start_at_login = yes;
-                self.save();
-            }
             "done" => {
                 self.state.setup_done = true;
                 self.save();
@@ -1971,13 +2000,6 @@ impl Core {
                 "The app is running from the disk image or Downloads.".into(),
                 "Quit it, drag Universal Clipboard into the Applications folder, and open it from there."
                     .into(),
-            ));
-        }
-        if self.net_error.as_deref() == Some("setup") {
-            return Some((
-                "setup",
-                "Setup is not finished.".into(),
-                "Run \"uc setup\".".into(),
             ));
         }
         if let Some(e) = &self.net_error {
@@ -2028,6 +2050,19 @@ impl Core {
                 "Turn on Local network sharing in your VPN.".into(),
             ));
         }
+        // The missing rule is only a note (status `note`), unless it may be why no device is
+        // connected: in a group, nobody connected, and this PC only connects out.
+        if self.fw_rule == Some(false)
+            && self.graph.as_ref().is_some_and(|g| g.members().len() > 1)
+            && self.connected() == 0
+        {
+            return Some((
+                "firewall",
+                "No other device is connected. The firewall rule is missing, so other devices cannot connect to this PC."
+                    .into(),
+                FIREWALL_FIX.into(),
+            ));
+        }
         None
     }
 
@@ -2070,6 +2105,7 @@ impl Core {
             "reason": reason,
             "fix": fix.as_ref().map(|f| &f.1),
             "fix_code": fix.as_ref().map(|f| f.0),
+            "note": self.firewall_note(),
             "devices": members,
             "connected": connected,
             "paused": paused,
@@ -2151,9 +2187,11 @@ impl Core {
         if let Some(a) = self.clip.paste_access() {
             lines.push(format!("macOS paste access: {a}"));
         }
-        if cfg!(windows) {
-            lines.push(format!("Firewall row: {:?}", self.state.firewall));
-        }
+        lines.push(format!(
+            "Firewall rule: {} (incoming: {})",
+            self.fw_rule_text(),
+            self.fw_rule != Some(false)
+        ));
         match &self.updater {
             Some(u) => {
                 let st = u.state();

@@ -3,8 +3,13 @@
 //! One inbound rule for the agent program: UDP (our QUIC sync and mDNS), profile **Private
 //! only**, remote addresses **LocalSubnet only**. Never Public. The rule needs an administrator,
 //! so it is added by a one-time helper: `uc-agent --firewall add`, which asks Windows for one
-//! UAC prompt when it is not elevated. `uc setup` (and the window) run it when the user says
-//! yes to "Let your devices find this PC"; the agent itself never shows a UAC prompt.
+//! UAC prompt when it is not elevated. The agent itself never shows a UAC prompt.
+//!
+//! Decision 2026-11-14 (Max): the NSIS installer runs the helper at install time (one UAC
+//! prompt during the install, none afterwards). There is no setup question. At network start
+//! the agent checks the rule ([`present`]): there, it accepts incoming connections; missing,
+//! it runs outbound-only and shows a note with the fix (`uc firewall add`, or Fix in the
+//! window, which run the same helper).
 //!
 //! - Microsoft Store build: the rule is in the package manifest (spike S8), so no helper.
 //! - Test profiles never elevate. They get their own rule name, so a CI test can add and
@@ -123,6 +128,23 @@ fn netsh(args: &[String]) -> std::io::Result<std::process::Output> {
 #[cfg(windows)]
 pub fn exists(p: &Profile) -> bool {
     netsh(&show_args(&rule_name(p))).is_ok_and(|o| o.status.success())
+}
+
+/// Is the rule there? `None` when this build needs no rule of ours (macOS, Linux, the Store
+/// package). Runs `netsh` (no window, no administrator).
+pub fn present(p: &Profile) -> Option<bool> {
+    if !needs_helper() {
+        return None;
+    }
+    #[cfg(windows)]
+    {
+        Some(exists(p))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = p;
+        None
+    }
 }
 
 /// Run the helper action in this process. Add and remove need an administrator: when this
