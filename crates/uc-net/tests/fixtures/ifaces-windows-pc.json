@@ -1,0 +1,212 @@
+[
+  {
+    "name": "{00000000-0000-0000-0000-000000000001}",
+    "index": 1,
+    "description": "Loopback Pseudo-Interface 1 | Software Loopback Interface 1",
+    "link": "Loopback",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "127.0.0.1",
+        "prefix": 8
+      },
+      {
+        "ip": "::1",
+        "prefix": 128
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000003}",
+    "index": 3,
+    "description": "WiFi 4 | MediaTek Wi-Fi 7 MT7927 Wireless LAN Card #4",
+    "link": "Wifi",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "169.254.86.166",
+        "prefix": 16
+      },
+      {
+        "ip": "fe80::1003",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000004}",
+    "index": 4,
+    "description": "Local Area Connection | OpenVPN Data Channel Offload",
+    "link": "Other",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "169.254.130.109",
+        "prefix": 16
+      },
+      {
+        "ip": "fe80::1004",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000006}",
+    "index": 6,
+    "description": "WiFi | MediaTek Wi-Fi 7 MT7927 Wireless LAN Card",
+    "link": "Wifi",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "169.254.81.233",
+        "prefix": 16
+      },
+      {
+        "ip": "fe80::1006",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000007}",
+    "index": 7,
+    "description": "Bluetooth Network Connection | Bluetooth Device (Personal Area Network)",
+    "link": "Ethernet",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "169.254.61.194",
+        "prefix": 16
+      },
+      {
+        "ip": "fe80::1007",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000008}",
+    "index": 8,
+    "description": "WiFi 5 | MediaTek Wi-Fi 7 MT7927 Wireless LAN Card #5",
+    "link": "Wifi",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "169.254.145.202",
+        "prefix": 16
+      },
+      {
+        "ip": "fe80::1008",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000010}",
+    "index": 10,
+    "description": "OpenVPN Data Channel Offload for Surfshark | OpenVPN Data Channel Offload #2",
+    "link": "Other",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "169.254.215.27",
+        "prefix": 16
+      },
+      {
+        "ip": "fe80::100a",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000021}",
+    "index": 21,
+    "description": "Ethernet | Realtek PCIe 5GbE Family Controller",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "192.168.1.31",
+        "prefix": 24
+      },
+      {
+        "ip": "fe80::1015",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000037}",
+    "index": 37,
+    "description": "vEthernet (Default Switch) | Hyper-V Virtual Ethernet Adapter",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "172.28.0.1",
+        "prefix": 20
+      },
+      {
+        "ip": "fe80::1025",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "{00000000-0000-0000-0000-000000000048}",
+    "index": 48,
+    "description": "vEthernet (WSL (Hyper-V firewall)) | Hyper-V Virtual Ethernet Adapter #2",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "172.17.16.1",
+        "prefix": 20
+      },
+      {
+        "ip": "fe80::1030",
+        "prefix": 64
+      }
+    ]
+  }
+]

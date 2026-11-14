@@ -398,6 +398,9 @@ until M16 (section 7, rules), so they never fight with the private clipsync prot
 **Local network only (2026-11-13).** There is no relay, no hole punching over the internet and no
 lookup service.
 
+**M2 result (2026-11-14): plain QUIC (`quinn` + `rustls`, raw Ed25519 keys), not iroh.** iroh 1.4.1
+cannot turn off its QUIC NAT traversal or multipath. Why and what changed: `docs/net.md`.
+
 - **iroh 1.x** (QUIC, TLS 1.3, peers are dialed by their Ed25519 public key), used with the relay
   turned off (`RelayMode::Disabled`) and no address lookup service (no n0 DNS, no pkarr). Today's
   version on docs.rs is 1.4.1. The 1.0 line promises a stable wire protocol and API. If spike S1
@@ -877,8 +880,8 @@ The display name is one config value, so the name can change without code change
 |---|---|---|---|
 | Language | Rust, edition 2024 | 1.99 on the PC | installed |
 | Async | tokio | 1.x | |
-| Transport | iroh | 1.4.x, pinned exactly if S1 picks the unstable custom transport | docs.rs today: 1.4.1 |
-| mDNS | `mdns-sd` (per-interface control). `iroh-mdns-address-lookup` 0.5 is the alternative if it can be limited to chosen interfaces. | latest | decide in S1 |
+| Transport | `quinn` + `rustls` (ring), raw Ed25519 keys (M2 2026-11-14, `docs/net.md`; was: iroh) | quinn 0.11.12, rustls 0.23.46 | M2 |
+| mDNS | `mdns-sd` (per-interface control) | 0.21.7 | M2 |
 | PAKE | `spake2` (RustCrypto) with our transcript and confirmation (`docs/protocol.md`) | `=0.4.0` | decided in M0c |
 | Hash, MAC, KDF | `blake3`, `hmac` + `sha2`, `hkdf` | | verify |
 | Codec | `postcard` + `serde` | 1.x | verify |
