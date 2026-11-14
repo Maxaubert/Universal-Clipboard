@@ -95,4 +95,6 @@ is atomic. `is_enabled` is false when a desktop settings app wrote `Hidden=true`
   yet (KDE in Docker is large); `lin-kde` covers KDE at the release gate.
 - **Real sessions:** the plan's accept rule for M6 also needs `lin-kde` and `lin-gnome`. Those VMs
   are not built yet.
-- **Supervisor loop** (`uc-agent --supervise`): moves to M7 with the agent.
+- **Supervisor loop** (`uc-agent --supervise`): done in M7 (`crates/uc-agent/src/supervise.rs`,
+  test `crates/uc-cli/tests/supervise.rs`). The agent on X11 and Wayland is tested end to end
+  by `crates/uc-cli/tests/linux_live.rs`, which `live/run.sh` runs.

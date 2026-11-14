@@ -79,6 +79,8 @@ Date: 2026-11-14. Crate: `uc-clip-mac`. Plan: sections 3.8, 3.9, 3.10, 6.4, mile
   copies on Max's Mac (tests never read the general pasteboard). Record real lists on `mac-b`.
 - The LaunchAgent test path (`launchctl bootstrap gui/<uid>`) and the `mac-b` real-pasteboard
   run from the M5 accept line need the agent (M7) and the `mac-b` VM.
-- `detect` methods and the on-purpose first read: agent work, after spike S2.
+- `detect` methods and the on-purpose first read: done in M7 as far as possible without S2
+  (`docs/agent.md`, "OS hooks"): the type list is the no-prompt check, `uc setup` makes the
+  one read on purpose. Silence on the general pasteboard still needs S2.
 - Whether `com.apple.is-remote-clipboard` really appears on Handoff clips: needs S2 with a real
   iPhone copy.
