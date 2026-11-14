@@ -28,7 +28,7 @@ Contents: 1 review result, 2 decisions, 3 building blocks, 4 pairing, 5 membersh
 | F6 | 3.6 | QR path: no rule for what the joiner checks, and no rule against a pairing link from a web page. | The joiner checks the TLS key against the key in the QR before it sends anything. Payloads are accepted only from the in-app scanner. No URL scheme is registered (4.3). |
 | F7 | 3.6 | The `spake2` crate does not reject low-order points, and it is not the RFC 9382 wire format. | Our wrapper rejects low-order points. The page says plainly which SPAKE2 variant this is (2.1, 4.4). |
 | F8 | 3.6 | A pairing that breaks after the inviter signed "add" left the joiner half paired. | Pairing a key that is already a member sends the state again and signs nothing new (4.7). |
-| F9 | 3.6 | An attacker gets 5 new guesses each time the user makes a new code. | After 15 failed code tries in a row, counted over all pairings, the short code is off for 1 hour. The QR code still works (4.6). |
+| F9 | 3.6 | An attacker gets 5 new guesses each time the user makes a new code. | After 5 failed code tries, counted over all pairings, the short code is off for a while: 1 minute, then 5 minutes, 1 hour, 3 hours, and 3 hours for every lockout after that. The QR code still works (4.6). |
 | F10 | 3.7 | **"Two devices remove each other: the older device wins."** A removed device can always sign a removal with old parents, so it looks like "the same moment". A stolen device that joined early could cancel its own removal for ever. | **Removal always wins.** A removal counts if its signer was a member in the removal's own past. Nothing that happens beside it can cancel it. Two devices that remove each other are both removed (5.4, 5.6). |
 | F11 | 3.7 | The validity rule was circular: whether a removal counts depended on other removals that depended on it. Two devices could reach two different, both "correct", results. | A rule in two layers that always ends and has one result (5.4). |
 | F12 | 3.7 | Could a removed key be added again? Not said. | No. A removed key is dead in that group for ever. A removed device makes a new key (5.4, 5.7). |
@@ -95,7 +95,7 @@ transcript all differ, and the confirmation fails.
 | Open pairings per device | 1 |
 | Pairing connections handled at the same time | 4 |
 | Time allowed for each protocol step | 10 seconds |
-| Failed code tries in a row, over all pairings, before the short code is turned off | 15, then off for 1 hour |
+| Failed code tries, over all pairings, before the short code is turned off | 5. Then off for 1 minute, 5 minutes, 1 hour, 3 hours, then 3 hours each time. Each lockout gives 5 new tries. A successful pairing goes back to the start (4.6). |
 
 ### 2.4 QR payload
 
@@ -312,21 +312,41 @@ conf_b = HMAC-SHA256(kc_b, T)
 - A correct `conf_b` ends the pairing for both modes. All other pairing connections are closed.
 - More than 4 pairing connections at once: the extra ones get `PairAbort(3)`. This is not a try.
 - A connection that sends no `PairHello` within 10 seconds is closed. This is not a try.
-- **Lockout.** The device counts failed code tries over all pairings (not dead codes: an attacker
-  who stops at 4 tries per code must still be counted). A failed try counts even when its pairing
-  was cancelled, expired or replaced by a new one before the try ended. A correct `conf_b` resets
-  the count. At 15 the short code is off on this device for 1 hour: no further code try is
-  answered, and a new pairing shows only the QR code and the text "Someone on this network keeps
-  guessing the code. Use the QR code, or try again in an hour." The count and the time are kept in
-  memory only; an agent restart clears them. When the lockout starts, the count goes back to 0.
+- **Lockout** (changed 2026-11-14, Max's rule; it replaces "15 tries, then 1 hour"). The device
+  counts failed code tries over all pairings (not dead codes: an attacker who stops at 4 tries per
+  code must still be counted). A failed try counts even when its pairing was cancelled, expired or
+  replaced by a new one before the try ended. At 5 failed tries the short code is off on this
+  device. The lockouts get longer:
+
+  | Lockout | Short code off for |
+  |---|---|
+  | 1st | 1 minute |
+  | 2nd | 5 minutes |
+  | 3rd | 1 hour |
+  | 4th | 3 hours |
+  | 5th and later | 3 hours each (the longest) |
+
+  When a lockout starts, the count goes back to 0, so after it ends there are always 5 more tries.
+  A correct `conf_b` (code or QR) is the only thing that goes back to the 1st step; it also ends a
+  running lockout. During a lockout no code try is answered (`PairAbort(2)`), and a new pairing
+  shows only the QR code and the text "Too many wrong codes. Try again in 5 minutes." with the time
+  left, rounded up to whole minutes, or to whole hours from 1 hour. A try that was counted before
+  the lockout started and fails during it counts for the next round, but cannot start a second
+  lockout. The count, the step and the end time are saved in `state.json` with the other pairing
+  state (counts and a time only, no secret, no clipboard content), so an agent restart does not
+  clear them. A saved end time more than 3 hours ahead (the clock was set back) is cut to 3 hours.
+- **Scope.** Only the device that shows the code (the inviter) counts and locks, as before. It is
+  the side that holds the secret and answers guesses. The device that types the code has no
+  counter: its user gets "That code is not right" for each wrong code, and an attacker controls
+  that side anyway.
 - **Denial of service.** A device on the same LAN can always stop a pairing: it can use up the 5
   code tries, start the lockout, or hold the 4 pairing connections. This is accepted. It reveals
   nothing, the user sees the notice, and the per-address QR count means the QR code cannot be
   killed with a few junk hellos.
 
-Result: per open pairing a guesser has at most 5 in 1,000,000. Before each 1-hour lockout a
-guesser has at most 15 tries, so over time at most about 15 in 1,000,000 per hour, and only while
-the user keeps pressing "Add a device".
+Result: per open pairing a guesser has at most 5 in 1,000,000. With the ladder a guesser has at
+most 20 tries in the first 66 minutes, then 5 tries per 3 hours: about 55 tries in the first day and 40 per day after
+that (55 and 40 in 1,000,000), and only while the user keeps pressing "Add a device".
 
 ### 4.7 After confirmation
 
@@ -700,8 +720,9 @@ back-dated add that then signs a rename (invalid) and a remove (effective, see 5
 Pairing: every vector of 6.1 and 6.2; the 5-try limit with 4 connections at once (never more than
 5 `PairReply` frames per code); a dropped connection after `PairReply` stays counted; a fake
 inviter gets no byte after a wrong `conf_a`; the QR joiner sends nothing to a wrong key; QR stays
-valid after the code is dead; lockout after 15 failed code tries in a row, also when spread as 4
-per code over many pairings and when the pairing was cancelled; QR tries counted per address;
+valid after the code is dead; lockout after 5 failed code tries, also when spread over
+pairings and when the pairing was cancelled; the ladder 1 minute, 5 minutes, 1 hour, 3 hours, 3
+hours; reset only by a success; the ladder kept across a restart; QR tries counted per address;
 both secrets wiped after success; expiry at 10 minutes; a pairing from a
 non-local address is refused; no `uclip-pair/1` when no pairing is open; pairing an existing member
 signs nothing; the joiner refuses a `PairState` in which it is not a member or the secret does not

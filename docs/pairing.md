@@ -33,7 +33,9 @@ The protocol page wins over this page. Clarifications that M3 needed are in prot
 ## Inviter
 
 - `Host` is one per device and lives as long as the agent. It holds the one open pairing and the
-  lockout count, in memory only. Clones share one state behind a mutex.
+  lockout ladder (`session::Lockout`: failed tries, lockouts so far, end time). Clones share one
+  state behind a mutex. The agent saves `Host::lockout()` in `state.json` (`pair_lockout`) when
+  it changes and starts with `Host::with_lockout(saved.loaded(now))`, so a restart keeps it.
 - `Host::accept` checks, in this order: a pairing is open (else `Refuse::NotOpen`: do not accept
   the ALPN), the LAN rule (else close before `PairHello`), at most 4 connections (else send
   `PairAbort(3)`, not a try).
@@ -45,6 +47,13 @@ The protocol page wins over this page. Clarifications that M3 needed are in prot
   replaces it.
 - After a correct `conf_b` the pairing is over for both modes. Other runs get `PairAbort(2)` at
   their next step.
+- Lockout ladder (protocol 4.6, Max's rule of 2026-11-14): every 5 failed code tries, over all
+  pairings, turn the short code off for `LOCKOUT_LADDER_MS` = 1 min, 5 min, 1 h, 3 h, then 3 h
+  each time. Each lockout starts a new count of 5. Only a correct `conf_b` goes back to the
+  start. `lockout_notice(left_ms)` gives the text, for example "Too many wrong codes. Try again
+  in 5 minutes."; the agent sends it as `notice` (and `lockout_ms`) from `pair.start` and as
+  `lockout` in the `pair.tried` event of the try that started the lockout. Only the inviter
+  counts, as before.
 
 ## Joiner
 

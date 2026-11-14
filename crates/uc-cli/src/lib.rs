@@ -623,6 +623,9 @@ async fn pair(c: &mut Client, j: bool, action: PairCmd) -> Result<(), Fail> {
                                     println!("{}", serde_json::to_string(&e).unwrap_or_default());
                                 } else {
                                     println!("{}.", e.data["notice"].as_str().unwrap_or(""));
+                                    if let Some(l) = e.data["lockout"].as_str() {
+                                        println!("{l}");
+                                    }
                                     if e.data["code_dead"].as_bool() == Some(true) {
                                         println!("The code no longer works. The QR code still works.");
                                     }

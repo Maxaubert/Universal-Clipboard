@@ -80,9 +80,7 @@ test('enter a code in a group asks before leaving it', async ({ page }) => {
 
 test('show a code: lockout notice keeps the QR, someone tried the code', async ({ page }) => {
   await open(page, 'lockout', 'show');
-  await expect(page.getByTestId('lockout')).toHaveText(
-    'Someone on this network keeps guessing the code. Use the QR code, or try again in an hour.',
-  );
+  await expect(page.getByTestId('lockout')).toHaveText('Too many wrong codes. Try again in 5 minutes.');
   await expect(page.getByTestId('code')).toHaveCount(0);
   await expect(page.getByRole('img', { name: 'QR code to scan with your other device' })).toBeVisible();
 
@@ -90,6 +88,19 @@ test('show a code: lockout notice keeps the QR, someone tried the code', async (
   await expect(page.getByTestId('code')).toBeVisible();
   await page.evaluate(() => window.__ucMock!.emit('pair.tried', { notice: 'Someone else tried this code', code_dead: false }));
   await expect(page.getByTestId('tried')).toHaveText('Someone else tried this code');
+
+  // The 5th wrong code starts the lockout: the code goes, the time left shows, the QR stays.
+  await page.evaluate(() =>
+    window.__ucMock!.emit('pair.tried', {
+      notice: 'Someone else tried this code',
+      code_dead: true,
+      lockout: 'Too many wrong codes. Try again in 1 minute.',
+      lockout_ms: 60000,
+    }),
+  );
+  await expect(page.getByTestId('code')).toHaveCount(0);
+  await expect(page.getByTestId('lockout')).toHaveText('Too many wrong codes. Try again in 1 minute.');
+  await expect(page.getByRole('img', { name: 'QR code to scan with your other device' })).toBeVisible();
 });
 
 test('show a code: expiry makes a new code, back cancels', async ({ page }) => {

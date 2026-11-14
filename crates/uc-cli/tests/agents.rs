@@ -219,3 +219,76 @@ fn setup_and_autostart_in_the_sandbox() {
     assert!(!s.contains('\u{1b}'), "no colour codes");
     assert!(s.contains("Not set up"), "{s}");
 }
+
+/// Lockout ladder (protocol 4.6): the 5th wrong code turns the code off for 1 minute. The
+/// inviter shows the time left, and an agent restart keeps the lockout.
+#[test]
+fn five_wrong_codes_lock_out_and_a_restart_keeps_it() {
+    use std::io::{BufRead, BufReader};
+    let mut a = Agent::new(33);
+    let mut b = Agent::new(34);
+    a.start();
+    b.start();
+    let mut show = std::process::Command::new(env!("CARGO_BIN_EXE_uc"))
+        .args(["pair", "show", "--json"])
+        .envs(a.env())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = BufReader::new(show.stdout.take().unwrap());
+    let mut line = String::new();
+    out.read_line(&mut line).unwrap();
+    let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    assert!(v["notice"].is_null(), "{v}");
+    let code = v["code"].as_str().unwrap().replace(' ', "");
+    let wrong = if code == "000000" { "000001" } else { "000000" };
+    let mut last = serde_json::Value::Null;
+    for i in 1..=5 {
+        let o = std::process::Command::new(env!("CARGO_BIN_EXE_uc"))
+            .args(["pair", "enter", wrong])
+            .envs(b.env())
+            .env(
+                "UCLIP_TEST_PAIR_ADDRS",
+                format!("{}:{}", a.ip, v["port"].as_u64().unwrap()),
+            )
+            .output()
+            .unwrap();
+        assert!(!o.status.success(), "try {i}");
+        let mut tried = String::new();
+        out.read_line(&mut tried).unwrap();
+        last = serde_json::from_str(tried.trim()).unwrap();
+        if i < 5 {
+            assert!(last["data"]["lockout"].is_null(), "try {i}: {last}");
+        }
+    }
+    assert_eq!(
+        last["data"]["lockout"], "Too many wrong codes. Try again in 1 minute.",
+        "{last}"
+    );
+    let _ = a.uc(&["pair", "cancel"]);
+    let _ = show.wait();
+
+    // A restart keeps the lockout: no code, the time left, the QR code still there.
+    a.stop();
+    a.start();
+    let mut show = std::process::Command::new(env!("CARGO_BIN_EXE_uc"))
+        .args(["pair", "show", "--json"])
+        .envs(a.env())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = BufReader::new(show.stdout.take().unwrap());
+    let mut line = String::new();
+    out.read_line(&mut line).unwrap();
+    let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    assert!(v["code"].is_null(), "{v}");
+    assert_eq!(
+        v["notice"], "Too many wrong codes. Try again in 1 minute.",
+        "{v}"
+    );
+    let left = v["lockout_ms"].as_u64().unwrap();
+    assert!(left > 0 && left <= 60_000, "{v}");
+    assert!(v["qr"].is_string(), "{v}");
+    let _ = a.uc(&["pair", "cancel"]);
+    let _ = show.wait();
+}

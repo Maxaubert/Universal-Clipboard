@@ -59,7 +59,10 @@ export interface PairOffer {
   code: string | null;
   qr: string | null;
   expires_ms: number;
+  /** Set while the short code is off: "Too many wrong codes. Try again in 5 minutes." */
   notice: string | null;
+  /** Time left in the lockout, 0 when the code works. */
+  lockout_ms?: number;
 }
 
 export interface IpcFailure {
