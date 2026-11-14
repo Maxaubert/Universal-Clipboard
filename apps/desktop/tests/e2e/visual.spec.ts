@@ -81,8 +81,10 @@ const screens: Screen[] = [
   { id: 'U1', file: 'U1-updating', scenario: 'update-applying', route: 'update', ref: { kind: 'baseline' }, why: 'app baseline (U1 updating)' },
   { id: 'U1', file: 'U1-updated', scenario: 'updated', route: 'update', ref: { kind: 'baseline' }, why: 'app baseline (U1 updated)' },
   { id: 'U1', file: 'U1-failed', scenario: 'update-failed', route: 'update', ref: { kind: 'baseline' }, why: 'app baseline (U1 failed)' },
-  { id: 'U3', file: 'U3-card', scenario: 'h3', extra: { update: 'update' }, ref: { kind: 'baseline' }, why: 'app baseline (U3 card on H3 Home)' },
-  { id: 'U3', file: 'U3-card-failed', scenario: 'h3', extra: { update: 'update-failed' }, ref: { kind: 'baseline' }, why: 'app baseline (U3 card, failed)' },
+  // U3: the baselines were made on Windows; Linux CI draws the many lines of text a little
+  // differently (1.06% and 0.88% on 2026-11-14, text edges only), so the limit is 2%.
+  { id: 'U3', file: 'U3-card', scenario: 'h3', extra: { update: 'update' }, maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (U3 card on H3 Home)' },
+  { id: 'U3', file: 'U3-card-failed', scenario: 'h3', extra: { update: 'update-failed' }, maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (U3 card, failed)' },
 ];
 
 function fontCss(): string {
