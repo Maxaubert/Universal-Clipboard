@@ -2,6 +2,7 @@
   import BackBar from '../components/BackBar.svelte';
   import * as art from '../lib/art';
   import { failureText } from '../lib/ipc';
+  import { msgIn } from '../lib/motion';
   import { S } from '../lib/strings';
   import { askRows, store } from '../lib/store.svelte';
   import type { SetupRow } from '../lib/types';
@@ -30,12 +31,12 @@
     }
   }
 
-  async function next() {
+  async function next(from: Element) {
     error = null;
     try {
       await store.api!.call('setup.step', { row: 'done', answer: true });
       await store.refresh();
-      store.go('add');
+      store.go('add', { from });
     } catch (e) {
       error = failureText(e);
     }
@@ -43,13 +44,13 @@
 </script>
 
 <div style="flex: 1; display: flex; flex-direction: column; padding: 4px 24px 24px 24px; min-height: 0;">
-  <BackBar onback={() => store.goBack('welcome')} />
+  <div data-m="back"><BackBar onback={() => store.goBack('welcome')} /></div>
   <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 32px;">
-    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;">
+    <div data-m="text" style="display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;">
       <h1 style="font-size: 28px; line-height: 1.15;">{S.permTitle(rows.length)}</h1>
       <p style="margin: 0; font-size: 15px; color: #3F3C38;">{S.permSub}</p>
     </div>
-    <div style="display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;">
+    <div data-m="rows" style="display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;">
       {#each rows as r (r.row)}
         {@const done = r.state === 'done'}
         <div
@@ -73,9 +74,9 @@
         </div>
       {/each}
     </div>
-    {#if error}<div class="err" role="alert">{error}</div>{/if}
+    {#if error}<div class="err" role="alert" in:msgIn>{error}</div>{/if}
   </div>
-  <div style="display: flex; flex-direction: column; align-items: center; gap: 16px;">
-    <button type="button" class="btn" onclick={next}>{S.continue}</button>
+  <div data-m="cta" style="display: flex; flex-direction: column; align-items: center; gap: 16px;">
+    <button type="button" class="btn" data-shape onclick={(e) => next(e.currentTarget)}><span class="lbl">{S.continue}</span></button>
   </div>
 </div>

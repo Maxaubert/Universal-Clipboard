@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sync activity motion</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Page-local styles for activity.html. Resting styles show the final, readable state. */
+  .home { position: relative; }
+  .home .tile { position: relative; }
+  .tile .lg { color: var(--ink); }
+
+  /* Twin text: .a is the earlier text, .b the later one. Rest shows .b. */
+  .swap { display: inline-grid; overflow: hidden; padding: 2px 0; margin: -2px 0; }
+  .swap > * { grid-area: 1 / 1; }
+  .swap > .a { opacity: 0; }
+  .tile-state .st2 { display: inline-grid; justify-items: center; }
+  .stw { justify-items: center; }
+
+  /* A1 Relay */
+  .badge {
+    position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--green); display: flex; align-items: center; justify-content: center; opacity: 0;
+  }
+  .pkt {
+    position: absolute; left: 0; top: 0; z-index: 4; width: 18px; height: 22px; box-sizing: border-box;
+    border-radius: 4px; background: var(--ink); opacity: 0; pointer-events: none; offset-rotate: 0deg;
+    box-shadow: 0 2px 6px rgba(40, 35, 30, 0.18);
+  }
+  .pkt::before, .pkt::after {
+    content: ''; position: absolute; left: 4px; right: 4px; height: 2px; border-radius: 1px; background: rgba(255,255,255,0.85);
+  }
+  .pkt::before { top: 7px; }
+  .pkt::after { top: 12px; right: 7px; }
+  .foot {
+    margin-top: auto; border-top: 1px solid var(--line); padding: 14px 2px 0; display: flex; align-items: center; gap: 10px;
+    font-size: 14px; line-height: 20px;
+  }
+  .foot-ico { color: var(--ink-3); width: 20px; height: 20px; }
+  .foot-t { flex: 1; min-width: 0; font-weight: 600; color: var(--ink); }
+  .foot-time { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .foot-time .swap { justify-items: end; }
+
+  /* A2 Arrival */
+  .halo { position: absolute; inset: -1px; border-radius: var(--r-tile); border: 2px solid var(--green); opacity: 0; pointer-events: none; }
+  .note {
+    display: flex; align-items: center; gap: 12px; background: var(--white); border: 1px solid var(--line);
+    border-radius: var(--r-tile); padding: 12px 16px 12px 12px;
+    box-shadow: 0 1px 2px rgba(40,35,30,0.04), 0 6px 16px rgba(40,35,30,0.06);
+  }
+  .note-ico {
+    width: 40px; height: 40px; flex: none; box-sizing: border-box; border-radius: var(--r); background: var(--paper);
+    border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--ink-2);
+  }
+  .note-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .note-t { font-size: 14.5px; line-height: 20px; font-weight: 600; }
+  .note-time { font-size: 13px; line-height: 18px; color: var(--ink-3); }
+  .note-arrow { color: var(--green); display: flex; }
+
+  /* A3 Ticker */
+  .tk { display: inline-grid; overflow: hidden; padding: 2px 0; margin: -2px 0; }
+  .tk-i { grid-area: 1 / 1; white-space: nowrap; }
+  .tk-i.t1, .tk-i.t2 { opacity: 0; }
+  .tk-ico { position: relative; width: 15px; height: 15px; flex: none; display: inline-flex; align-items: center; justify-content: center; margin: 0 -3px 0 -3px; }
+  .tk-ico svg { position: absolute; inset: 0; opacity: 0; color: var(--ink); }
+  .tk-ico .tk-in { color: var(--green); }
+
+  /* A4 Hush, A5 Shade: header twins */
+  .hw { line-height: inherit; }
+  .hdr-sub .swap { white-space: nowrap; }
+
+  /* A5 Shade */
+  .shadewrap { position: relative; }
+  .shade-clip { position: absolute; inset: -6px; z-index: 2; border-radius: 16px; overflow: hidden; pointer-events: none; }
+  .shade {
+    position: absolute; inset: 0; border-radius: 16px;
+    background: rgba(247, 246, 244, 0.9); -webkit-backdrop-filter: grayscale(1); backdrop-filter: grayscale(1);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 0 1px var(--line), 0 1px 0 var(--line-2), 0 10px 20px rgba(40, 35, 30, 0.10);
+    transform: translateY(-112%);
+  }
+  .shade-in { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .shade-ico {
+    width: 46px; height: 46px; border-radius: 50%; border: 1.5px solid var(--ink); box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; margin-bottom: 6px; color: var(--ink);
+  }
+  .shade-t { font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: -0.01em; }
+  .shade .btn { margin-top: 12px; }
+
+  /* A6 Flag */
+  .banner {
+    display: flex; align-items: center; gap: 12px; background: var(--white); border: 1px solid var(--line);
+    border-radius: var(--r-tile); padding: 12px 12px 12px 14px;
+  }
+  .bn-ico { position: relative; width: 34px; height: 34px; flex: none; }
+  .bn-ico svg { display: block; }
+  .bn-ring { transform: rotate(-90deg); transform-origin: center; transform-box: fill-box; stroke-dasharray: 94.25; stroke-dashoffset: 0; }
+  .bn-pulse { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--red); box-sizing: border-box; opacity: 0; }
+  .bn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .bn-t { font-size: 14.5px; line-height: 20px; font-weight: 600; }
+  .bn-s { font-size: 13.5px; line-height: 18px; color: var(--ink-3); }
+  .ubdot { background: var(--red); }
+
+  /* A7 Breathe and renew */
+  .cb7 { gap: 18px; }
+  .qrwrap { position: relative; width: 256px; height: 256px; flex: none; }
+  .qrwrap .qr { position: absolute; inset: 0; }
+  .breath { position: absolute; left: -10px; top: -10px; opacity: 0.3; pointer-events: none; transform-origin: center; }
+  #a7.is-playing .breath { animation: uc-breathe 5500ms var(--ease-in-out) infinite; }
+  @keyframes uc-breathe { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.62; transform: scale(1.014); } }
+  html.reduce #a7 .breath { animation: none; opacity: 0.4; }
+  .wipe-edge {
+    position: absolute; left: 0; right: 0; top: 0; height: 2px; opacity: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(29,28,26,0), rgba(29,28,26,0.55) 30%, rgba(29,28,26,0.55) 70%, rgba(29,28,26,0));
+  }
+  .cb7 .code { white-space: nowrap; }
+  .dg { display: inline-grid; overflow: hidden; vertical-align: top; padding: 4px 0; margin: -4px 0; }
+  .dg > * { grid-area: 1 / 1; }
+  .dg-o { opacity: 0; }
+  .dg-gap { display: inline-block; width: 0.3em; }
+  .timer { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: -4px; }
+  .bar { display: block; width: 160px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.16); overflow: hidden; opacity: 0; }
+  .bar-fill { display: block; height: 100%; background: var(--white); transform-origin: left center; }
+  .timer-t { font-size: 13.5px; line-height: 18px; color: var(--line-2); font-variant-numeric: tabular-nums; }
+
+</style>
+</head>
+<body class="gallery">
+<!-- Generated 2026-11-14 by gen-activity.cjs. Sync activity and small moments, 7 options. -->
+<header class="gal-head">
+  <div class="gal-titles">
+    <h1>Sync activity and small moments</h1>
+    <p class="gal-note">What Home shows when a copy goes out or comes in, Pause and Resume, a problem arriving, and the code waiting to expire. Only facts, never the copy itself. This PC is not a tile here: the header stands for it.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="a1" data-loop="7000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr home" style="padding: 44px 20px 22px 20px; gap: 16px;">
+          <div class="hdr">
+            <div class="hdr-text">
+              <h1 class="h-m">Working</h1>
+              <div class="hdr-sub"><span class="dot green"></span>5 devices connected</div>
+            </div>
+            <button type="button" class="hdrbtn pz" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="tiles"><button type="button" class="tile" data-device="Mac mini"><span class="badge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"></path></svg></span><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><span class="badge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"></path></svg></span><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><span class="badge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"></path></svg></span><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span class="st">Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><span class="badge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"></path></svg></span><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+          <div class="foot" role="status">
+            <span class="foot-ico swap ft"><svg class="a" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"></rect><circle cx="9" cy="10" r="1.6"></circle><path d="M4 17.5l5-4.5 4 3.5 3-2.5 4.5 3.5"></path></svg><svg class="b" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2.5"></rect><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4"></path></svg></span>
+            <span class="foot-t"><span class="swap ft"><span class="a" aria-hidden="true">Image, from iPhone</span><span class="b">Text, sent to 4 devices</span></span></span>
+            <span class="foot-time"><span class="swap ft"><span class="a" aria-hidden="true">8 minutes ago</span><span class="b">just now</span></span></span>
+          </div>
+          <span class="pkt p0" aria-hidden="true"></span><span class="pkt p1" aria-hidden="true"></span><span class="pkt p2" aria-hidden="true"></span><span class="pkt p3" aria-hidden="true"></span>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>A1</b> Relay</div><p class="opt-desc">One copy leaves the header (this PC) and splits into four. Each packet glides to a connected device and lands as a check. The asleep iPad gets nothing yet. The last line says what went out.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="a2" data-loop="8000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr home" style="padding: 44px 20px 22px 20px; gap: 16px;">
+          <div class="hdr">
+            <div class="hdr-text">
+              <h1 class="h-m">Working</h1>
+              <div class="hdr-sub"><span class="dot green"></span>5 devices connected</div>
+            </div>
+            <button type="button" class="hdrbtn pz" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="tiles"><button type="button" class="tile" data-device="Mac mini"><span class="halo" aria-hidden="true"></span><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span class="st">Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+          <div class="note" role="status">
+            <span class="note-ico"><svg class="" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"></rect><circle cx="9" cy="10" r="1.6"></circle><path d="M4 17.5l5-4.5 4 3.5 3-2.5 4.5 3.5"></path></svg></span>
+            <span class="note-text"><span class="note-t">Image, from Mac mini</span><span class="note-time"><span class="swap nt"><span class="a" aria-hidden="true">just now</span><span class="b">1 minute ago</span></span></span></span>
+            <span class="note-arrow"><svg class="" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 7L7 17M15 17H7V9"></path></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>A2</b> Arrival</div><p class="opt-desc">The Mac mini lights up softly, then a note rises under the devices: what came, from where, when. Later the time rolls from "just now" to "1 minute ago".</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="a3" data-loop="10000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr home" style="padding: 44px 20px 22px 20px; gap: 16px;">
+          <div class="hdr">
+            <div class="hdr-text">
+              <h1 class="h-m">Working</h1>
+              <div class="hdr-sub"><span class="tk-ico"><span class="dot green tk-dot"></span><svg class="tk-out" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"></path></svg><svg class="tk-in" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 7L7 17M15 17H7V9"></path></svg></span><span class="tk"><span class="tk-i t0">5 devices connected</span><span class="tk-i t1" aria-hidden="true">Text, sent, just now</span><span class="tk-i t2" aria-hidden="true">Image, from iPhone, just now</span></span></div>
+            </div>
+            <button type="button" class="hdrbtn pz" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span class="st">Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>A3</b> Ticker</div><p class="opt-desc">No new parts: the line under "Working" rolls to the latest copy, then rolls back. An arrow shows the way: up for sent, down for received.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="a4" data-loop="10000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr home" style="padding: 44px 20px 22px 20px; gap: 16px;">
+          <div class="hdr">
+            <div class="hdr-text">
+              <h1 class="h-m"><span class="swap hw"><span class="a" aria-hidden="true">Paused</span><span class="b">Working</span></span></h1>
+              <div class="hdr-sub"><span class="dot green hdot"></span><span class="swap hs"><span class="a" aria-hidden="true">Copies stay on this PC</span><span class="b">5 devices connected</span></span></div>
+            </div>
+            <button type="button" class="hdrbtn pz" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span class="st2"><span class="swap stw"><span class="a" aria-hidden="true">Paused</span><span class="b">Connected</span></span></span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span class="st2"><span class="swap stw"><span class="a" aria-hidden="true">Paused</span><span class="b">Connected</span></span></span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span class="st2"><span class="swap stw"><span class="a" aria-hidden="true">Paused</span><span class="b">Connected</span></span></span></span></span></button><button type="button" class="tile" data-device="iPad"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span class="st">Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span class="st2"><span class="swap stw"><span class="a" aria-hidden="true">Paused</span><span class="b">Connected</span></span></span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>A4</b> Hush</div><p class="opt-desc">Pause sends a slow wave from the button across the tiles: logos fade to grey, green dots drain. Resume sends the wave back and the dots fill again.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="a5" data-loop="9500">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr home" style="padding: 44px 20px 22px 20px; gap: 16px;">
+          <div class="hdr">
+            <div class="hdr-text">
+              <h1 class="h-m"><span class="swap hw"><span class="a" aria-hidden="true">Paused</span><span class="b">Working</span></span></h1>
+              <div class="hdr-sub"><span class="dot green hdot"></span><span class="swap hs"><span class="a" aria-hidden="true">Copies stay on this PC</span><span class="b">5 devices connected</span></span></div>
+            </div>
+            <button type="button" class="hdrbtn pz" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="shadewrap">
+            <div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span class="st">Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+            <div class="shade-clip" aria-hidden="true"><div class="shade">
+              <div class="shade-in">
+                <span class="shade-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></span>
+                <p class="shade-t">Sync is paused</p>
+                <p class="small center">Copies stay on this PC.</p>
+                <button type="button" class="btn sm" tabindex="-1">Resume</button>
+              </div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>A5</b> Shade</div><p class="opt-desc">Pause lowers a paper shade over the devices, like a blind. Under it, everything turns grey and still. Resume lifts it again.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="a6" data-loop="8000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr home" style="padding: 44px 20px 22px 20px; gap: 16px;">
+          <div class="hdr">
+            <div class="hdr-text">
+              <h1 class="h-m">Working</h1>
+              <div class="hdr-sub"><span class="dot green"></span><span class="swap hs"><span class="a" aria-hidden="true">5 devices connected</span><span class="b">4 devices connected</span></span></div>
+            </div>
+            <button type="button" class="hdrbtn pz" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="banner" role="alert">
+            <span class="bn-ico"><svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true"><circle class="bn-ring" cx="17" cy="17" r="15" stroke="#B42318" stroke-width="2.2"></circle><path class="bn-bang" d="M17 10.5v8" stroke="#B42318" stroke-width="2.6" stroke-linecap="round"></path><circle class="bn-bang" cx="17" cy="23.2" r="1.6" fill="#B42318"></circle></svg><span class="bn-pulse"></span></span>
+            <span class="bn-text"><span class="bn-t">Ubuntu laptop is blocked</span><span class="bn-s">Firewall is blocking it.</span></span>
+            <button type="button" class="btn sm" tabindex="-1">Fix</button>
+          </div>
+          <div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green ubdot"></span><span class="st2"><span class="swap stw"><span class="a" aria-hidden="true">Connected</span><span class="b">Blocked</span></span></span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span class="st">Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg class="lg" width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span class="st">Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>A6</b> Flag</div><p class="opt-desc">Cause first, then the message: the Ubuntu tile turns red, then a banner opens and gently pushes the tiles down. One slow ring, no blinking.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="a7" data-loop="11000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div><div class="steps" role="img" aria-label="Step 3 of 4"><span class="on"></span><span class="on"></span><span class="cur"></span><span></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 4px 28px 24px 28px;">
+          <div class="backbar" style="margin-left: -12px;">
+            <button type="button" class="iconbtn" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button>
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;">
+            <h1 class="h-l center">Pair a device</h1>
+            <div class="codebox cb7">
+              <div class="qrwrap" role="img" aria-label="QR code to scan with your other device">
+                <svg class="breath" width="276" height="276" viewBox="0 0 276 276" fill="none" aria-hidden="true"><rect x="2" y="2" width="272" height="272" rx="19" stroke="#FFFFFF" stroke-width="1.6"></rect></svg>
+                <svg class="qr q-old" aria-hidden="true" width="256" height="256" viewBox="0 0 33 33" shape-rendering="crispEdges"><path d="M2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM5 2h1v1h-1zM6 2h1v1h-1zM7 2h1v1h-1zM8 2h1v1h-1zM13 2h1v1h-1zM14 2h1v1h-1zM16 2h1v1h-1zM19 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM27 2h1v1h-1zM28 2h1v1h-1zM29 2h1v1h-1zM30 2h1v1h-1zM2 3h1v1h-1zM8 3h1v1h-1zM11 3h1v1h-1zM14 3h1v1h-1zM18 3h1v1h-1zM19 3h1v1h-1zM20 3h1v1h-1zM24 3h1v1h-1zM30 3h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM19 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM26 4h1v1h-1zM27 4h1v1h-1zM28 4h1v1h-1zM30 4h1v1h-1zM2 5h1v1h-1zM4 5h1v1h-1zM5 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM11 5h1v1h-1zM13 5h1v1h-1zM14 5h1v1h-1zM15 5h1v1h-1zM18 5h1v1h-1zM21 5h1v1h-1zM24 5h1v1h-1zM26 5h1v1h-1zM27 5h1v1h-1zM28 5h1v1h-1zM30 5h1v1h-1zM2 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM11 6h1v1h-1zM14 6h1v1h-1zM24 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM2 7h1v1h-1zM8 7h1v1h-1zM10 7h1v1h-1zM11 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM21 7h1v1h-1zM24 7h1v1h-1zM30 7h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM8 8h1v1h-1zM10 8h1v1h-1zM12 8h1v1h-1zM14 8h1v1h-1zM16 8h1v1h-1zM18 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM25 8h1v1h-1zM26 8h1v1h-1zM27 8h1v1h-1zM28 8h1v1h-1zM29 8h1v1h-1zM30 8h1v1h-1zM11 9h1v1h-1zM14 9h1v1h-1zM15 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM2 10h1v1h-1zM5 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM23 10h1v1h-1zM25 10h1v1h-1zM3 11h1v1h-1zM5 11h1v1h-1zM15 11h1v1h-1zM17 11h1v1h-1zM18 11h1v1h-1zM19 11h1v1h-1zM20 11h1v1h-1zM22 11h1v1h-1zM24 11h1v1h-1zM27 11h1v1h-1zM28 11h1v1h-1zM29 11h1v1h-1zM3 12h1v1h-1zM5 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM11 12h1v1h-1zM15 12h1v1h-1zM16 12h1v1h-1zM17 12h1v1h-1zM20 12h1v1h-1zM21 12h1v1h-1zM25 12h1v1h-1zM26 12h1v1h-1zM28 12h1v1h-1zM29 12h1v1h-1zM3 13h1v1h-1zM4 13h1v1h-1zM6 13h1v1h-1zM12 13h1v1h-1zM14 13h1v1h-1zM15 13h1v1h-1zM18 13h1v1h-1zM20 13h1v1h-1zM25 13h1v1h-1zM26 13h1v1h-1zM28 13h1v1h-1zM29 13h1v1h-1zM4 14h1v1h-1zM5 14h1v1h-1zM7 14h1v1h-1zM8 14h1v1h-1zM10 14h1v1h-1zM11 14h1v1h-1zM13 14h1v1h-1zM14 14h1v1h-1zM16 14h1v1h-1zM17 14h1v1h-1zM18 14h1v1h-1zM19 14h1v1h-1zM20 14h1v1h-1zM21 14h1v1h-1zM22 14h1v1h-1zM23 14h1v1h-1zM24 14h1v1h-1zM27 14h1v1h-1zM28 14h1v1h-1zM29 14h1v1h-1zM2 15h1v1h-1zM3 15h1v1h-1zM4 15h1v1h-1zM6 15h1v1h-1zM7 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1zM13 15h1v1h-1zM14 15h1v1h-1zM15 15h1v1h-1zM16 15h1v1h-1zM17 15h1v1h-1zM18 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM22 15h1v1h-1zM25 15h1v1h-1zM29 15h1v1h-1zM30 15h1v1h-1zM2 16h1v1h-1zM4 16h1v1h-1zM6 16h1v1h-1zM8 16h1v1h-1zM11 16h1v1h-1zM12 16h1v1h-1zM13 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM20 16h1v1h-1zM24 16h1v1h-1zM29 16h1v1h-1zM30 16h1v1h-1zM5 17h1v1h-1zM6 17h1v1h-1zM7 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM11 17h1v1h-1zM17 17h1v1h-1zM19 17h1v1h-1zM21 17h1v1h-1zM22 17h1v1h-1zM23 17h1v1h-1zM24 17h1v1h-1zM25 17h1v1h-1zM26 17h1v1h-1zM27 17h1v1h-1zM30 17h1v1h-1zM2 18h1v1h-1zM3 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM8 18h1v1h-1zM9 18h1v1h-1zM13 18h1v1h-1zM15 18h1v1h-1zM17 18h1v1h-1zM18 18h1v1h-1zM19 18h1v1h-1zM20 18h1v1h-1zM22 18h1v1h-1zM3 19h1v1h-1zM4 19h1v1h-1zM5 19h1v1h-1zM10 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM20 19h1v1h-1zM23 19h1v1h-1zM24 19h1v1h-1zM25 19h1v1h-1zM27 19h1v1h-1zM28 19h1v1h-1zM29 19h1v1h-1zM2 20h1v1h-1zM4 20h1v1h-1zM8 20h1v1h-1zM11 20h1v1h-1zM13 20h1v1h-1zM16 20h1v1h-1zM18 20h1v1h-1zM19 20h1v1h-1zM20 20h1v1h-1zM23 20h1v1h-1zM25 20h1v1h-1zM27 20h1v1h-1zM28 20h1v1h-1zM29 20h1v1h-1zM30 20h1v1h-1zM4 21h1v1h-1zM6 21h1v1h-1zM9 21h1v1h-1zM12 21h1v1h-1zM13 21h1v1h-1zM14 21h1v1h-1zM16 21h1v1h-1zM17 21h1v1h-1zM18 21h1v1h-1zM19 21h1v1h-1zM20 21h1v1h-1zM24 21h1v1h-1zM25 21h1v1h-1zM30 21h1v1h-1zM2 22h1v1h-1zM4 22h1v1h-1zM8 22h1v1h-1zM9 22h1v1h-1zM10 22h1v1h-1zM11 22h1v1h-1zM13 22h1v1h-1zM17 22h1v1h-1zM20 22h1v1h-1zM21 22h1v1h-1zM22 22h1v1h-1zM23 22h1v1h-1zM24 22h1v1h-1zM25 22h1v1h-1zM26 22h1v1h-1zM27 22h1v1h-1zM28 22h1v1h-1zM29 22h1v1h-1zM30 22h1v1h-1zM10 23h1v1h-1zM11 23h1v1h-1zM12 23h1v1h-1zM13 23h1v1h-1zM16 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM22 23h1v1h-1zM26 23h1v1h-1zM27 23h1v1h-1zM28 23h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM5 24h1v1h-1zM6 24h1v1h-1zM7 24h1v1h-1zM8 24h1v1h-1zM11 24h1v1h-1zM14 24h1v1h-1zM18 24h1v1h-1zM22 24h1v1h-1zM24 24h1v1h-1zM26 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM2 25h1v1h-1zM8 25h1v1h-1zM10 25h1v1h-1zM11 25h1v1h-1zM13 25h1v1h-1zM14 25h1v1h-1zM16 25h1v1h-1zM18 25h1v1h-1zM22 25h1v1h-1zM26 25h1v1h-1zM28 25h1v1h-1zM2 26h1v1h-1zM4 26h1v1h-1zM5 26h1v1h-1zM6 26h1v1h-1zM8 26h1v1h-1zM13 26h1v1h-1zM19 26h1v1h-1zM20 26h1v1h-1zM22 26h1v1h-1zM23 26h1v1h-1zM24 26h1v1h-1zM25 26h1v1h-1zM26 26h1v1h-1zM30 26h1v1h-1zM2 27h1v1h-1zM4 27h1v1h-1zM5 27h1v1h-1zM6 27h1v1h-1zM8 27h1v1h-1zM10 27h1v1h-1zM15 27h1v1h-1zM18 27h1v1h-1zM19 27h1v1h-1zM20 27h1v1h-1zM21 27h1v1h-1zM24 27h1v1h-1zM25 27h1v1h-1zM26 27h1v1h-1zM27 27h1v1h-1zM28 27h1v1h-1zM29 27h1v1h-1zM2 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM12 28h1v1h-1zM15 28h1v1h-1zM16 28h1v1h-1zM18 28h1v1h-1zM19 28h1v1h-1zM23 28h1v1h-1zM26 28h1v1h-1zM27 28h1v1h-1zM30 28h1v1h-1zM2 29h1v1h-1zM8 29h1v1h-1zM11 29h1v1h-1zM12 29h1v1h-1zM15 29h1v1h-1zM16 29h1v1h-1zM18 29h1v1h-1zM19 29h1v1h-1zM20 29h1v1h-1zM21 29h1v1h-1zM22 29h1v1h-1zM23 29h1v1h-1zM26 29h1v1h-1zM29 29h1v1h-1zM2 30h1v1h-1zM3 30h1v1h-1zM4 30h1v1h-1zM5 30h1v1h-1zM6 30h1v1h-1zM7 30h1v1h-1zM8 30h1v1h-1zM10 30h1v1h-1zM16 30h1v1h-1zM18 30h1v1h-1zM19 30h1v1h-1zM20 30h1v1h-1zM22 30h1v1h-1zM25 30h1v1h-1zM27 30h1v1h-1zM29 30h1v1h-1z" fill="#1D1C1A"></path></svg><svg class="qr q-new" role="img" aria-label="QR code to scan with your other device" width="256" height="256" viewBox="0 0 33 33" shape-rendering="crispEdges"><path d="M2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM5 2h1v1h-1zM6 2h1v1h-1zM7 2h1v1h-1zM8 2h1v1h-1zM11 2h1v1h-1zM16 2h1v1h-1zM17 2h1v1h-1zM19 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM27 2h1v1h-1zM28 2h1v1h-1zM29 2h1v1h-1zM30 2h1v1h-1zM2 3h1v1h-1zM8 3h1v1h-1zM11 3h1v1h-1zM13 3h1v1h-1zM17 3h1v1h-1zM18 3h1v1h-1zM19 3h1v1h-1zM20 3h1v1h-1zM24 3h1v1h-1zM30 3h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM20 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM26 4h1v1h-1zM27 4h1v1h-1zM28 4h1v1h-1zM30 4h1v1h-1zM2 5h1v1h-1zM4 5h1v1h-1zM5 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM12 5h1v1h-1zM14 5h1v1h-1zM18 5h1v1h-1zM20 5h1v1h-1zM24 5h1v1h-1zM26 5h1v1h-1zM27 5h1v1h-1zM28 5h1v1h-1zM30 5h1v1h-1zM2 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM11 6h1v1h-1zM16 6h1v1h-1zM17 6h1v1h-1zM18 6h1v1h-1zM24 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM2 7h1v1h-1zM8 7h1v1h-1zM10 7h1v1h-1zM12 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1zM21 7h1v1h-1zM24 7h1v1h-1zM30 7h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM8 8h1v1h-1zM10 8h1v1h-1zM12 8h1v1h-1zM14 8h1v1h-1zM16 8h1v1h-1zM18 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM25 8h1v1h-1zM26 8h1v1h-1zM27 8h1v1h-1zM28 8h1v1h-1zM29 8h1v1h-1zM30 8h1v1h-1zM11 9h1v1h-1zM14 9h1v1h-1zM15 9h1v1h-1zM17 9h1v1h-1zM19 9h1v1h-1zM20 9h1v1h-1zM2 10h1v1h-1zM5 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM13 10h1v1h-1zM14 10h1v1h-1zM19 10h1v1h-1zM21 10h1v1h-1zM23 10h1v1h-1zM25 10h1v1h-1zM9 11h1v1h-1zM15 11h1v1h-1zM16 11h1v1h-1zM24 11h1v1h-1zM26 11h1v1h-1zM27 11h1v1h-1zM2 12h1v1h-1zM3 12h1v1h-1zM4 12h1v1h-1zM5 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM9 12h1v1h-1zM19 12h1v1h-1zM20 12h1v1h-1zM21 12h1v1h-1zM24 12h1v1h-1zM26 12h1v1h-1zM27 12h1v1h-1zM28 12h1v1h-1zM29 12h1v1h-1zM30 12h1v1h-1zM3 13h1v1h-1zM4 13h1v1h-1zM6 13h1v1h-1zM7 13h1v1h-1zM9 13h1v1h-1zM13 13h1v1h-1zM15 13h1v1h-1zM17 13h1v1h-1zM18 13h1v1h-1zM23 13h1v1h-1zM24 13h1v1h-1zM25 13h1v1h-1zM26 13h1v1h-1zM28 13h1v1h-1zM29 13h1v1h-1zM30 13h1v1h-1zM3 14h1v1h-1zM4 14h1v1h-1zM5 14h1v1h-1zM7 14h1v1h-1zM8 14h1v1h-1zM11 14h1v1h-1zM12 14h1v1h-1zM13 14h1v1h-1zM14 14h1v1h-1zM16 14h1v1h-1zM17 14h1v1h-1zM19 14h1v1h-1zM22 14h1v1h-1zM24 14h1v1h-1zM25 14h1v1h-1zM26 14h1v1h-1zM27 14h1v1h-1zM28 14h1v1h-1zM2 15h1v1h-1zM3 15h1v1h-1zM4 15h1v1h-1zM6 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM23 15h1v1h-1zM29 15h1v1h-1zM30 15h1v1h-1zM3 16h1v1h-1zM5 16h1v1h-1zM6 16h1v1h-1zM8 16h1v1h-1zM9 16h1v1h-1zM11 16h1v1h-1zM17 16h1v1h-1zM20 16h1v1h-1zM22 16h1v1h-1zM23 16h1v1h-1zM25 16h1v1h-1zM26 16h1v1h-1zM27 16h1v1h-1zM28 16h1v1h-1zM30 16h1v1h-1zM5 17h1v1h-1zM6 17h1v1h-1zM7 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM17 17h1v1h-1zM19 17h1v1h-1zM21 17h1v1h-1zM22 17h1v1h-1zM23 17h1v1h-1zM24 17h1v1h-1zM25 17h1v1h-1zM26 17h1v1h-1zM28 17h1v1h-1zM29 17h1v1h-1zM30 17h1v1h-1zM2 18h1v1h-1zM3 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM6 18h1v1h-1zM7 18h1v1h-1zM8 18h1v1h-1zM9 18h1v1h-1zM10 18h1v1h-1zM13 18h1v1h-1zM15 18h1v1h-1zM17 18h1v1h-1zM18 18h1v1h-1zM19 18h1v1h-1zM22 18h1v1h-1zM23 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM29 18h1v1h-1zM5 19h1v1h-1zM6 19h1v1h-1zM7 19h1v1h-1zM9 19h1v1h-1zM12 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM17 19h1v1h-1zM18 19h1v1h-1zM23 19h1v1h-1zM27 19h1v1h-1zM28 19h1v1h-1zM29 19h1v1h-1zM2 20h1v1h-1zM4 20h1v1h-1zM5 20h1v1h-1zM6 20h1v1h-1zM8 20h1v1h-1zM9 20h1v1h-1zM12 20h1v1h-1zM13 20h1v1h-1zM19 20h1v1h-1zM23 20h1v1h-1zM24 20h1v1h-1zM25 20h1v1h-1zM27 20h1v1h-1zM28 20h1v1h-1zM29 20h1v1h-1zM30 20h1v1h-1zM4 21h1v1h-1zM5 21h1v1h-1zM6 21h1v1h-1zM7 21h1v1h-1zM16 21h1v1h-1zM17 21h1v1h-1zM23 21h1v1h-1zM25 21h1v1h-1zM26 21h1v1h-1zM27 21h1v1h-1zM28 21h1v1h-1zM29 21h1v1h-1zM30 21h1v1h-1zM2 22h1v1h-1zM4 22h1v1h-1zM8 22h1v1h-1zM9 22h1v1h-1zM10 22h1v1h-1zM11 22h1v1h-1zM13 22h1v1h-1zM16 22h1v1h-1zM17 22h1v1h-1zM20 22h1v1h-1zM21 22h1v1h-1zM22 22h1v1h-1zM23 22h1v1h-1zM26 22h1v1h-1zM27 22h1v1h-1zM28 22h1v1h-1zM29 22h1v1h-1zM10 23h1v1h-1zM11 23h1v1h-1zM14 23h1v1h-1zM15 23h1v1h-1zM17 23h1v1h-1zM21 23h1v1h-1zM22 23h1v1h-1zM24 23h1v1h-1zM28 23h1v1h-1zM30 23h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM5 24h1v1h-1zM6 24h1v1h-1zM7 24h1v1h-1zM8 24h1v1h-1zM11 24h1v1h-1zM12 24h1v1h-1zM14 24h1v1h-1zM15 24h1v1h-1zM16 24h1v1h-1zM18 24h1v1h-1zM19 24h1v1h-1zM25 24h1v1h-1zM26 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM2 25h1v1h-1zM8 25h1v1h-1zM10 25h1v1h-1zM11 25h1v1h-1zM13 25h1v1h-1zM14 25h1v1h-1zM20 25h1v1h-1zM22 25h1v1h-1zM26 25h1v1h-1zM27 25h1v1h-1zM29 25h1v1h-1zM30 25h1v1h-1zM2 26h1v1h-1zM4 26h1v1h-1zM5 26h1v1h-1zM6 26h1v1h-1zM8 26h1v1h-1zM13 26h1v1h-1zM17 26h1v1h-1zM19 26h1v1h-1zM22 26h1v1h-1zM23 26h1v1h-1zM25 26h1v1h-1zM29 26h1v1h-1zM2 27h1v1h-1zM4 27h1v1h-1zM5 27h1v1h-1zM6 27h1v1h-1zM8 27h1v1h-1zM10 27h1v1h-1zM18 27h1v1h-1zM19 27h1v1h-1zM22 27h1v1h-1zM23 27h1v1h-1zM24 27h1v1h-1zM25 27h1v1h-1zM26 27h1v1h-1zM30 27h1v1h-1zM2 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM11 28h1v1h-1zM14 28h1v1h-1zM16 28h1v1h-1zM17 28h1v1h-1zM18 28h1v1h-1zM21 28h1v1h-1zM22 28h1v1h-1zM24 28h1v1h-1zM27 28h1v1h-1zM30 28h1v1h-1zM2 29h1v1h-1zM8 29h1v1h-1zM11 29h1v1h-1zM12 29h1v1h-1zM14 29h1v1h-1zM15 29h1v1h-1zM16 29h1v1h-1zM18 29h1v1h-1zM19 29h1v1h-1zM21 29h1v1h-1zM24 29h1v1h-1zM26 29h1v1h-1zM2 30h1v1h-1zM3 30h1v1h-1zM4 30h1v1h-1zM5 30h1v1h-1zM6 30h1v1h-1zM7 30h1v1h-1zM8 30h1v1h-1zM10 30h1v1h-1zM12 30h1v1h-1zM16 30h1v1h-1zM17 30h1v1h-1zM19 30h1v1h-1zM20 30h1v1h-1zM22 30h1v1h-1zM24 30h1v1h-1zM25 30h1v1h-1zM27 30h1v1h-1zM29 30h1v1h-1zM30 30h1v1h-1z" fill="#1D1C1A"></path></svg><span class="wipe-edge" aria-hidden="true"></span>
+              </div>
+              <p class="code" aria-label="Code 7 3 5 9 1 4"><span class="dg"><span class="dg-o">4</span><span class="dg-n">7</span></span><span class="dg"><span class="dg-o">1</span><span class="dg-n">3</span></span><span class="dg"><span class="dg-o">8</span><span class="dg-n">5</span></span><span class="dg-gap"></span><span class="dg"><span class="dg-o">2</span><span class="dg-n">9</span></span><span class="dg"><span class="dg-o">0</span><span class="dg-n">1</span></span><span class="dg"><span class="dg-o">7</span><span class="dg-n">4</span></span></p>
+              <div class="timer">
+                <span class="bar"><span class="bar-fill"></span></span>
+                <span class="timer-t">Works for 10 minutes</span>
+              </div>
+            </div>
+            <div class="os-row" role="img" aria-label="Works on Mac, Windows and Android"><svg width="20" height="20" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><svg width="18" height="18" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><svg width="20" height="20" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg></div>
+          </div>
+          <div style="display: flex; justify-content: center;">
+            <button type="button" class="link">On another network?</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>A7</b> Breathe and renew</div><p class="opt-desc">While it waits, a soft ring breathes around the QR. Near the end a thin bar runs out, then a new QR wipes in from the top and the digits roll over.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+</main>
+<script src="art.js"></script>
+<script src="kit.js"></script>
+<script>
+/* Sync activity options. Every element gets one WAAPI track per property group that spans the whole
+   loop, so seek and replay always land on the right frame. Resting HTML is the last frame. */
+(function () {
+  const EO = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)';
+  const EI = 'cubic-bezier(0.4, 0, 1, 1)';
+
+  // Timeline builder: at(t, pose) sets a pose, to(t0, t1, pose, easing) moves to a pose between t0 and t1.
+  function T(total) {
+    const stops = []; let last = null;
+    const api = {
+      at(t, v) { stops.push([t, v, 'linear']); last = v; return api; },
+      to(t0, t1, v, e) { stops.push([t0, last, e || EIO]); stops.push([t1, v, 'linear']); last = v; return api; },
+      play(ctx, el) {
+        const kf = stops.map(([t, v, e]) => Object.assign({ offset: Math.min(1, t / total), easing: e }, v));
+        if (kf[0].offset > 0) kf.unshift(Object.assign({}, stops[0][1], { offset: 0 }));
+        if (kf[kf.length - 1].offset < 1) kf.push(Object.assign({}, last, { offset: 1 }));
+        return ctx.anim(el, kf, { duration: total, easing: 'linear', fill: 'both' });
+      },
+    };
+    return api;
+  }
+  const loopOf = (ctx) => Number(ctx.opt.dataset.loop);
+
+  // Show one of several stacked elements at a time. seq: [[t, index], ...]. Rolls up, or pops in place.
+  function cycle(ctx, els, start, seq, opt) {
+    opt = opt || {};
+    const total = loopOf(ctx), dur = opt.dur || 460;
+    const dist = ctx.reduced ? 0 : (opt.dist == null ? 110 : opt.dist);
+    const pop = opt.mode === 'pop';
+    const pose = (vis, dir) => pop
+      ? { opacity: vis ? 1 : 0, transform: `scale(${vis || ctx.reduced ? 1 : 0.6})` }
+      : { opacity: vis ? 1 : 0, transform: `translateY(${vis ? 0 : dir * dist}%)` };
+    els.forEach((el, i) => {
+      let vis = i === start;
+      const tr = T(total).at(0, pose(vis, 1));
+      seq.forEach(([t, idx]) => {
+        // The old text leaves first; the new one starts a little later, so the two barely overlap.
+        if (vis && idx !== i) { tr.to(t, t + Math.round(dur * 0.55), pose(false, -1), EI); vis = false; }
+        else if (!vis && idx === i) {
+          const d0 = Math.round(dur * (ctx.reduced ? 0.6 : 0.3)); // reduced: no roll to hide the swap, so wait for the old text to go
+          tr.to(t + d0, t + d0, pose(false, 1)); tr.to(t + d0, t + d0 + dur, pose(true, 0), EO); vis = true;
+        }
+      });
+      tr.play(ctx, el);
+    });
+  }
+  const twin = (ctx, sw, seq, opt) => cycle(ctx, [sw.querySelector('.a'), sw.querySelector('.b')], 0, seq, opt);
+
+  /* ---------- A1 Relay ---------- */
+  Kit.register('#a1', (ctx) => {
+    const total = loopOf(ctx);
+    const hdr = ctx.$('.hdr');
+    const ox = hdr.offsetLeft + hdr.offsetWidth / 2, oy = hdr.offsetTop + hdr.offsetHeight + 4;
+    const names = ['Mac mini', 'Ubuntu laptop', 'iPhone', 'Pixel 8'];
+    names.forEach((n, i) => {
+      const t = ctx.$(`.tile[data-device="${n}"]`);
+      const b = t.querySelector('.badge');
+      const p = ctx.$('.p' + i);
+      const s = 1000 + i * 140;
+      if (ctx.reduced) {
+        T(total).at(0, { opacity: 0 }).to(900, 1300, { opacity: 1 }, EO).to(4700, 5100, { opacity: 0 }, EIO).play(ctx, b);
+        return;
+      }
+      const dx = t.offsetLeft + t.offsetWidth - 18, dy = t.offsetTop + 18;
+      const lift = Math.max(40, (dy - oy) * 0.35);
+      p.style.offsetPath = `path('M ${ox} ${oy} C ${ox} ${oy + lift}, ${dx} ${dy - lift - 30}, ${dx} ${dy}')`;
+      const A0 = { opacity: 0, transform: 'scale(0.7)', offsetDistance: '0%' };
+      T(total).at(0, A0)
+        .to(350, 750, { opacity: 1, transform: 'scale(1)', offsetDistance: '0%' }, EO)
+        .to(s, s + 1050, { opacity: 1, transform: 'scale(1)', offsetDistance: '100%' }, EIO)
+        .to(s + 1050, s + 1300, { opacity: 0, transform: 'scale(0.5)', offsetDistance: '100%' }, EI)
+        .play(ctx, p);
+      T(total).at(0, { opacity: 0, transform: 'scale(0.5)' })
+        .to(s + 950, s + 1400, { opacity: 1, transform: 'scale(1)' }, EO)
+        .to(4700, 5100, { opacity: 0, transform: 'scale(0.85)' }, EIO)
+        .play(ctx, b);
+    });
+    ctx.$$('.foot .ft').forEach((sw) => twin(ctx, sw, [[2500, 1]]));
+  });
+
+  /* ---------- A2 Arrival ---------- */
+  Kit.register('#a2', (ctx) => {
+    const total = loopOf(ctx), R = ctx.reduced;
+    const mac = ctx.$('.tile[data-device="Mac mini"]');
+    T(total).at(0, { opacity: 0, transform: 'scale(1)' })
+      .to(300, 700, { opacity: 1, transform: 'scale(1)' }, EO)
+      .to(900, 2400, { opacity: 0, transform: R ? 'scale(1)' : 'scale(1.07)' }, EO)
+      .play(ctx, mac.querySelector('.halo'));
+    if (!R) {
+      T(total).at(0, { transform: 'translateY(0)' })
+        .to(300, 800, { transform: 'translateY(-4px)' }, EO)
+        .to(800, 1600, { transform: 'translateY(0)' }, EIO)
+        .play(ctx, mac.querySelector('.lg'));
+    }
+    const note = ctx.$('.note');
+    T(total).at(0, { opacity: 0, transform: R ? 'none' : 'translateY(16px)', clipPath: R ? 'inset(0 round 12px)' : 'inset(100% 0 0 0 round 12px)' })
+      .to(900, 1600, { opacity: 1, transform: 'none', clipPath: 'inset(0 round 12px)' }, EO)
+      .play(ctx, note);
+    T(total).at(0, { opacity: 0, transform: R ? 'none' : 'translateY(6px)' })
+      .to(1150, 1650, { opacity: 1, transform: 'none' }, EO)
+      .play(ctx, [note.querySelector('.note-ico'), note.querySelector('.note-text')]);
+    T(total).at(0, { opacity: 0, transform: R ? 'none' : 'translate(4px, -4px)' })
+      .to(1350, 1850, { opacity: 1, transform: 'none' }, EO)
+      .play(ctx, note.querySelector('.note-arrow'));
+    twin(ctx, ctx.$('.nt'), [[4800, 1]]);
+  });
+
+  /* ---------- A3 Ticker ---------- */
+  Kit.register('#a3', (ctx) => {
+    const seq = [[900, 1], [3700, 0], [5400, 2], [8200, 0]];
+    cycle(ctx, ctx.$$('.tk-i'), 0, seq, { dur: 520 });
+    cycle(ctx, [ctx.$('.tk-dot'), ctx.$('.tk-out'), ctx.$('.tk-in')], 0, seq, { mode: 'pop', dur: 420 });
+    const ip = ctx.$('.tile[data-device="iPhone"]');
+    T(loopOf(ctx)).at(0, { borderColor: '#D9D6D1' })
+      .to(5500, 6000, { borderColor: 'rgba(30, 122, 70, 0.6)' }, EO)
+      .to(7400, 8200, { borderColor: '#D9D6D1' }, EIO)
+      .play(ctx, ip);
+  });
+
+  /* ---------- shared: pause button, header, wave ---------- */
+  function pauseButton(ctx, onT, offT, pressOff) {
+    const total = loopOf(ctx), btn = ctx.$('.hdr .pz');
+    const W = { backgroundColor: '#FFFFFF', color: '#1D1C1A', borderColor: '#BDB8B1' };
+    const K = { backgroundColor: '#1D1C1A', color: '#FFFFFF', borderColor: '#1D1C1A' };
+    T(total).at(0, W).to(onT + 60, onT + 340, K, EO).to(offT + 60, offT + 340, W, EO).play(ctx, btn);
+    if (ctx.reduced) return;
+    const tr = T(total).at(0, { transform: 'scale(1)' })
+      .to(onT, onT + 120, { transform: 'scale(0.92)' }, EO).to(onT + 120, onT + 420, { transform: 'scale(1)' }, EO);
+    if (pressOff) tr.to(offT, offT + 120, { transform: 'scale(0.92)' }, EO).to(offT + 120, offT + 420, { transform: 'scale(1)' }, EO);
+    tr.play(ctx, btn);
+  }
+  function pauseHeader(ctx, onT, offT) {
+    const seq = [[onT, 0], [offT, 1]];
+    cycle(ctx, [ctx.$('.hw .a'), ctx.$('.hw .b')], 1, seq, { dur: 520 });
+    cycle(ctx, [ctx.$('.hs .a'), ctx.$('.hs .b')], 1, seq, { dur: 520 });
+    const G = { backgroundColor: '#1E7A46', boxShadow: 'inset 0 0 0 1.5px rgba(110, 106, 100, 0)' };
+    const P = { backgroundColor: 'rgba(30, 122, 70, 0)', boxShadow: 'inset 0 0 0 1.5px rgba(110, 106, 100, 1)' };
+    T(loopOf(ctx)).at(0, G).to(onT, onT + 500, P, EIO).to(offT, offT + 500, G, EIO).play(ctx, ctx.$('.hdot'));
+  }
+
+  /* ---------- A4 Hush ---------- */
+  Kit.register('#a4', (ctx) => {
+    const total = loopOf(ctx), R = ctx.reduced;
+    const ON = 700, OFF = 5600;
+    pauseButton(ctx, ON, OFF, true);
+    pauseHeader(ctx, ON + 200, OFF + 200);
+    const btn = ctx.$('.hdr .pz');
+    const bx = btn.offsetLeft + btn.offsetWidth / 2, by = btn.offsetTop + btn.offsetHeight / 2;
+    const all = ctx.$$('.tile');
+    const dist = all.map((t) => Math.hypot(t.offsetLeft + t.offsetWidth / 2 - bx, t.offsetTop + t.offsetHeight / 2 - by));
+    const dmin = Math.min(...dist);
+    const D = R ? 400 : 620;
+    all.forEach((t, i) => {
+      const lag = R ? 0 : Math.round((dist[i] - dmin) * 1.25);
+      const p = ON + 350 + lag, r = OFF + 350 + lag;
+      if (t.classList.contains('add')) {
+        T(total).at(0, { borderColor: '#8A857E', color: '#1D1C1A' })
+          .to(p, p + D, { borderColor: '#B3AEA7', color: '#6E6A64' }, EIO)
+          .to(r, r + D, { borderColor: '#8A857E', color: '#1D1C1A' }, EIO).play(ctx, t);
+        return;
+      }
+      const C = (a, b) => T(total).at(0, a).to(p, p + D, b, EIO).to(r, r + D, a, EIO);
+      C({ color: '#1D1C1A' }, { color: '#B3AEA7' }).play(ctx, t.querySelector('.lg'));
+      C({ color: '#1D1C1A' }, { color: '#6E6A64' }).play(ctx, t.querySelector('.tile-name'));
+      C({ color: '#5E5B56' }, { color: '#6E6A64' }).play(ctx, t.querySelector('.tile-state'));
+      const dot = t.querySelector('.dot.green');
+      if (dot) {
+        T(total).at(0, { backgroundColor: '#1E7A46', transform: 'scale(1)' })
+          .to(p, p + D, { backgroundColor: '#B3AEA7', transform: 'scale(1)' }, EIO)
+          .to(r, r + 160, { backgroundColor: '#B3AEA7', transform: R ? 'scale(1)' : 'scale(0.55)' }, EI)
+          .to(r + 160, r + 160 + D, { backgroundColor: '#1E7A46', transform: 'scale(1)' }, EO).play(ctx, dot);
+      }
+      const sw = t.querySelector('.stw');
+      if (sw) cycle(ctx, [sw.querySelector('.a'), sw.querySelector('.b')], 1, [[p, 0], [r, 1]], { dur: 460 });
+    });
+  });
+
+  /* ---------- A5 Shade ---------- */
+  Kit.register('#a5', (ctx) => {
+    const total = loopOf(ctx), R = ctx.reduced;
+    const ON = 700, OFF = 5400;
+    pauseButton(ctx, ON, OFF, false);
+    pauseHeader(ctx, ON + 200, OFF + 200);
+    const shade = ctx.$('.shade');
+    const up = 'translateY(-112%)';
+    if (R) {
+      T(total).at(0, { opacity: 0, transform: 'none' }).to(1000, 1500, { opacity: 1, transform: 'none' }, EIO)
+        .to(OFF + 100, OFF + 500, { opacity: 0, transform: 'none' }, EIO).play(ctx, shade);
+    } else {
+      T(total).at(0, { opacity: 1, transform: up }).to(1000, 1900, { opacity: 1, transform: 'none' }, EIO)
+        .to(OFF + 100, OFF + 760, { opacity: 1, transform: up }, EIO).play(ctx, shade);
+    }
+    T(total).at(0, { opacity: 0, transform: R ? 'none' : 'translateY(-10px)' })
+      .to(1500, 2000, { opacity: 1, transform: 'none' }, EO)
+      .to(OFF, OFF + 220, { opacity: 0, transform: 'none' }, EI).play(ctx, ctx.$('.shade-in'));
+    if (!R) {
+      T(total).at(0, { transform: 'scale(1)' }).to(OFF - 300, OFF - 180, { transform: 'scale(0.94)' }, EO)
+        .to(OFF - 180, OFF + 100, { transform: 'scale(1)' }, EO).play(ctx, ctx.$('.shade .btn'));
+    }
+  });
+
+  /* ---------- A6 Flag ---------- */
+  Kit.register('#a6', (ctx) => {
+    const total = loopOf(ctx), R = ctx.reduced;
+    const ub = ctx.$('.tile[data-device="Ubuntu laptop"]');
+    T(total).at(0, { backgroundColor: '#1E7A46' }).to(600, 1100, { backgroundColor: '#B42318' }, EIO).play(ctx, ub.querySelector('.ubdot'));
+    const sw = ub.querySelector('.stw');
+    cycle(ctx, [sw.querySelector('.a'), sw.querySelector('.b')], 0, [[600, 1]], { dur: 460 });
+    twin(ctx, ctx.$('.hs'), [[900, 1]], { dur: 520 });
+
+    const banner = ctx.$('.banner'), grid = ctx.$('.tiles');
+    const d = banner.offsetHeight + 16;
+    const S = 1500, E = 2100;
+    if (R) {
+      T(total).at(0, { opacity: 1, transform: `translateY(-${d}px)` })
+        .to(S, S + 220, { opacity: 0, transform: `translateY(-${d}px)` }, EI)
+        .to(S + 220, S + 220, { opacity: 0, transform: 'none' })
+        .to(S + 240, S + 600, { opacity: 1, transform: 'none' }, EO).play(ctx, grid);
+      T(total).at(0, { opacity: 0 }).to(S + 200, S + 700, { opacity: 1 }, EO).play(ctx, banner);
+      return;
+    }
+    T(total).at(0, { transform: `translateY(-${d}px)` }).to(S, E, { transform: 'none' }, EIO).play(ctx, grid);
+    T(total).at(0, { opacity: 0, clipPath: 'inset(0% 0% 100% 0% round 12px)' })
+      .to(S, E, { opacity: 1, clipPath: 'inset(0% 0% 0% 0% round 12px)' }, EIO).play(ctx, banner);
+    T(total).at(0, { opacity: 0, transform: 'translateY(4px)' }).to(S + 300, S + 800, { opacity: 1, transform: 'none' }, EO)
+      .play(ctx, [banner.querySelector('.bn-text'), banner.querySelector('.btn')]);
+    T(total).at(0, { strokeDashoffset: '94.25' }).to(S + 250, S + 1050, { strokeDashoffset: '0' }, EO).play(ctx, banner.querySelector('.bn-ring'));
+    T(total).at(0, { opacity: 0 }).to(S + 850, S + 1150, { opacity: 1 }, EO).play(ctx, Array.from(banner.querySelectorAll('.bn-bang')));
+    T(total).at(0, { opacity: 0, transform: 'scale(1)' })
+      .to(S + 1100, S + 1400, { opacity: 0.45, transform: 'scale(1.15)' }, EO)
+      .to(S + 1400, S + 2700, { opacity: 0, transform: 'scale(1.9)' }, EO).play(ctx, banner.querySelector('.bn-pulse'));
+  });
+
+  /* ---------- A7 Breathe and renew ---------- */
+  Kit.register('#a7', (ctx) => {
+    const total = loopOf(ctx), R = ctx.reduced;
+    const RENEW = 8000;
+    const text = ctx.$('.timer-t');
+    const fmt = (s) => 'New code in 0:0' + s;
+    text.textContent = fmt(8);
+    for (let k = 1; k <= 8; k++) ctx.after(k * 1000, () => { text.textContent = fmt(8 - k); });
+    ctx.after(RENEW + 450, () => { text.textContent = 'Works for 10 minutes'; });
+    T(total).at(0, { opacity: 0 }).to(0, 350, { opacity: 1 }, EO)
+      .to(RENEW + 250, RENEW + 450, { opacity: 0 }, EI).to(RENEW + 450, RENEW + 850, { opacity: 1 }, EO).play(ctx, text);
+
+    T(total).at(0, { opacity: 0 }).to(0, 400, { opacity: 1 }, EO).to(RENEW + 1000, RENEW + 1600, { opacity: 0 }, EIO).play(ctx, ctx.$('.bar'));
+    T(total).at(0, { transform: 'scaleX(0.267)', backgroundColor: '#FFFFFF' })
+      .to(0, 5000, { transform: 'scaleX(0.1)', backgroundColor: '#FFFFFF' }, 'linear')
+      .to(5000, RENEW, { transform: 'scaleX(0)', backgroundColor: '#FFD2CC' }, 'linear')
+      .to(RENEW, RENEW + 800, { transform: 'scaleX(1)', backgroundColor: '#FFFFFF' }, EO).play(ctx, ctx.$('.bar-fill'));
+
+    const qn = ctx.$('.q-new');
+    if (R) {
+      T(total).at(0, { opacity: 0 }).to(RENEW, RENEW + 600, { opacity: 1 }, EIO).play(ctx, qn);
+    } else {
+      T(total).at(0, { clipPath: 'inset(0% 0% 100% 0% round 12px)' })
+        .to(RENEW, RENEW + 900, { clipPath: 'inset(0% 0% 0% 0% round 12px)' }, EIO).play(ctx, qn);
+      const edge = ctx.$('.wipe-edge');
+      T(total).at(0, { transform: 'translateY(0px)' }).to(RENEW, RENEW + 900, { transform: 'translateY(254px)' }, EIO).play(ctx, edge);
+      T(total).at(0, { opacity: 0 }).to(RENEW, RENEW + 150, { opacity: 1 }, 'linear')
+        .to(RENEW + 700, RENEW + 900, { opacity: 0 }, 'linear').play(ctx, edge);
+    }
+    ctx.$$('.dg').forEach((g, i) => {
+      const s = RENEW + 250 + i * 60;
+      const y = R ? 0 : 110;
+      T(total).at(0, { opacity: 1, transform: 'translateY(0)' }).to(s, s + (R ? 300 : 380), { opacity: 0, transform: `translateY(-${y}%)` }, EIO).play(ctx, g.querySelector('.dg-o'));
+      T(total).at(0, { opacity: 0, transform: `translateY(${y}%)` }).to(s + (R ? 320 : 0), s + (R ? 720 : 520), { opacity: 1, transform: 'translateY(0)' }, EO).play(ctx, g.querySelector('.dg-n')); // reduced: old digit goes first
+    });
+  });
+})();
+
+</script>
+</body>
+</html>

@@ -1,16 +1,25 @@
-// Visual check against the locked design (docs/design/desktop/L01..L12). Each screen of the
-// app (Vite build, mock agent) is screenshotted headless and compared with the design file
-// rendered in the same browser. Side-by-side images (design | app | difference) go to
-// docs/design/desktop/impl-check/. The QR code is hidden in both pictures: the design has a
-// fixed picture and the app draws the real one.
+// Visual check against the design. Each screen of the app (Vite build, mock agent) is
+// screenshotted headless, after its motion has settled, and compared with its reference
+// rendered in the same browser:
+// - 'design': the locked design file (docs/design/desktop/L01..L12),
+// - 'mockup': the end frame of a picked motion mockup (docs/design/desktop/motion), for Home,
+//   which is H3 "You are here" since 2026-11-14 (Max),
+// - 'baseline': a picture of the app itself (tests/e2e/baselines), where no design or mockup
+//   shows the new layout (Paused in the H3 layout). UPDATE_BASELINES=1 writes it again.
+// Side-by-side images (reference | app | difference) go to docs/design/desktop/impl-check/.
+// The QR code is hidden in both pictures: the design has a fixed picture and the app draws the
+// real one.
 import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 
 const designDir = path.resolve(process.cwd(), '../../docs/design/desktop');
+const motionDir = path.join(designDir, 'motion');
 const outDir = path.join(designDir, 'impl-check');
+const baseDir = path.resolve(process.cwd(), 'tests/e2e/baselines');
 const fontDir = path.resolve(process.cwd(), 'node_modules/@fontsource/figtree/files');
 const MAX_DIFF_PERCENT = 1;
 
@@ -20,8 +29,11 @@ interface Screen {
   scenario: string;
   route?: string;
   act?: (page: Page) => Promise<void>;
-  /** A higher limit where the app differs from the design on purpose. */
+  /** A higher limit where the app differs from the reference on purpose. */
   maxDiff?: number;
+  /** What the app is compared with (default 'design'). */
+  ref?: { kind: 'design' } | { kind: 'mockup'; page: string; option: string } | { kind: 'baseline' };
+  why?: string;
 }
 
 // Decision 2026-11-14: no OS asks anything in setup, so the setup screens show 4 steps, not the
@@ -45,10 +57,19 @@ const screens: Screen[] = [
     },
   },
   { id: 'L06', file: 'L06-connected', scenario: 'fresh', route: 'connected' },
-  { id: 'L07', file: 'L07-home', scenario: 'home' },
+  // Home is H3 "You are here" (2026-11-14): compared with the H3 mockup's last frame, with the
+  // mockup's devices ('h3'). The mockup counts the other devices ("2 devices connected"), the
+  // app counts all connected devices with this one ("3 devices connected"), as on L07: one digit.
+  {
+    id: 'L07',
+    file: 'L07-home',
+    scenario: 'h3',
+    ref: { kind: 'mockup', page: 'home.html', option: 'h3' },
+    why: 'H3 mockup end frame',
+  },
   { id: 'L08', file: 'L08-device', scenario: 'home', route: 'device' },
   { id: 'L09', file: 'L09-settings', scenario: 'home', route: 'settings' },
-  { id: 'L10', file: 'L10-paused', scenario: 'paused' },
+  { id: 'L10', file: 'L10-paused', scenario: 'paused', ref: { kind: 'baseline' }, why: 'app baseline (H3 layout, paused)' },
   { id: 'L11', file: 'L11-attention', scenario: 'attention' },
   { id: 'L12', file: 'L12-other-network', scenario: 'home', route: 'vpn' },
 ];
@@ -63,6 +84,14 @@ function fontCss(): string {
 }
 
 const hideQr = 'svg[aria-label^="QR code"]{visibility:hidden !important}';
+const clip = { x: 0, y: 0, width: 540, height: 720 };
+
+/** Wait until no animation runs (screen changes, entrances, rolling text). */
+async function settle(page: Page) {
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' && !a.pending), undefined, {
+    timeout: 10_000,
+  });
+}
 
 async function shotDesign(page: Page, file: string): Promise<Buffer> {
   let html = fs.readFileSync(path.join(designDir, `${file}.dc.html`), 'utf8');
@@ -70,7 +99,21 @@ async function shotDesign(page: Page, file: string): Promise<Buffer> {
   await page.setContent(html, { waitUntil: 'load' });
   await page.addStyleTag({ content: fontCss() + hideQr });
   await page.evaluate(() => document.fonts.ready);
-  return page.screenshot({ clip: { x: 0, y: 0, width: 540, height: 720 } });
+  return page.screenshot({ clip });
+}
+
+/** The end frame of one option of a motion mockup, alone at 540 x 720 (scale 1). */
+async function shotMockup(page: Page, file: string, option: string): Promise<Buffer> {
+  const url = pathToFileURL(path.join(motionDir, file)).href + '?reduce=1&t=60000';
+  await page.goto(url);
+  await page.waitForFunction(() => document.documentElement.classList.contains('frozen'));
+  await page.addStyleTag({
+    content: `.gal-head,figcaption,.opt:not(#${option}){display:none !important}
+      body{margin:0}.gal-grid{--s:1;padding:0;margin:0;display:block;max-width:none}
+      .opt-frame{border-radius:0;box-shadow:none}${hideQr}`,
+  });
+  await page.evaluate(() => document.fonts.ready);
+  return page.screenshot({ clip });
 }
 
 async function shotApp(page: Page, s: Screen): Promise<Buffer> {
@@ -83,8 +126,9 @@ async function shotApp(page: Page, s: Screen): Promise<Buffer> {
   if (s.act) await s.act(page);
   await page.addStyleTag({ content: hideQr });
   await page.evaluate(() => document.fonts.ready);
+  await settle(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  return page.screenshot({ clip: { x: 0, y: 0, width: 540, height: 720 } });
+  return page.screenshot({ clip });
 }
 
 function compare(a: Buffer, b: Buffer) {
@@ -99,35 +143,50 @@ function compare(a: Buffer, b: Buffer) {
 }
 
 test.describe.configure({ mode: 'serial' });
-const results: { id: string; file: string; percent: number }[] = [];
+const results: { id: string; file: string; percent: number; ref: string }[] = [];
 
 test.beforeAll(() => fs.mkdirSync(outDir, { recursive: true }));
 
 for (const s of screens) {
-  test(`${s.id} ${s.file} matches the locked design`, async ({ page }) => {
-    const design = await shotDesign(page, s.file);
+  test(`${s.id} ${s.file} matches its reference`, async ({ page }) => {
+    const ref = s.ref ?? { kind: 'design' };
+    let reference: Buffer;
+    if (ref.kind === 'mockup') reference = await shotMockup(page, ref.page, ref.option);
+    else if (ref.kind === 'design') reference = await shotDesign(page, s.file);
     const app = await shotApp(page, s);
-    const r = compare(design, app);
+    if (ref.kind === 'baseline') {
+      const f = path.join(baseDir, `${s.file}.png`);
+      if (!fs.existsSync(f) || process.env.UPDATE_BASELINES === '1') {
+        fs.mkdirSync(baseDir, { recursive: true });
+        fs.writeFileSync(f, app);
+      }
+      reference = fs.readFileSync(f);
+    }
+    const r = compare(reference!, app);
     fs.writeFileSync(path.join(outDir, `${s.file}.png`), r.png);
-    results.push({ id: s.id, file: s.file, percent: r.percent });
-    expect(r.percent, `${s.id} differs from the design by ${r.percent.toFixed(2)}%`).toBeLessThanOrEqual(s.maxDiff ?? MAX_DIFF_PERCENT);
+    results.push({ id: s.id, file: s.file, percent: r.percent, ref: s.why ?? 'locked design' });
+    expect(r.percent, `${s.id} differs from its reference by ${r.percent.toFixed(2)}%`).toBeLessThanOrEqual(s.maxDiff ?? MAX_DIFF_PERCENT);
   });
 }
 
 test.afterAll(() => {
   const rows = results
-    .map((r) => `| ${r.id} | ${r.file} | ${r.percent.toFixed(2)}% | ![${r.id}](${r.file}.png) |`)
+    .map((r) => `| ${r.id} | ${r.file} | ${r.ref} | ${r.percent.toFixed(2)}% | ![${r.id}](${r.file}.png) |`)
     .join('\n');
   fs.writeFileSync(
     path.join(outDir, 'README.md'),
     `# Implementation check (generated)
 
 Made by \`apps/desktop/tests/e2e/visual.spec.ts\` (\`npm run e2e\`). Each picture shows three
-parts, from left to right: the locked design, the app, and the difference in red. The QR code
-is hidden in both (the design has a fixed picture, the app draws the real code). Limit: ${MAX_DIFF_PERCENT}% of pixels.
+parts, from left to right: the reference, the app after its motion has settled, and the
+difference in red. The reference is the locked design, except Home (L07), which is the end
+frame of the H3 "You are here" motion mockup (picked 2026-11-14), and Paused (L10), which is a
+picture of the app (\`tests/e2e/baselines\`) because no design shows Paused in the H3 layout.
+The QR code is hidden in both (the design has a fixed picture, the app draws the real code).
+Limit: ${MAX_DIFF_PERCENT}% of pixels.
 
-| Screen | File | Different pixels | Picture |
-|---|---|---|---|
+| Screen | File | Reference | Different pixels | Picture |
+|---|---|---|---|---|
 ${rows}
 `,
   );

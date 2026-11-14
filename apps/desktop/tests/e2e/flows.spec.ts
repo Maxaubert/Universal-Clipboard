@@ -75,9 +75,13 @@ test('enter a code: wrong code, then the right one', async ({ page }) => {
   });
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.getByRole('alert')).toHaveText('That code is not right. Check it and try again.');
+  // E1 (2026-11-14): the boxes empty one by one and the first box takes the caret again.
+  await expect(page.getByRole('group')).toHaveAttribute('aria-label', 'Code, 0 of 6 digits entered');
+  await expect(page.getByRole('textbox', { name: 'Code' })).toBeFocused();
   await page.evaluate(() => {
     window.__ucMock!.joinResult = { ok: true, name: 'Mac mini', os: 'macOS' };
   });
+  await page.getByRole('textbox', { name: 'Code' }).pressSequentially('418207');
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(page.getByRole('heading', { name: 'Mac mini is added' })).toBeVisible();
   await steps(page, 4);

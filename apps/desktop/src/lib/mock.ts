@@ -16,7 +16,9 @@ import type {
 // 'fresh' is a new device: no setup rows on any OS (decision 2026-11-14), so the window skips
 // the permissions screen. 'mac-blocked' is a new Mac where macOS blocks the local network and
 // paste access: the only case with rows (the agent shows them only then).
-export type Scenario = 'fresh' | 'mac-blocked' | 'home' | 'paused' | 'attention' | 'vpn' | 'lockout' | 'down';
+// 'h3' is the device set of the H3 "You are here" mockup (docs/design/desktop/motion/home.html),
+// for the visual check of Home.
+export type Scenario = 'fresh' | 'mac-blocked' | 'home' | 'h3' | 'paused' | 'attention' | 'vpn' | 'lockout' | 'down';
 
 interface World {
   status: Status;
@@ -58,6 +60,7 @@ function baseStatus(): Status {
     paused: false,
     this_device: "Max's PC",
     version: '1.0.0',
+    activity: [{ kind: 'Text', direction: 'received', device: 'Mac mini', time_ms: Date.now(), note: null }],
   };
 }
 
@@ -112,6 +115,17 @@ export function makeWorld(s: Scenario): World {
       },
     ];
   }
+  if (s === 'h3') {
+    w.devices = [
+      dev('MAX', 'Windows', 'This device', true),
+      dev("Max's Mac Mini", 'macOS', 'Connected'),
+      dev("Max's iPhone", 'iPhone', 'Asleep or away'),
+      dev('lin-kde', 'Linux', 'Connected'),
+    ];
+    w.status.this_device = 'MAX';
+    w.status.activity = [{ kind: 'Text', direction: 'received', device: "Max's Mac Mini", time_ms: Date.now(), note: null }];
+  }
+  if (s === 'fresh' || s === 'mac-blocked') w.status.activity = [];
   if (s === 'paused') {
     w.status = { ...w.status, state: 'paused', text: 'Paused', paused: true };
   }
@@ -166,6 +180,8 @@ export interface MockHandle {
   windowLog: string[];
   /** What the next firewallAdd does: 0 done, 3 the user said no in the UAC prompt. */
   firewallAddResult: 0 | 3;
+  /** A copy moved (facts only): the agent records it and sends an `activity` event. */
+  copy(direction: 'sent' | 'received', kind?: string, device?: string | null): void;
 }
 
 declare global {
@@ -194,6 +210,11 @@ export function createMockApi(initial?: Scenario): Api {
     joinResult: { ok: true, name: 'Mac mini', os: 'macOS' },
     windowLog: [],
     firewallAddResult: 0,
+    copy(direction, kind = 'Text', device = null) {
+      const a = { kind, direction, device: direction === 'received' ? device : null, time_ms: Date.now(), note: null };
+      h.world.status.activity = [a, ...(h.world.status.activity ?? [])].slice(0, 5);
+      h.emit('activity', { ...a });
+    },
   };
   if (typeof window !== 'undefined') window.__ucMock = h;
 

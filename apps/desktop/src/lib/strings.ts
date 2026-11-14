@@ -55,6 +55,8 @@ export const S = {
   tileBlocked: 'Blocked',
   tilePaused: 'Paused',
 
+  lastCopy: 'Last copy',
+
   rename: 'Rename',
   save: 'Save',
   removeDevice: 'Remove this device',
@@ -84,6 +86,23 @@ export const S = {
   agentDown: 'The background service is not running.',
   retry: 'Try again',
 } as const;
+
+/** "just now", "2 minutes ago", "1 hour ago", "3 days ago". */
+export function ago(ms: number, now: number): string {
+  const s = Math.max(0, Math.floor((now - ms) / 1000));
+  const n = (v: number, u: string) => `${v} ${u}${v === 1 ? '' : 's'} ago`;
+  if (s < 60) return 'just now';
+  if (s < 3600) return n(Math.floor(s / 60), 'minute');
+  if (s < 86400) return n(Math.floor(s / 3600), 'hour');
+  return n(Math.floor(s / 86400), 'day');
+}
+
+/** A copy as facts, never content: "Text, from Mac mini, just now" or "Image, sent, 2 minutes ago". */
+export function copyFact(a: { kind: string; direction: string; device: string | null; time_ms: number }, now: number): string {
+  const kind = a.kind.charAt(0).toUpperCase() + a.kind.slice(1);
+  const way = a.direction === 'received' && a.device ? `from ${a.device}` : a.direction;
+  return `${kind}, ${way}, ${ago(a.time_ms, now)}`;
+}
 
 export function thisLabel(os: string): string {
   const o = os.toLowerCase();

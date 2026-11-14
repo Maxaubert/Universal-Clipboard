@@ -13,6 +13,8 @@ export type Route =
   | 'settings'
   | 'vpn';
 
+export type View = Route | 'attention';
+
 /** Setup steps: 4 on every OS (decision 2026-11-14): no OS asks anything in setup, so there is
  * no permissions step. When the OS blocks something (macOS rows) the permissions screen still
  * shows, as part of step 1. */
@@ -43,6 +45,9 @@ class Store {
   selected = $state<string | null>(null);
   /** Name shown on the "is added" screen. */
   added = $state<string | null>(null);
+  /** How the last route change happened, for the screen motion (src/lib/flow.ts). A plain
+   * field: the flow reads it once per change. 'none' (a direct `route =`) swaps without motion. */
+  nav: { kind: 'forward' | 'back' | 'none' | 'boot'; from: Element | null } = { kind: 'none', from: null };
   private listeners = new Set<(e: AgentEvent) => void>();
   private off: (() => void) | null = null;
 
@@ -50,7 +55,7 @@ class Store {
     this.api = await getApi();
     this.off?.();
     this.off = this.api.onEvent((e) => {
-      if (['status', 'devices', 'removed', 'pair.added', 'pair.joined'].includes(e.event)) {
+      if (['status', 'devices', 'removed', 'pair.added', 'pair.joined', 'activity'].includes(e.event)) {
         void this.refresh();
       }
       for (const l of this.listeners) l(e);
@@ -70,6 +75,7 @@ class Store {
       this.route = 'home';
     }
     this.back = [];
+    this.nav = { kind: 'boot', from: null };
     this.loaded = true;
   }
 
@@ -88,6 +94,7 @@ class Store {
     this.back = [];
     this.selected = null;
     this.added = null;
+    this.nav = { kind: 'none', from: null };
   }
 
   onEvent(cb: (e: AgentEvent) => void): () => void {
@@ -115,15 +122,25 @@ class Store {
     }
   }
 
-  go(r: Route, opts: { replace?: boolean } = {}): void {
+  /** Go to a screen. `from` is the control that was pressed: in setup the S1 shape grows out
+   * of it (src/lib/flow.ts). */
+  go(r: Route, opts: { replace?: boolean; from?: Element | null } = {}): void {
     if (!opts.replace) this.back = [...this.back, this.route];
+    this.nav = { kind: 'forward', from: opts.from ?? null };
     this.route = r;
   }
 
   goBack(fallback: Route = 'home'): void {
     const prev = this.back[this.back.length - 1];
     this.back = this.back.slice(0, -1);
+    this.nav = { kind: 'back', from: null };
     this.route = prev ?? fallback;
+  }
+
+  /** The screen on show: Home turns into Needs attention when the agent says so. */
+  get view(): View {
+    if (this.route === 'home' && this.status?.state === 'needs-attention') return 'attention';
+    return this.route;
   }
 
   /** True when the permissions screen (L02) has rows to ask: only when macOS blocks something. */
