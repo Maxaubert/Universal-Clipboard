@@ -78,6 +78,19 @@ Run from `apps/desktop`:
   and paste access) and shows those two rows, not the design's Windows rows, so its limit is 2%. The side-by-side pictures are in
   `docs/design/desktop/impl-check/`.
 - `cargo test` in `src-tauri`: the call list matches the agent.
+- `caret.spec.ts`: the real text caret of the code field is in the box that takes the next
+  digit (0, 3, 6 digits, backspace, paste). It paints the invisible input's caret red and
+  finds it in a screenshot.
+
+## The code field and the caret (2026-11-14)
+
+L05 draws 6 boxes and covers them with one invisible `<input>`. Screen magnifiers (Max uses
+Wind) follow the caret the webview reports to the OS, so that caret must be where the next
+digit goes, not at the left of the row. The input uses a monospace font at 30 px with
+`letter-spacing: calc(60px - 1ch)` (one box pitch per digit) and a left padding computed
+from the digit count, so the caret after n digits is in the middle of box n (after 6, in the
+right part of the last box). The input stays at opacity 0, so the screen looks the same.
+ShowCode has no input; the rename field in L08 is a normal visible input.
 
 The Tauri shell is built but never started in tests (it would open a window):
 `npx tauri build --no-bundle`. `tauri-driver` flows come with M9 (they need a hidden desktop
