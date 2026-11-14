@@ -10,6 +10,8 @@
 #     (hardened runtime, secure timestamp) instead of ad hoc.
 #   NOTARY_PROFILE=<profile>  also notarize and staple the app and the DMG
 #     (profile made once with xcrun notarytool store-credentials; needs SIGN_IDENTITY).
+#   NOTARY_KEYCHAIN=<path>  the keychain that holds NOTARY_PROFILE, when it is not the login
+#     keychain (CI: a temporary keychain, see release.yml).
 #
 # BIN_DIR holds uc-agent and uc (cargo build --release), and universal-clipboard (the window,
 # M8b) when it is built. Without the window, the bundle runs the agent as its main program
@@ -68,6 +70,20 @@ TS=--timestamp
 if [ -n "${NOTARY_PROFILE:-}" ] && [ "$IDENTITY" = "-" ]; then
   echo "NOTARY_PROFILE needs SIGN_IDENTITY (a Developer ID)" >&2; exit 2
 fi
+# Submit one file and wait. notarytool can exit 0 for an "Invalid" result, so check the status.
+notarize() {
+  if [ -n "${NOTARY_KEYCHAIN:-}" ]; then
+    set -- "$1" --keychain-profile "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN"
+  else
+    set -- "$1" --keychain-profile "$NOTARY_PROFILE"
+  fi
+  out=$(xcrun notarytool submit "$@" --wait --output-format json)
+  echo "$out"
+  case "$(printf '%s' "$out" | tr -d ' \n')" in
+    *'"status":"Accepted"'*) ;;
+    *) echo "notarization of $1 was not accepted (xcrun notarytool log <id> shows why)" >&2; exit 1 ;;
+  esac
+}
 for f in "$APP/Contents/MacOS/"*; do
   case "$(basename "$f")" in
     "$MAIN") id=io.github.maxaubert.uclip ;;
@@ -84,7 +100,7 @@ codesign --verify --deep --strict "$APP"
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   ZIP=$(mktemp -d)/app.zip
   ditto -c -k --keepParent "$APP" "$ZIP"
-  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  notarize "$ZIP"
   rm -rf "$(dirname "$ZIP")"
   xcrun stapler staple "$APP"
 fi
@@ -112,7 +128,7 @@ if [ "$IDENTITY" != "-" ]; then
   codesign --force $TS --sign "$IDENTITY" "$DMG"
 fi
 if [ -n "${NOTARY_PROFILE:-}" ]; then
-  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+  notarize "$DMG"
   xcrun stapler staple "$DMG"
 fi
 echo "app: $APP"
