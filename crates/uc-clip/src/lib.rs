@@ -61,6 +61,10 @@ pub struct Snapshot {
     pub private: bool,
     /// The clipboard holds a file or folder reference. The whole clip is skipped (plan 3.8).
     pub has_files: bool,
+    /// macOS only: the clip came from another Apple device through Apple's Universal Clipboard
+    /// (type `com.apple.is-remote-clipboard`, plan 3.8). Whether such a clip is sent on is plan
+    /// decision 8; the backend only reports it. Always false on other OSes.
+    pub remote: bool,
 }
 
 /// An error from a clipboard backend.
