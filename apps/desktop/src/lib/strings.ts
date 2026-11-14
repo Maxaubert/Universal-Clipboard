@@ -12,10 +12,14 @@ export const S = {
   welcomeSub: 'Copy once. Paste anywhere.',
   getStarted: 'Get started',
 
-  permTitle: 'Two permissions',
+  // Windows has two rows (the locked design); macOS has three.
+  permTitle: (n: number) => `${['No', 'One', 'Two', 'Three', 'Four'][n] ?? n} permission${n === 1 ? '' : 's'}`,
   permSub: 'You only do this once.',
   allow: 'Allow',
-  rowTitles: { autostart: 'Start when you sign in', firewall: 'Allow through the firewall' } as Record<string, string>,
+  rowTitles: {
+    autostart: isMac ? 'Open at login' : 'Start when you sign in',
+    firewall: 'Allow through the firewall',
+  } as Record<string, string>,
   allowed: 'Allowed',
   continue: 'Continue',
 

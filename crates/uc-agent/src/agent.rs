@@ -1861,7 +1861,9 @@ impl Core {
                 "title": "Find devices on your network",
                 "why": "Needed to reach devices on your network.",
                 "if_refused": "Sync does not work on the network until this is allowed in System Settings > Privacy & Security > Local Network.",
-                "state": if self.net.is_some() { "done" } else { "todo" },
+                // Done once the user went through the row (macOS cannot be asked whether
+                // Local Network access was granted), not merely because the network started.
+                "state": if self.state.local_network_asked && self.net.is_some() { "done" } else { "todo" },
             }));
             rows.push(json!({
                 "row": "paste",
@@ -1922,7 +1924,15 @@ impl Core {
                     let _ = self.clip.read();
                 }
             }
-            "local-network" => {}
+            "local-network" => {
+                // Restart the network: its first LAN traffic is what makes macOS show the
+                // Local Network prompt (for the agent, a launchd job, not the window).
+                if yes {
+                    self.state.local_network_asked = true;
+                    self.save();
+                    self.start_net();
+                }
+            }
             "autostart" => {
                 let r = if yes {
                     self.autostart.enable()

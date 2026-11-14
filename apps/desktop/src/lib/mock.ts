@@ -2,6 +2,7 @@
 // calls as the real agent (docs/agent.md) with the same reply shapes. Tests steer it through
 // `window.__ucMock` (see tests/e2e).
 import type { Api } from './ipc';
+import { isMac } from './platform';
 import type {
   AgentEvent,
   Device,
@@ -80,12 +81,19 @@ export function makeWorld(s: Scenario): World {
           why: 'The app works after a restart.',
           state: 'done',
         },
-        {
-          row: 'firewall',
-          title: 'Let your devices find this PC',
-          why: 'Other devices can connect to this PC.',
-          state: 'done',
-        },
+        ...(isMac
+          ? [
+              { row: 'local-network', title: 'Find devices on your network', why: 'Needed to reach devices on your network.', state: 'done' as const },
+              { row: 'paste', title: 'Read what you copy', why: 'The app must read the clipboard without asking each time.', state: 'done' as const },
+            ]
+          : [
+              {
+                row: 'firewall',
+                title: 'Let your devices find this PC',
+                why: 'Other devices can connect to this PC.',
+                state: 'done' as const,
+              },
+            ]),
       ],
     },
     settings: baseSettings(),

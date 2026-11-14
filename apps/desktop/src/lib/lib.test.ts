@@ -38,7 +38,9 @@ describe('types and strings', () => {
     expect(stepOf('settings')).toBe(0);
   });
   it('has no em-dash in any string', () => {
-    const all = Object.values(S).map((v) => (typeof v === 'function' ? v('x') : v));
+    const all = Object.values(S).map((v) =>
+      typeof v === 'function' ? (v as (a: unknown) => unknown)(v === S.permTitle ? 3 : 'x') : v,
+    );
     for (const t of all) expect(t).not.toContain('—');
   });
 });
