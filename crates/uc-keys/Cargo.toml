@@ -9,3 +9,20 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = "1"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+
+[dev-dependencies]
+proptest = "1.12.0"
