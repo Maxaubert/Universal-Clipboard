@@ -270,3 +270,15 @@ test('no send, get or fetch anywhere in the window', async ({ page }) => {
     expect(text).not.toMatch(/\b(send|get|fetch)\b/);
   }
 });
+
+test('UI text cannot be selected; text fields still can (Max 2026-11-14)', async ({ page }) => {
+  await open(page, 'fresh');
+  const sel = await page.evaluate(() => getComputedStyle(document.querySelector('h1')!).userSelect);
+  expect(sel).toBe('none');
+  await page.keyboard.press('Control+A');
+  expect(await page.evaluate(() => String(window.getSelection()))).toBe('');
+  await page.getByRole('button', { name: 'Get started' }).click();
+  await page.getByRole('button', { name: 'Enter a code' }).click();
+  const input = page.locator('input').first();
+  expect(await input.evaluate((el) => getComputedStyle(el).userSelect)).not.toBe('none');
+});

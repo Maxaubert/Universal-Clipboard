@@ -11,6 +11,9 @@ body {
   color: #1D1C1A;
   -webkit-font-smoothing: antialiased;
 }
+/* Max 2026-11-14: UI text cannot be selected or copied. Only text fields keep selection. */
+body { -webkit-user-select: none; user-select: none; cursor: default; }
+input, textarea { -webkit-user-select: text; user-select: text; }
 button { font-family: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 button:focus-visible, input:focus-visible { outline: 2px solid #1D1C1A; outline-offset: 2px; }
