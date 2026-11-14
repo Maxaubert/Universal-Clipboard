@@ -14,6 +14,7 @@ members = [
   "crates/uc-cli",
   "crates/uc-mobile",
   "crates/uc-testkit",
+  "tools/winhost",
 ]
 
 [workspace.package]
