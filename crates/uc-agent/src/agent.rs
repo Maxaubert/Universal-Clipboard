@@ -2014,6 +2014,7 @@ impl Core {
             "this_device": self.own_name(),
             "port": port,
             "profile": self.profile.name,
+            "pid": std::process::id(),
             "version": env!("CARGO_PKG_VERSION"),
             "activity": self.state.activity.iter().rev().take(5).collect::<Vec<_>>(),
         })

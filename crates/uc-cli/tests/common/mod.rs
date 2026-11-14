@@ -58,6 +58,7 @@ pub struct Agent {
     pub ip: String,
     pub child: Option<Child>,
     pub extra_env: Vec<(String, String)>,
+    pub remove_env: Vec<String>,
     _tmp: Option<tempfile::TempDir>,
 }
 
@@ -76,6 +77,7 @@ impl Agent {
             ip: ip(n),
             child: None,
             extra_env: Vec::new(),
+            remove_env: Vec::new(),
             _tmp: Some(tmp),
         }
     }
@@ -105,6 +107,9 @@ impl Agent {
             .stderr(Stdio::null());
         for (k, v) in &self.extra_env {
             c.env(k, v);
+        }
+        for k in &self.remove_env {
+            c.env_remove(k);
         }
         self.child = Some(c.spawn().expect("spawn uc-agent"));
         self.wait_ready();
