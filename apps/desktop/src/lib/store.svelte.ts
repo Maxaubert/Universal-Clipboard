@@ -44,6 +44,10 @@ class Store {
   update = $state<UpdateStatus | null>(null);
   /** The update screen waits for pairing to end before it shows. */
   updatePending = $state(false);
+  /** Update now was pressed on Home's card (U3): the update screen starts the install at once,
+   * and a failure goes back to Home, where the card shows it. Plain fields, read once. */
+  updateStart = false;
+  updateFrom: 'home' | null = null;
   loaded = $state(false);
   down = $state<string | null>(null);
   /** Device shown on the detail screen. */
@@ -63,6 +67,8 @@ class Store {
       if (['status', 'devices', 'removed', 'pair.added', 'pair.joined', 'activity'].includes(e.event)) {
         void this.refresh();
       }
+      // The agent is back while an update ran (a window that lived through it): ask how it went.
+      if (e.event === 'status' && this.update?.state === 'applying') void this.refreshUpdate();
       if (e.event === 'update') {
         this.update = e.data as unknown as UpdateStatus;
         if (this.loaded && this.shouldAsk()) this.openUpdate();
@@ -105,13 +111,21 @@ class Store {
     }
   }
 
-  /** True when the agent's news should take the screen: a ready or failed update, no Later. */
+  /** True when the agent's news should take the screen: a ready, failed or done update, no Later. */
   shouldAsk(): boolean {
     const u = this.update;
-    return !!u && (u.state === 'available' || u.state === 'failed') && !u.dismissed && this.route !== 'update';
+    return !!u && (u.state === 'available' || u.state === 'failed' || u.state === 'updated') && !u.dismissed && this.route !== 'update';
   }
 
-  /** Show the update screen, unless a pairing is on: then right after it. */
+  /** The U3 card on Home: a ready or failed update the user has not put off with Later. */
+  get updateCard(): 'available' | 'failed' | null {
+    const u = this.update;
+    if (!u || u.dismissed) return null;
+    return u.state === 'available' || u.state === 'failed' ? u.state : null;
+  }
+
+  /** Show the update news: on Home as the card (U3), elsewhere the update screen (U1), and
+   * during a pairing right after it. */
   openUpdate(): void {
     if (this.route === 'update') return;
     if (this.route === 'show' || this.route === 'enter') {
@@ -119,11 +133,21 @@ class Store {
       return;
     }
     this.updatePending = false;
+    if (this.view === 'home' && this.updateCard) return;
+    this.updateFrom = null;
     this.go('update');
   }
 
-  /** Leave the update screen (Later, OK). */
+  /** Update now (or Try again) on Home's card: the update screen takes over from the button. */
+  startUpdate(from: Element | null): void {
+    this.updateStart = true;
+    this.updateFrom = 'home';
+    this.go('update', { from });
+  }
+
+  /** Leave the update screen (Later, Done, OK). */
   leaveUpdate(): void {
+    this.updateFrom = null;
     this.goBack('home');
   }
 
@@ -140,6 +164,8 @@ class Store {
     this.setup = null;
     this.update = null;
     this.updatePending = false;
+    this.updateStart = false;
+    this.updateFrom = null;
     this.route = 'welcome';
     this.back = [];
     this.selected = null;

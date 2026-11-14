@@ -16,8 +16,12 @@
 //! - `update.apply` copies the agent to `<state>/update/helper/` and starts that copy with
 //!   `--apply-update`. The helper stops the agent, keeps the old version, installs the new one,
 //!   starts it and checks its health (2 minutes), and rolls back on failure
-//!   ([`uc_update::apply`]). A failed attempt leaves `<state>/update/apply-failed.json`; the
-//!   agent that runs next shows it (state `failed`, window opened once) and removes it.
+//!   ([`uc_update::apply`]). A failed attempt leaves `<state>/update/apply-failed.json`, a
+//!   good one `<state>/update/apply-ok.json`; the agent that runs then shows it (state `failed`
+//!   or `updated`, window opened once) and removes it. It looks for both notes every tick,
+//!   because the helper writes them only after its health check, when that agent already runs.
+//! - Try again: a failed attempt keeps (or stages again) the files when the version is not
+//!   marked bad, so `update.apply` can run once more from the `failed` state.
 //!
 //! Test switches (test profiles only): `UCLIP_TEST_UPDATE_URL`, `UCLIP_TEST_UPDATE_KEY`, and
 //! two files next to the agent binary: `test-version.txt` (the version this copy claims to
@@ -180,6 +184,8 @@ pub enum Phase {
     Applying,
     /// The last attempt failed (the old version is back), or the helper did not start.
     Failed,
+    /// This agent is the new version, started by the helper after a good update.
+    Updated,
 }
 
 impl Phase {
@@ -189,6 +195,7 @@ impl Phase {
             Phase::Available => "available",
             Phase::Applying => "applying",
             Phase::Failed => "failed",
+            Phase::Updated => "updated",
         }
     }
 }
@@ -204,12 +211,31 @@ fn apply_failed_file(dir: &Path) -> PathBuf {
     dir.join("apply-failed.json")
 }
 
+/// What a good update leaves for the new agent (`<state>/update/apply-ok.json`).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ApplyOk {
+    pub version: String,
+}
+
+fn apply_ok_file(dir: &Path) -> PathBuf {
+    dir.join("apply-ok.json")
+}
+
+/// Read and remove a note the helper left.
+fn take_note<T: serde::de::DeserializeOwned>(f: &Path) -> Option<T> {
+    let b = std::fs::read(f).ok()?;
+    let _ = std::fs::remove_file(f);
+    serde_json::from_slice(&b).ok()
+}
+
 /// Read and remove the note of a failed attempt.
 fn take_apply_failed(dir: &Path) -> Option<ApplyFailed> {
-    let f = apply_failed_file(dir);
-    let b = std::fs::read(&f).ok()?;
-    let _ = std::fs::remove_file(&f);
-    serde_json::from_slice(&b).ok()
+    take_note(&apply_failed_file(dir))
+}
+
+/// Read and remove the note of a good update.
+fn take_apply_ok(dir: &Path) -> Option<ApplyOk> {
+    take_note(&apply_ok_file(dir))
 }
 
 /// The updater inside the agent's core. Polled from the core's 1 s tick.
@@ -265,6 +291,16 @@ impl Updater {
                     self.rx = None;
                     changed = true;
                     match r {
+                        Ok(Some(s))
+                            if self.phase == Phase::Failed
+                                && self.failed_version.as_deref() == Some(s.version.as_str()) =>
+                        {
+                            // The version that failed is not marked bad: keep "failed" on
+                            // screen, and Try again can install it.
+                            tracing::info!(version = %s.version, "staged again for Try again");
+                            self.last = Some(format!("{} downloaded again", s.version));
+                            self.staged = Some(s);
+                        }
                         Ok(Some(s)) => {
                             tracing::info!(version = %s.version, "update ready, asking the user");
                             self.last = Some(format!("{} downloaded and checked", s.version));
@@ -286,8 +322,8 @@ impl Updater {
                 Err(mpsc::TryRecvError::Disconnected) => self.rx = None,
             }
         }
+        changed |= self.notice_notes();
         if self.check.due(Instant::now()) {
-            changed |= self.notice_failed_attempt();
             // Run from the disk image or a translocated copy: the bundle cannot be replaced.
             if !self.profile.is_test() && crate::launch::app_location_problem().is_some() {
                 self.last = Some("not checked: the app is not in the Applications folder".into());
@@ -308,17 +344,29 @@ impl Updater {
         changed
     }
 
-    /// The helper left a note that the last attempt failed: show it (once).
-    fn notice_failed_attempt(&mut self) -> bool {
-        let Some(f) = take_apply_failed(&self.cfg.dir) else {
-            return false;
-        };
-        tracing::warn!(version = %f.version, error = %f.error, "the last update failed");
-        self.phase = Phase::Failed;
-        self.failed_version = Some(f.version);
-        self.last_error = Some(f.error);
-        self.ask();
-        true
+    /// The helper left a note about the last attempt: show it (once). The helper writes it
+    /// after its health check, so it can come at any time, not only at the start.
+    fn notice_notes(&mut self) -> bool {
+        if let Some(f) = take_apply_failed(&self.cfg.dir) {
+            tracing::warn!(version = %f.version, error = %f.error, "the last update failed");
+            self.phase = Phase::Failed;
+            self.failed_version = Some(f.version);
+            self.last_error = Some(f.error);
+            self.ask();
+            return true;
+        }
+        if let Some(o) = take_apply_ok(&self.cfg.dir) {
+            tracing::info!(version = %o.version, "updated");
+            self.last = Some(format!("updated to {}", o.version));
+            if self.phase == Phase::None {
+                self.phase = Phase::Updated;
+                self.failed_version = None;
+                self.last_error = None;
+                self.ask();
+            }
+            return true;
+        }
+        false
     }
 
     /// Open the window on its update screen, at most once per agent life, never after Later.
@@ -384,7 +432,7 @@ impl Updater {
                 let mut st = self.state();
                 st.failed(&s.version, &msg, false);
                 let _ = st.save(&self.cfg.dir);
-                self.staged = None;
+                // The files stay staged: Try again (update.apply) can start the helper again.
                 Err(msg)
             }
         }
@@ -769,14 +817,20 @@ pub fn run_helper(p: &Profile, args: &[String]) -> i32 {
             Some(e.clone())
         }
     };
-    if let Some(error) = failure {
-        let note = ApplyFailed {
+    // A good one: the new agent shows "Updated to X" (window opened once).
+    let note = match failure {
+        Some(error) => serde_json::to_vec(&ApplyFailed {
             version: a.version.clone(),
             error,
-        };
-        if let Ok(b) = serde_json::to_vec(&note) {
-            let _ = std::fs::write(apply_failed_file(&cfg.dir), b);
-        }
+        })
+        .map(|b| (apply_failed_file(&cfg.dir), b)),
+        None => serde_json::to_vec(&ApplyOk {
+            version: a.version.clone(),
+        })
+        .map(|b| (apply_ok_file(&cfg.dir), b)),
+    };
+    if let Ok((f, b)) = note {
+        let _ = std::fs::write(f, b);
     }
     let line = format!(
         "{} update to {}: {o:?}\n",
@@ -876,6 +930,12 @@ mod tests {
         .unwrap();
         assert_eq!(take_apply_failed(d.path()).unwrap().version, "9.9.9");
         assert!(take_apply_failed(d.path()).is_none());
+        let ok = ApplyOk {
+            version: "9.9.8".into(),
+        };
+        std::fs::write(apply_ok_file(d.path()), serde_json::to_vec(&ok).unwrap()).unwrap();
+        assert_eq!(take_apply_ok(d.path()).unwrap().version, "9.9.8");
+        assert!(take_apply_ok(d.path()).is_none());
     }
 
     #[test]

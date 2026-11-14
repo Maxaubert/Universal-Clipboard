@@ -276,11 +276,16 @@ fn good_update_runs_n_plus_1() {
             .join(exe_name())
             .exists()
     );
-    // N+1 is the newest: its own start check offers nothing.
+    // N+1 says "updated" (the helper's note) and opens the window once for the green check;
+    // it is the newest, so its own start check offers nothing.
     let ok = until(Duration::from_secs(20), || {
-        update_status(&a)["checked"] == true
+        let s = update_status(&a);
+        s["checked"] == true && s["state"] == "updated"
     });
-    assert!(ok, "{}", update_status(&a));
-    assert_eq!(update_status(&a)["state"], "none");
+    assert!(ok, "{}\nagent log:\n{}", update_status(&a), a.log());
+    assert_eq!(update_status(&a)["current"], next.as_str());
+    assert_eq!(update_status(&a)["available"], serde_json::Value::Null);
+    assert_eq!(window_opens(&a), 2, "asked for N+1, then the green check");
+    assert!(!a.dir.join("update").join("apply-ok.json").exists());
     stop_all(&mut a);
 }

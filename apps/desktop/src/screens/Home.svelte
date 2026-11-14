@@ -12,6 +12,7 @@
   import { copyFact, S, thisLabel } from '../lib/strings';
   import { store } from '../lib/store.svelte';
   import type { Activity, Device } from '../lib/types';
+  import { cardCloses, cardOpens } from '../lib/update-motion';
 
   const paused = $derived(store.status?.state === 'paused');
   const me = $derived(store.thisDevice);
@@ -188,6 +189,35 @@
     setTimeout(() => (rollDelay = 0), 800);
   }
 
+  // U3 "Home card" (Max's pick 2026-11-14, docs/design/desktop/motion/update.html): a ready or
+  // failed update shows as a card at the top that pushes the tiles down. Update now (or Try
+  // again) goes on to the update screen (U1, the shape grows from the button); Later closes it.
+  const card = $derived(store.updateCard);
+  const cardTitle = $derived(card === 'failed' ? S.updateFailed : S.updateReady(store.update?.available ?? ''));
+  const cardSub = $derived(card === 'failed' ? S.updateFailedSub(store.update?.current ?? '') : S.updateReadySub);
+  // The card opens after Home builds in, or at once when the news comes while Home shows.
+  const navKind = store.nav.kind;
+  const mountedAt = typeof performance !== 'undefined' ? performance.now() : 0;
+  function cardIn(node: HTMLElement) {
+    if (!canAnimate()) return;
+    const fresh = performance.now() - mountedAt < 100;
+    if (fresh && navKind === 'none') return;
+    const t = !fresh ? 0 : navKind === 'boot' ? 700 : navKind === 'back' ? 450 : 500;
+    cardOpens(node, grid, t);
+  }
+  function cardOut(node: Element) {
+    if (!canAnimate()) return { duration: 0 };
+    return { duration: cardCloses(node as HTMLElement) };
+  }
+  async function cardLater() {
+    try {
+      await store.api!.call('update.later');
+    } catch {
+      /* the agent may be gone */
+    }
+    await store.refreshUpdate();
+  }
+
   function open(d: Device) {
     store.selected = d.id;
     store.go('device');
@@ -242,6 +272,36 @@
     </button>
   </div>
   {#if error}<div class="err" role="alert">{error}</div>{/if}
+  {#if card}
+    <div class="ucard" data-m="card" data-testid="update-card" data-state={card} use:cardIn out:cardOut>
+      <div class="uc-top">
+        {#if card === 'failed'}
+          <svg class="ub" width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+            <circle cx="20" cy="20" r="18" fill="#FFFFFF" stroke="#B42318" stroke-width="2.5"></circle>
+            <path class="undo" pathLength="1" d="M12 17l5-5M12 17l5 5M12 17h12a6 6 0 0 1 0 12h-6" stroke="#B42318" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        {:else}
+          <svg class="ub" width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+            <circle cx="20" cy="20" r="18" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></circle>
+            <path d="M20 11v17M12.5 21l7.5 7.5 7.5-7.5" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        {/if}
+        <div class="uc-txt">
+          <p class="uc-t">{cardTitle}</p>
+          <p class="uc-s">{cardSub}</p>
+        </div>
+      </div>
+      <div class="uc-acts">
+        {#if card === 'available' || store.update?.available}
+          <button type="button" class="btn sm" onclick={(e) => store.startUpdate(e.currentTarget)}>
+            <span class="lbl">{card === 'failed' ? S.updateTryAgain : S.updateNow}</span>
+          </button>
+        {/if}
+        <button type="button" class="btn sm ghost" onclick={cardLater}>{S.updateLater}</button>
+      </div>
+    </div>
+  {/if}
+  <p class="sr" role="status">{card ? `${cardTitle} ${cardSub}` : ''}</p>
   <div bind:this={grid} data-m="tiles" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; overflow: auto; min-height: 0; flex: 0 1 auto;">
     {#each others as d (d.id)}
       {@const t = tileText(d)}
@@ -353,4 +413,20 @@
   .here-f { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 13px; color: #E9E6E1; text-align: right; }
   .here-l { color: #B3AEA7; font-size: 12.5px; }
   .here:focus-visible { outline: 2px solid #1D1C1A; outline-offset: 2px; }
+
+  /* U3: the update card at the top (sizes from the mockup's .ucard). */
+  .ucard {
+    background: #FFFFFF; border: 1px solid #D9D6D1; border-radius: 12px; padding: 16px; display: flex;
+    flex-direction: column; gap: 14px; flex: none; position: relative; z-index: 1; box-sizing: border-box; overflow: hidden;
+  }
+  .uc-top { display: flex; gap: 14px; align-items: center; }
+  .ub { flex: none; display: block; overflow: visible; }
+  .ub .undo { stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+  .uc-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .uc-t { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
+  .uc-s { margin: 0; font-size: 14px; line-height: 1.4; color: #5E5B56; }
+  .uc-acts { display: flex; gap: 10px; padding-left: 54px; }
+  .btn.sm { height: 38px; padding: 0 16px; font-size: 14px; width: auto; box-sizing: border-box; }
+  [data-m='tiles'] { position: relative; z-index: 0; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 </style>

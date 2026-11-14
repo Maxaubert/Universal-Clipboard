@@ -20,7 +20,9 @@ import type {
 // 'h3' is the device set of the H3 "You are here" mockup (docs/design/desktop/motion/home.html),
 // for the visual check of Home.
 // 'update' is a Home whose agent found a newer version at start; 'update-failed' is the agent
-// that runs after a failed update (the old version came back).
+// that runs after a failed update (the old version came back, the files are kept for Try
+// again); 'update-applying' is the helper at work; 'updated' is the new agent after a good one.
+// Versions as in the mockup (docs/design/desktop/motion/update.html): 0.1.0 to 0.1.1.
 export type Scenario =
   | 'fresh'
   | 'mac-blocked'
@@ -32,7 +34,9 @@ export type Scenario =
   | 'lockout'
   | 'down'
   | 'update'
-  | 'update-failed';
+  | 'update-failed'
+  | 'update-applying'
+  | 'updated';
 
 interface World {
   status: Status;
@@ -92,7 +96,7 @@ function baseSettings(): Settings {
 function baseUpdate(): UpdateStatus {
   return {
     enabled: true,
-    current: '1.0.0',
+    current: '0.1.0',
     available: null,
     failed_version: null,
     notes_url: null,
@@ -118,10 +122,16 @@ export function makeWorld(s: Scenario): World {
     update: baseUpdate(),
   };
   if (s === 'update') {
-    w.update = { ...w.update, state: 'available', available: '1.1.0' };
+    w.update = { ...w.update, state: 'available', available: '0.1.1' };
+  }
+  if (s === 'update-applying') {
+    w.update = { ...w.update, state: 'applying', available: '0.1.1' };
+  }
+  if (s === 'updated') {
+    w.update = { ...w.update, state: 'updated', current: '0.1.1' };
   }
   if (s === 'update-failed') {
-    w.update = { ...w.update, state: 'failed', failed_version: '1.1.0', last_error: 'health check failed: the network did not start' };
+    w.update = { ...w.update, state: 'failed', failed_version: '0.1.1', available: '0.1.1', last_error: 'health check failed: the network did not start' };
   }
   if (s === 'fresh' || s === 'mac-blocked') {
     w.devices = [dev("Max's PC", 'Windows', 'This device', true)];
@@ -224,6 +234,8 @@ export interface MockHandle {
   launchRoute: string | null;
   /** The agent found an update (or not) at start: set the status and send the `update` event. */
   setUpdate(u: Partial<UpdateStatus>): void;
+  /** The helper is done: the new agent says "updated" (ok), or the old one says "failed". */
+  finishUpdate(ok: boolean): void;
   /** A copy moved (facts only): the agent records it and sends an `activity` event. */
   copy(direction: 'sent' | 'received', kind?: string, device?: string | null): void;
 }
@@ -236,12 +248,19 @@ declare global {
 
 const fail = (code: string, message: string): IpcFailure => ({ code, message });
 
+/** `?update=update-failed` (any update scenario) on top of another scenario's devices, for
+ * example the H3 devices with the U3 card. */
+function withUpdate(w: World, u: Scenario | null): World {
+  if (u && u.startsWith('update')) w.update = makeWorld(u).update;
+  return w;
+}
+
 export function createMockApi(initial?: Scenario): Api {
   const params = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
   const first = (initial ?? (params?.get('scenario') as Scenario | null) ?? 'home') as Scenario;
   const subs = new Set<(e: AgentEvent) => void>();
   const h: MockHandle = {
-    world: makeWorld(first),
+    world: withUpdate(makeWorld(first), params?.get('update') as Scenario | null),
     calls: [],
     load(s) {
       h.world = makeWorld(s);
@@ -258,6 +277,14 @@ export function createMockApi(initial?: Scenario): Api {
     launchRoute: params?.get('launch') ?? null,
     setUpdate(u) {
       h.world.update = { ...h.world.update, ...u };
+      h.emit('update', { ...h.world.update });
+    },
+    finishUpdate(ok) {
+      const u = h.world.update;
+      const v = u.available ?? u.current;
+      h.world.update = ok
+        ? { ...u, state: 'updated', current: v, available: null, failed_version: null, dismissed: false }
+        : { ...u, state: 'failed', failed_version: v, dismissed: false, last_error: 'health check failed' };
       h.emit('update', { ...h.world.update });
     },
     copy(direction, kind = 'Text', device = null) {
@@ -383,9 +410,11 @@ export function createMockApi(initial?: Scenario): Api {
         h.emit('update', { ...w.update });
         return structuredClone(w.update);
       case 'update.apply': {
-        if (w.update.state !== 'available') throw fail('update', 'There is no update to install.');
+        const retry = w.update.state === 'failed' && !!w.update.available;
+        if (w.update.state !== 'available' && !retry) throw fail('update', 'There is no update to install.');
         if (h.updateApplyResult === 'fail') {
-          w.update = { ...w.update, state: 'failed', failed_version: w.update.available, available: null, last_error: 'Could not start the update: the app folder cannot be written' };
+          // The agent keeps the staged files, so Try again can run (update.rs).
+          w.update = { ...w.update, state: 'failed', failed_version: w.update.available, last_error: 'Could not start the update: the app folder cannot be written' };
           h.emit('update', { ...w.update });
           throw fail('update', w.update.last_error!);
         }

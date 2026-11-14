@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Update motion</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Page-local styles for update.html. kit.css stays untouched. */
+  .p0 { opacity: 0; }
+  .card { z-index: 1; }
+  /* The black shape (S1): it starts as the pressed button and grows into the next state. */
+  .blob { position: absolute; inset: 0; z-index: 5; background: var(--ink); opacity: 0; pointer-events: none; clip-path: inset(50%); }
+  .scr.layer.top { z-index: 6; }
+  .desk-note { position: absolute; left: 0; right: 0; top: 344px; margin: 0; text-align: center; font-size: 15px; color: var(--ink-3); opacity: 0; z-index: 0; }
+  .desk-note.low { top: 232px; }
+
+  /* Message screens: art, text, then the buttons at the bottom. Same top on every state, so nothing jumps. */
+  .u-scr { padding: 72px 28px 28px 28px; align-items: center; }
+  .u-art { height: 160px; width: 100%; flex: none; display: flex; align-items: center; justify-content: center; }
+  .u-txt { margin-top: 28px; display: flex; flex-direction: column; gap: 8px; align-items: center; text-align: center; max-width: 380px; }
+  .u-txt .h-l { text-wrap: balance; }
+  .u-txt .sub { text-wrap: balance; }
+  .u-txt .small { margin-top: 2px; }
+  .u-acts { margin-top: auto; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .u-bar { margin-top: 28px; width: 280px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; flex: none; }
+  .u-bar span { display: block; height: 100%; width: 100%; background: var(--ink); transform-origin: 0 50%; }
+  .u-bar.dk { background: rgba(255, 255, 255, 0.22); }
+  .u-bar.dk span { background: var(--white); }
+
+  /* Rolls (A3): stacked lines in one grid cell, clipped, so a new line rolls up in place. */
+  .roll { display: inline-grid; overflow: hidden; vertical-align: top; }
+  .roll > .ri { grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+
+  /* U1 dial */
+  .dial { position: relative; width: 140px; height: 140px; }
+  .dial > svg { position: absolute; inset: 0; display: block; overflow: visible; }
+  .dial .core, .dial4 .core { position: absolute; border-radius: 50%; }
+  .dial .core { left: 16px; top: 16px; width: 108px; height: 108px; }
+  .dial .prog, .dial4 .prog { stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+  .tick, .undo { stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+
+  /* U2 ticker */
+  .pc2 { position: relative; width: 300px; height: 160px; }
+  .pc2 svg { display: block; }
+  .pc2 .scrn { position: absolute; left: 82px; top: 32px; width: 136px; height: 88px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; box-sizing: border-box; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .pc2 .scrn .roll { line-height: 1.2; }
+  .bb { position: relative; overflow: hidden; }
+  .bb .fill { position: absolute; inset: 0; background: rgba(255, 255, 255, 0.2); transform-origin: 0 50%; transform: scaleX(0); }
+  .bb .roll { position: relative; }
+  .u-txt .h-l .roll { display: inline-grid; }
+  .u-txt .h-l .roll > .ri, .u-txt .sub .roll > .ri { display: block; text-align: center; }
+  .x-t .roll, .x-s .roll { width: 100%; }
+  .x-t, .x-s { width: 100%; }
+
+  /* U3 home card */
+  .ucard { background: var(--white); border: 1px solid var(--line); border-radius: var(--r-tile); padding: 16px; display: flex; flex-direction: column; gap: 14px; flex: none; position: relative; z-index: 1; }
+  .uc-top { display: flex; gap: 14px; align-items: center; }
+  .ub { flex: none; display: block; overflow: visible; }
+  .uc-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .uc-t { font-size: 17px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
+  .uc-s { font-size: 14px; line-height: 1.4; color: var(--ink-3); }
+  .uc-acts { display: flex; gap: 10px; padding-left: 54px; }
+  .tiles { position: relative; z-index: 0; }
+  .tile-name { text-align: center; }
+  .dark { justify-content: center; align-items: center; text-align: center; gap: 10px; padding: 0 44px; }
+  .dark .h-l { color: var(--white); }
+  .dark .sub { color: rgba(255, 255, 255, 0.78); text-wrap: balance; }
+  .dark .u-bar { margin-top: 26px; }
+  .hdr-sub .roll > .ri { justify-content: flex-start; }
+  .hdr-sub .roll { line-height: 20px; }
+
+  /* U4 dot */
+  .ddot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--ink); left: 262px; top: 184px; opacity: 0; z-index: 0; }
+  .dial4 { position: relative; width: 84px; height: 84px; }
+  .dial4 > svg { position: absolute; inset: 0; display: block; overflow: visible; }
+  .dial4 .core { left: 34px; top: 34px; width: 16px; height: 16px; }
+
+  /* U5 chips */
+  .chips { position: relative; width: 300px; height: 160px; }
+  .chips .arc { position: absolute; inset: 0; display: block; }
+  .arc-s { stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+  .chip { position: absolute; top: 70px; width: 96px; height: 48px; box-sizing: border-box; border-radius: var(--r); background: var(--white); border: 2px solid var(--ink); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .chip.a { left: 30px; }
+  .chip.b { left: 174px; }
+  .chip.new { border: 2px dashed var(--dash); color: var(--ink-3); }
+  .chip.core { border-color: transparent; background: transparent; }
+  .chip .cw { color: var(--white); }
+  .chip.mid { left: 102px; }
+  .chip.ok { border-color: var(--green); }
+  .chip .cb { position: absolute; right: -14px; top: -14px; display: block; overflow: visible; }
+  .clab { position: absolute; top: 126px; width: 96px; text-align: center; font-size: 13px; color: var(--ink-3); }
+  .clab.la { left: 30px; }
+  .clab.lb { left: 174px; }
+  .clab.mid { left: 102px; }
+
+</style>
+</head>
+<body class="gallery">
+<!-- Generated 2026-11-14. The update message, five motion options. Each loop: the window opens by itself
+     when the agent starts, Update now is pressed, the update runs, the app restarts, the end state shows.
+     The resting markup is the last state of each loop. -->
+<header class="gal-head">
+  <div class="gal-titles">
+    <h1>A new version is ready</h1>
+    <p class="gal-note">Five options for the message the window shows by itself, once, when the agent starts and finds a newer version. Nothing installs until you press Update now. Later hides the message until the next start. Each loop: the window opens, Update now, the update runs, the app closes and opens again. The second row shows the same options when the update fails.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+  <h2 class="gal-section">The update works</h2>
+
+  <figure class="opt u1" id="u1" data-opt="u1" data-outcome="ok" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 u-scr"><div class="u-art"><div class="dial"><svg class="dl" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><circle cx="70" cy="70" r="54" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></circle><path d="M70 49v40M55 75l15 15 15-15" stroke="#1D1C1A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">Version 0.1.1 is ready.</h1><p class="sub">A newer Universal Clipboard is ready to install.</p><p class="small">You have 0.1.0.</p></div><div class="u-acts x-acts"><button type="button" class="btn o-go"><span class="lbl">Update now</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="scr layer L-u p0 u-scr top"><div class="u-art"><div class="dial"><svg class="ring" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><circle class="trk" cx="70" cy="70" r="65" stroke="#D9D6D1" stroke-width="3"></circle><circle class="prog" pathLength="1" cx="70" cy="70" r="65" stroke="#1D1C1A" stroke-width="3" stroke-linecap="round" transform="rotate(-90 70 70)"></circle></svg><span class="core"></span><svg class="arw" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><path d="M70 49v40M55 75l15 15 15-15" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">Updating...</h1><p class="sub">The app closes and opens again by itself.</p></div></div><div class="scr layer L-e u-scr"><div class="u-art"><div class="dial"><svg class="dl" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><circle class="cc" cx="70" cy="70" r="54" fill="#FFFFFF" stroke="#1E7A46" stroke-width="3"></circle><path class="tick" pathLength="1" d="M48 71l15 15 31-31" stroke="#1E7A46" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">Updated to 0.1.1</h1><p class="sub">You have the newest version.</p></div><div class="u-acts x-acts"><button type="button" class="btn "><span class="lbl">Done</span></button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U1</b> One shape</div><p class="opt-desc">The window opens by itself. Update now: the black button grows into a round dial, and a ring fills around it. The window closes, opens again, and the dial is a green check.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u2" id="u2" data-opt="u2" data-outcome="ok" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-x u-scr"><div class="u-art x-art"><div class="pc2"><svg class="pcart" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><rect x="80" y="30" width="140" height="92" rx="8" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M150 122v12M122 136h56" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g transform="translate(132 44) scale(1.5)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></svg><div class="scrn"><span>0.1.</span><span class="roll dg"><span class="ri p0" aria-hidden="true">0</span><span class="ri">1</span></span></div></div></div><div class="u-txt"><h1 class="h-l x-t"><span class="roll tt"><span class="ri p0" aria-hidden="true">Version 0.1.1 is ready.</span><span class="ri p0" aria-hidden="true">Updating...</span><span class="ri">Updated to 0.1.1</span></span></h1><p class="sub x-s"><span class="roll ts"><span class="ri p0" aria-hidden="true">A newer Universal Clipboard is ready to install.</span><span class="ri p0" aria-hidden="true">The app closes and opens again by itself.</span><span class="ri">You have the newest version.</span></span></p></div>
+    <div class="u-acts"><button type="button" class="btn bb"><span class="fill"></span><span class="roll bl"><span class="ri p0" aria-hidden="true">Update now</span><span class="ri p0" aria-hidden="true">Updating...</span><span class="ri">Done</span></span></button><button type="button" class="btn ghost x-later p0">Later</button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U2</b> Ticker</div><p class="opt-desc">No new parts. The lines roll from "ready" to "Updating..." and the button fills like a bar. After the restart the lines roll on, and the number on the screen rolls from 0.1.0 to 1.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u3" id="u3" data-opt="u3" data-outcome="ok" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 home" style="padding: 44px 20px 22px 20px; gap: 16px;"><div class="hdr"><div class="hdr-text"><h1 class="h-m">Working</h1><div class="hdr-sub"><span class="dot green"></span><span>5 devices connected</span></div></div><button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button><button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button></div><div class="ucard"><div class="uc-top"><svg class="ub" width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></circle><path d="M20 11v17M12.5 21l7.5 7.5 7.5-7.5" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><div class="uc-txt"><p class="uc-t">Version 0.1.1 is ready.</p><p class="uc-s">A newer Universal Clipboard is ready to install.</p></div></div><div class="uc-acts"><button type="button" class="btn sm o-go"><span class="lbl">Update now</span></button><button type="button" class="btn sm ghost">Later</button></div></div><div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span>Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div></div><div class="scr layer L-u p0 top dark"><h1 class="h-l x-t">Updating...</h1><p class="sub x-s">The app closes and opens again by itself.</p><div class="u-bar dk x-bar"><span></span></div></div><div class="scr layer L-e home" style="padding: 44px 20px 22px 20px; gap: 16px;"><div class="hdr"><div class="hdr-text"><h1 class="h-m">Working</h1><div class="hdr-sub"><span class="roll hs"><span class="ri p0" aria-hidden="true"><span class="dot green"></span><span>5 devices connected</span></span><span class="ri"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"></path></svg><span>Updated to 0.1.1</span></span></span></div></div><button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button><button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button></div><div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span>Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U3</b> Home card</div><p class="opt-desc">The window opens on Home, and a card pushes the devices down. Update now floods the window black while it updates. Back on Home, the line under "Working" rolls to "Updated to 0.1.1".</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u4" id="u4" data-opt="u4" data-outcome="ok" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <span class="ddot" aria-hidden="true"></span><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 u-scr"><div class="u-art x-art"><svg class="pcart" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><rect x="80" y="30" width="140" height="92" rx="8" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M150 122v12M122 136h56" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g transform="translate(132 58) scale(1.5)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g><g class="bdg"><circle cx="222" cy="32" r="20" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></circle><path d="M222 23v17M214.5 33l7.5 7.5 7.5-7.5" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></g></svg></div><div class="u-txt x-text"><h1 class="h-l">Version 0.1.1 is ready.</h1><p class="sub">A newer Universal Clipboard is ready to install.</p><p class="small">You have 0.1.0.</p></div><div class="u-acts x-acts"><button type="button" class="btn o-go"><span class="lbl">Update now</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="scr layer L-u p0 u-scr top"><div class="u-art"><div class="dial4"><svg class="ring" width="84" height="84" viewBox="0 0 84 84" fill="none" aria-hidden="true"><circle class="trk" cx="42" cy="42" r="34" stroke="#D9D6D1" stroke-width="3"></circle><circle class="prog" pathLength="1" cx="42" cy="42" r="34" stroke="#1D1C1A" stroke-width="3" stroke-linecap="round" transform="rotate(-90 42 42)"></circle></svg><span class="core"></span></div></div><div class="u-txt x-text"><h1 class="h-l">Updating...</h1><p class="sub">The app closes and opens again by itself.</p></div></div><div class="scr layer L-e u-scr"><div class="u-art"><div class="dial4"><svg class="dl4" width="84" height="84" viewBox="0 0 84 84" fill="none" aria-hidden="true"><circle class="cc" cx="42" cy="42" r="34" fill="#FFFFFF" stroke="#1E7A46" stroke-width="3"></circle><path class="tick" pathLength="1" d="M28 43l9 9 19-19" stroke="#1E7A46" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">Updated to 0.1.1</h1><p class="sub">You have the newest version.</p></div><div class="u-acts x-acts"><button type="button" class="btn "><span class="lbl">Done</span></button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note low" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U4</b> Dot</div><p class="opt-desc">The window grows out of a dot. Update now shrinks the button into that dot, and a ring fills around it. The window folds back into the dot while the app restarts, then opens out of it as a green check.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u5" id="u5" data-opt="u5" data-outcome="ok" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 u-scr"><div class="u-art x-art"><div class="chips"><svg class="arc" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><path class="arc-d" d="M84 64C116 16 184 16 216 64" stroke="#8A857E" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"></path></svg><div class="chip a"><span>0.1.0</span></div><div class="chip b new"><span>0.1.1</span></div><span class="clab la">On this PC</span><span class="clab lb">New</span></div></div><div class="u-txt x-text"><h1 class="h-l">Version 0.1.1 is ready.</h1><p class="sub">A newer Universal Clipboard is ready to install.</p></div><div class="u-acts x-acts"><button type="button" class="btn o-go"><span class="lbl">Update now</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="scr layer L-u p0 u-scr top"><div class="u-art"><div class="chips"><svg class="arc" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><path class="arc-d" d="M84 64C116 16 184 16 216 64" stroke="#8A857E" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"></path><path class="arc-s" pathLength="1" d="M216 64C184 16 116 16 84 64" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round"></path></svg><div class="chip a"><span>0.1.0</span></div><div class="chip b core"><span class="cw">0.1.1</span></div><span class="clab la">On this PC</span><span class="clab lb">New</span></div></div><div class="u-txt x-text"><h1 class="h-l">Updating...</h1><p class="sub">The app closes and opens again by itself.</p></div></div><div class="scr layer L-e u-scr"><div class="u-art"><div class="chips"><div class="chip mid ok"><span>0.1.1</span><svg class="cb" width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><circle cx="15" cy="15" r="13" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5"></circle><path class="tick" pathLength="1" d="M9 15.5l4 4 8-8" stroke="#1E7A46" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><span class="clab mid">On this PC</span></div></div><div class="u-txt x-text"><h1 class="h-l">Updated to 0.1.1</h1><p class="sub">You have the newest version.</p></div><div class="u-acts x-acts"><button type="button" class="btn "><span class="lbl">Done</span></button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U5</b> Two versions</div><p class="opt-desc">Two chips: 0.1.0 and the new 0.1.1. The button flows into the new chip, and a line draws from new to old. The screen goes grey and closes. It opens with only 0.1.1.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+  <h2 class="gal-section">The update does not work</h2>
+
+  <figure class="opt u1" id="u1f" data-opt="u1" data-outcome="fail" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 u-scr"><div class="u-art"><div class="dial"><svg class="dl" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><circle cx="70" cy="70" r="54" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></circle><path d="M70 49v40M55 75l15 15 15-15" stroke="#1D1C1A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">Version 0.1.1 is ready.</h1><p class="sub">A newer Universal Clipboard is ready to install.</p><p class="small">You have 0.1.0.</p></div><div class="u-acts x-acts"><button type="button" class="btn o-go"><span class="lbl">Update now</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="scr layer L-u p0 u-scr top"><div class="u-art"><div class="dial"><svg class="ring" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><circle class="trk" cx="70" cy="70" r="65" stroke="#D9D6D1" stroke-width="3"></circle><circle class="prog" pathLength="1" cx="70" cy="70" r="65" stroke="#1D1C1A" stroke-width="3" stroke-linecap="round" transform="rotate(-90 70 70)"></circle></svg><span class="core"></span><svg class="arw" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><path d="M70 49v40M55 75l15 15 15-15" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">Updating...</h1><p class="sub">The app closes and opens again by itself.</p></div></div><div class="scr layer L-e u-scr"><div class="u-art"><div class="dial"><svg class="dl shk" width="140" height="140" viewBox="0 0 140 140" fill="none" aria-hidden="true"><circle class="cc" cx="70" cy="70" r="54" fill="#FFFFFF" stroke="#B42318" stroke-width="3"></circle><path class="undo" pathLength="1" d="M50 62l12-12M50 62l12 12M50 62h28a14 14 0 0 1 0 28H64" stroke="#B42318" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">The update did not work.</h1><p class="sub">You still have 0.1.0.</p></div><div class="u-acts x-acts"><button type="button" class="btn "><span class="lbl">Try again</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U1</b> One shape, failed</div><p class="opt-desc">The window opens again on 0.1.0. The dial has a red outline and an arrow that points back. One small shake, then Try again.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u2" id="u2f" data-opt="u2" data-outcome="fail" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-x u-scr"><div class="u-art x-art"><div class="pc2"><svg class="pcart" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><rect x="80" y="30" width="140" height="92" rx="8" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M150 122v12M122 136h56" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g transform="translate(132 44) scale(1.5)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></svg><div class="scrn"><span>0.1.</span><span class="roll dg"><span class="ri">0</span><span class="ri p0" aria-hidden="true">1</span></span></div></div></div><div class="u-txt"><h1 class="h-l x-t"><span class="roll tt"><span class="ri p0" aria-hidden="true">Version 0.1.1 is ready.</span><span class="ri p0" aria-hidden="true">Updating...</span><span class="ri">The update did not work.</span></span></h1><p class="sub x-s"><span class="roll ts"><span class="ri p0" aria-hidden="true">A newer Universal Clipboard is ready to install.</span><span class="ri p0" aria-hidden="true">The app closes and opens again by itself.</span><span class="ri">You still have 0.1.0.</span></span></p></div>
+    <div class="u-acts"><button type="button" class="btn bb"><span class="fill"></span><span class="roll bl"><span class="ri p0" aria-hidden="true">Update now</span><span class="ri p0" aria-hidden="true">Updating...</span><span class="ri">Try again</span></span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U2</b> Ticker, failed</div><p class="opt-desc">The lines roll to "did not work" and the number stays at 0.1.0. One small shake of the PC. Try again and Later come back.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u3" id="u3f" data-opt="u3" data-outcome="fail" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 home" style="padding: 44px 20px 22px 20px; gap: 16px;"><div class="hdr"><div class="hdr-text"><h1 class="h-m">Working</h1><div class="hdr-sub"><span class="dot green"></span><span>5 devices connected</span></div></div><button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button><button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button></div><div class="ucard"><div class="uc-top"><svg class="ub" width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></circle><path d="M20 11v17M12.5 21l7.5 7.5 7.5-7.5" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><div class="uc-txt"><p class="uc-t">Version 0.1.1 is ready.</p><p class="uc-s">A newer Universal Clipboard is ready to install.</p></div></div><div class="uc-acts"><button type="button" class="btn sm o-go"><span class="lbl">Update now</span></button><button type="button" class="btn sm ghost">Later</button></div></div><div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span>Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div></div><div class="scr layer L-u p0 top dark"><h1 class="h-l x-t">Updating...</h1><p class="sub x-s">The app closes and opens again by itself.</p><div class="u-bar dk x-bar"><span></span></div></div><div class="scr layer L-e home" style="padding: 44px 20px 22px 20px; gap: 16px;"><div class="hdr"><div class="hdr-text"><h1 class="h-m">Working</h1><div class="hdr-sub"><span class="dot green"></span><span>5 devices connected</span></div></div><button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button><button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button></div><div class="ucard"><div class="uc-top"><svg class="ub" width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="#FFFFFF" stroke="#B42318" stroke-width="2.5"></circle><path class="undo" pathLength="1" d="M12 17l5-5M12 17l5 5M12 17h12a6 6 0 0 1 0 12h-6" stroke="#B42318" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><div class="uc-txt"><p class="uc-t">The update did not work.</p><p class="uc-s">You still have 0.1.0.</p></div></div><div class="uc-acts"><button type="button" class="btn sm o-go"><span class="lbl">Try again</span></button><button type="button" class="btn sm ghost">Later</button></div></div><div class="tiles"><button type="button" class="tile" data-device="Mac mini"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="Ubuntu laptop"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPhone"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPhone</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile" data-device="iPad"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">iPad</span><span class="tile-state"><span class="dot ring"></span><span>Asleep</span></span></span></button><button type="button" class="tile" data-device="Pixel 8"><svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="tile-state"><span class="dot green"></span><span>Connected</span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U3</b> Home card, failed</div><p class="opt-desc">Back on Home, the card comes back with a red arrow that points back. It gives one small shake and offers Try again.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u4" id="u4f" data-opt="u4" data-outcome="fail" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <span class="ddot" aria-hidden="true"></span><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 u-scr"><div class="u-art x-art"><svg class="pcart" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><rect x="80" y="30" width="140" height="92" rx="8" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M150 122v12M122 136h56" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g transform="translate(132 58) scale(1.5)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g><g class="bdg"><circle cx="222" cy="32" r="20" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></circle><path d="M222 23v17M214.5 33l7.5 7.5 7.5-7.5" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></g></svg></div><div class="u-txt x-text"><h1 class="h-l">Version 0.1.1 is ready.</h1><p class="sub">A newer Universal Clipboard is ready to install.</p><p class="small">You have 0.1.0.</p></div><div class="u-acts x-acts"><button type="button" class="btn o-go"><span class="lbl">Update now</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="scr layer L-u p0 u-scr top"><div class="u-art"><div class="dial4"><svg class="ring" width="84" height="84" viewBox="0 0 84 84" fill="none" aria-hidden="true"><circle class="trk" cx="42" cy="42" r="34" stroke="#D9D6D1" stroke-width="3"></circle><circle class="prog" pathLength="1" cx="42" cy="42" r="34" stroke="#1D1C1A" stroke-width="3" stroke-linecap="round" transform="rotate(-90 42 42)"></circle></svg><span class="core"></span></div></div><div class="u-txt x-text"><h1 class="h-l">Updating...</h1><p class="sub">The app closes and opens again by itself.</p></div></div><div class="scr layer L-e u-scr"><div class="u-art"><div class="dial4"><svg class="dl4 shk" width="84" height="84" viewBox="0 0 84 84" fill="none" aria-hidden="true"><circle class="cc" cx="42" cy="42" r="34" fill="#FFFFFF" stroke="#B42318" stroke-width="3"></circle><path class="undo" pathLength="1" d="M29 37l8-8M29 37l8 8M29 37h18a9 9 0 0 1 0 18h-9" stroke="#B42318" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div><div class="u-txt x-text"><h1 class="h-l">The update did not work.</h1><p class="sub">You still have 0.1.0.</p></div><div class="u-acts x-acts"><button type="button" class="btn "><span class="lbl">Try again</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note low" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U4</b> Dot, failed</div><p class="opt-desc">The window opens out of the dot to a red circle with an arrow that points back. One small shake, then Try again.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt u5" id="u5f" data-opt="u5" data-outcome="fail" data-loop="11800">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr layer L-o p0 u-scr"><div class="u-art x-art"><div class="chips"><svg class="arc" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><path class="arc-d" d="M84 64C116 16 184 16 216 64" stroke="#8A857E" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"></path></svg><div class="chip a"><span>0.1.0</span></div><div class="chip b new"><span>0.1.1</span></div><span class="clab la">On this PC</span><span class="clab lb">New</span></div></div><div class="u-txt x-text"><h1 class="h-l">Version 0.1.1 is ready.</h1><p class="sub">A newer Universal Clipboard is ready to install.</p></div><div class="u-acts x-acts"><button type="button" class="btn o-go"><span class="lbl">Update now</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="scr layer L-u p0 u-scr top"><div class="u-art"><div class="chips"><svg class="arc" width="300" height="160" viewBox="0 0 300 160" fill="none" aria-hidden="true"><path class="arc-d" d="M84 64C116 16 184 16 216 64" stroke="#8A857E" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"></path><path class="arc-s" pathLength="1" d="M216 64C184 16 116 16 84 64" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round"></path></svg><div class="chip a"><span>0.1.0</span></div><div class="chip b core"><span class="cw">0.1.1</span></div><span class="clab la">On this PC</span><span class="clab lb">New</span></div></div><div class="u-txt x-text"><h1 class="h-l">Updating...</h1><p class="sub">The app closes and opens again by itself.</p></div></div><div class="scr layer L-e u-scr"><div class="u-art"><div class="chips"><div class="chip mid "><span>0.1.0</span><svg class="cb shk" width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><circle cx="15" cy="15" r="13" fill="#FFFFFF" stroke="#B42318" stroke-width="2.5"></circle><path class="undo" pathLength="1" d="M9 13l3.5-3.5M9 13l3.5 3.5M9 13h8a4.5 4.5 0 0 1 0 9h-4" stroke="#B42318" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><span class="clab mid">On this PC</span></div></div><div class="u-txt x-text"><h1 class="h-l">The update did not work.</h1><p class="sub">You still have 0.1.0.</p></div><div class="u-acts x-acts"><button type="button" class="btn "><span class="lbl">Try again</span></button><button type="button" class="btn ghost x-later">Later</button></div></div><div class="blob"></div></div>
+    </div><p class="desk-note" aria-hidden="true">The app restarts</p>
+    </div></div>
+    <figcaption><div class="opt-label"><b>U5</b> Two versions, failed</div><p class="opt-desc">It opens with only 0.1.0, and a small red badge with an arrow that points back. One small shake, then Try again.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+</main>
+<script src="art.js"></script>
+<script src="kit.js"></script>
+<script>
+/* Update message motion options. Every option is one timeline built from WAAPI tracks that span the
+   whole loop (fill both), so Kit.seek(ms) lands every option on an exact frame.
+   Story: the window opens by itself, Update now is pressed (S1: the black shape grows from the button),
+   the update runs, the app closes and opens again, then "Updated to 0.1.1" or the calm failure (E1). */
+(function () {
+  'use strict';
+  const T = 10400;
+  const PRESS = 2800, P0 = 3800, P1 = 6000, CLOSE = 6300, OPEN2 = 7500;
+  const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  const IO = 'cubic-bezier(0.65, 0, 0.35, 1)';
+  const IN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const LIN = 'linear';
+  const NEUTRAL = { opacity: 1, transform: 'none' };
+
+  /* ---------- Track helpers (same as setup.html) ---------- */
+  // frames: [[ms, {props}, easingOfSegmentStartingHere]]. Equal times make an instant jump.
+  function tk(ctx, el, frames) {
+    if (!el) return null;
+    if (Array.isArray(el)) return el.map((e) => tk(ctx, e, frames));
+    const f = frames.map((x) => x.slice()).sort((a, b) => a[0] - b[0]);
+    if (f[0][0] > 0) f.unshift([0, f[0][1]]);
+    if (f[f.length - 1][0] < T) f.push([T, f[f.length - 1][1]]);
+    const kf = f.map(([t, p, e]) => Object.assign({}, p, { offset: Math.min(1, Math.max(0, t / T)), easing: e || LIN }));
+    return ctx.anim(el, kf, { duration: T, easing: LIN, fill: 'both' });
+  }
+  // One element's whole life: optional entrance (in, id, from) and exit (out, od, to).
+  function life(ctx, el, o) {
+    if (!el) return null;
+    const keys = new Set(['opacity'].concat(Object.keys(o.from || {}), Object.keys(o.to || {})));
+    const rest = {};
+    keys.forEach((k) => { rest[k] = NEUTRAL[k]; });
+    const from = Object.assign({}, rest, { opacity: 0 }, o.from);
+    const to = Object.assign({}, rest, { opacity: 0 }, o.to);
+    const fr = [];
+    if (o.in == null) fr.push([0, rest]);
+    else { fr.push([0, from]); fr.push([o.in, from, o.ie || OUT]); fr.push([o.in + (o.id || 500), rest]); }
+    if (o.out != null) { fr.push([o.out, rest, o.oe || IN]); fr.push([o.out + (o.od || 300), to]); }
+    if (o.back != null) { fr.push([o.back, to, OUT]); fr.push([o.back + (o.bd || 500), rest]); }
+    return tk(ctx, el, fr);
+  }
+  // Instant opacity switches: pts [[ms, value]].
+  function onoff(ctx, el, pts, init) {
+    let cur = init || 0;
+    const fr = [[0, { opacity: cur }]];
+    pts.forEach(([t, v]) => { fr.push([t, { opacity: cur }]); fr.push([t, { opacity: v }]); cur = v; });
+    return tk(ctx, el, fr);
+  }
+  function press(ctx, el, t) {
+    if (ctx.reduced) return;
+    tk(ctx, el, [[t - 170, { transform: 'scale(1)' }, IO], [t - 60, { transform: 'scale(0.97)' }, OUT], [t + 220, { transform: 'scale(1)' }]]);
+  }
+  function draw(ctx, el, t, d, e) {
+    tk(ctx, el, [[t, { strokeDashoffset: 1 }, e || IO], [t + d, { strokeDashoffset: 0 }]]);
+  }
+  // E1: one damped shake, 7 px at most. Reduced motion: no shake, the red outline says it.
+  function shake(ctx, el, t) {
+    if (ctx.reduced || !el) return;
+    const x = (v) => ({ transform: `translateX(${v}px)` });
+    tk(ctx, el, [[t, x(0), IO], [t + 100, x(-7), IO], [t + 210, x(6), IO], [t + 320, x(-4), IO], [t + 430, x(2), IO], [t + 540, x(0)]]);
+  }
+  // A3 roll: one of several stacked lines shows at a time. seq [[t, index]]. Reduced: fades in place.
+  function roll(ctx, els, start, seq, dur) {
+    dur = dur || 520;
+    const dist = ctx.reduced ? 0 : 110;
+    const pose = (vis, dir) => ({ opacity: vis ? 1 : 0, transform: `translateY(${vis ? 0 : dir * dist}%)` });
+    els.forEach((el, i) => {
+      let vis = i === start, last = pose(vis, 1);
+      const fr = [[0, last]];
+      seq.forEach(([t, idx]) => {
+        if (vis && idx !== i) {
+          const p = pose(false, -1);
+          fr.push([t, last, IO]); fr.push([t + Math.round(dur * 0.55), p]); last = p; vis = false;
+        } else if (!vis && idx === i) {
+          const d0 = Math.round(dur * (ctx.reduced ? 0.6 : 0.3));
+          const below = pose(false, 1), shown = pose(true, 0);
+          fr.push([t + d0, last]); fr.push([t + d0, below, OUT]); fr.push([t + d0 + dur, shown]); last = shown; vis = true;
+        }
+      });
+      tk(ctx, el, fr);
+    });
+  }
+  const q = (L, s) => L.querySelector(s);
+  const qa = (L, s) => Array.from(L.querySelectorAll(s));
+  const rise = (ctx, px) => (ctx.reduced ? {} : { transform: `translateY(${px}px)` });
+  const grow = (ctx, s) => (ctx.reduced ? {} : { transform: `scale(${s})` });
+
+  // Geometry inside .body, in unscaled px (the gallery scales the stage).
+  function geo(ctx) {
+    const body = ctx.$('.body');
+    const b = body.getBoundingClientRect();
+    const s = b.width / body.offsetWidth, BW = body.offsetWidth, BH = body.offsetHeight;
+    const f = (n) => Math.round(n * 10) / 10;
+    const rect = (el) => { const r = el.getBoundingClientRect(); return { x: (r.left - b.left) / s, y: (r.top - b.top) / s, w: r.width / s, h: r.height / s }; };
+    const clip = (r, rad) => `inset(${f(r.y)}px ${f(BW - r.x - r.w)}px ${f(BH - r.y - r.h)}px ${f(r.x)}px round ${f(rad)}px)`;
+    return { rect, clip, BW, BH };
+  }
+
+  /* ---------- Shared story pieces ---------- */
+  // The window opens by itself, closes for the restart, and opens again.
+  function windowLife(ctx) {
+    const H = ctx.reduced ? { opacity: 0, transform: 'none' } : { opacity: 0, transform: 'translateY(18px) scale(0.98)' };
+    const X = ctx.reduced ? { opacity: 0, transform: 'none' } : { opacity: 0, transform: 'scale(0.98)' };
+    const S = { opacity: 1, transform: 'none' };
+    tk(ctx, ctx.$('.card'), [[0, H, OUT], [650, S], [CLOSE, S, IN], [CLOSE + 380, X], [OPEN2, H, OUT], [OPEN2 + 550, S]]);
+    life(ctx, ctx.$('.desk-note'), { in: CLOSE + 450, id: 300, ie: 'ease', out: OPEN2 - 200, od: 200, oe: 'ease' });
+  }
+  // Layer switches: offer, updating, end. The swap to the end layer happens while the window is closed.
+  function layers(ctx, swap) {
+    const [Lo, Lu, Le] = ['.L-o', '.L-u', '.L-e'].map((s) => ctx.$(s));
+    onoff(ctx, Lo, [[0, 1], [swap, 0]]);
+    onoff(ctx, Lu, [[PRESS + 120, 1], [swap, 0]]);
+    onoff(ctx, Le, [[swap, 1]]);
+    return [Lo, Lu, Le];
+  }
+  // Offer screen arrives: art, text, buttons. The text leaves on the press.
+  function offerIn(ctx, Lo, artSel, keepArt) {
+    life(ctx, q(Lo, artSel), Object.assign({ in: 300, id: 700, from: grow(ctx, 0.92) }, keepArt ? {} : { out: PRESS, od: 300 }));
+    life(ctx, q(Lo, '.x-text'), { in: 420, id: 700, from: rise(ctx, 12), out: PRESS, od: 280, to: rise(ctx, -8) });
+    life(ctx, q(Lo, '.x-later'), { in: 560, id: 600, out: PRESS, od: 250 });
+  }
+  // S1: the pressed button becomes the black shape and grows into the target rect.
+  function shapeFromButton(ctx, go, target, rad, off) {
+    const g = geo(ctx);
+    const cb = g.clip(g.rect(go), 10), ct = g.clip(target, rad);
+    const blob = ctx.$('.blob');
+    if (ctx.reduced) {
+      tk(ctx, go, [[0, { opacity: 0 }], [560, { opacity: 0 }, 'ease'], [1100, { opacity: 1 }], [PRESS, { opacity: 1 }, 'ease'], [PRESS + 260, { opacity: 0 }]]);
+      tk(ctx, blob, [[0, { clipPath: ct, opacity: 0 }], [PRESS + 120, { clipPath: ct, opacity: 0 }, 'ease'], [PRESS + 480, { clipPath: ct, opacity: 1 }], [off, { clipPath: ct, opacity: 1 }], [off, { clipPath: ct, opacity: 0 }]]);
+      return;
+    }
+    press(ctx, go, PRESS);
+    tk(ctx, go, [[0, { opacity: 0 }], [560, { opacity: 0 }, OUT], [1160, { opacity: 1 }], [PRESS + 120, { opacity: 1 }], [PRESS + 120, { opacity: 0 }]]);
+    tk(ctx, q(go, '.lbl') || go, [[0, { opacity: 1 }], [PRESS, { opacity: 1 }, IN], [PRESS + 120, { opacity: 0 }]]);
+    tk(ctx, blob, [[0, { clipPath: cb }], [PRESS + 150, { clipPath: cb }, IO], [PRESS + 900, { clipPath: ct }]]);
+    tk(ctx, blob, [[0, { opacity: 0 }], [PRESS + 120, { opacity: 0 }], [PRESS + 120, { opacity: 1 }], [off, { opacity: 1 }], [off, { opacity: 0 }]]);
+  }
+  // End screen arrives after the restart.
+  function endIn(ctx, Le, artSel, t0) {
+    life(ctx, q(Le, artSel), { in: t0 + 250, id: 600, from: grow(ctx, 0.72) });
+    life(ctx, q(Le, '.x-text'), { in: t0 + 400, id: 560, from: rise(ctx, 10) });
+    life(ctx, q(Le, '.x-acts'), { in: t0 + 520, id: 560, from: rise(ctx, 10) });
+  }
+  function endMark(ctx, Le, ok, t0) {
+    if (ok) draw(ctx, q(Le, '.tick'), t0 + 600, 460, OUT);
+    else { draw(ctx, q(Le, '.undo'), t0 + 600, 620, OUT); shake(ctx, q(Le, '.shk'), t0 + 1300); }
+  }
+
+  const OPTS = {};
+
+  /* ---------- U1 One shape ---------- */
+  OPTS.u1 = (ctx, ok) => {
+    windowLife(ctx);
+    const [Lo, Lu, Le] = layers(ctx, CLOSE + 400);
+    offerIn(ctx, Lo, '.dial');
+    const g = geo(ctx);
+    shapeFromButton(ctx, q(Lo, '.o-go'), g.rect(q(Lu, '.core')), 54, CLOSE + 400);
+    life(ctx, q(Lu, '.trk'), { in: PRESS + 700, id: 400 });
+    life(ctx, q(Lu, '.arw'), { in: PRESS + 760, id: 420, from: rise(ctx, -6) });
+    life(ctx, q(Lu, '.x-text'), { in: PRESS + 520, id: 600, from: rise(ctx, 10) });
+    draw(ctx, q(Lu, '.prog'), P0, P1 - P0, IO);
+    endIn(ctx, Le, '.dial', OPEN2);
+    endMark(ctx, Le, ok, OPEN2);
+  };
+
+  /* ---------- U2 Ticker ---------- */
+  OPTS.u2 = (ctx, ok) => {
+    windowLife(ctx);
+    const L = ctx.$('.L-x');
+    life(ctx, q(L, '.x-art'), { in: 300, id: 700, from: grow(ctx, 0.94) });
+    life(ctx, q(L, '.u-txt'), { in: 420, id: 700, from: rise(ctx, 12) });
+    const bb = q(L, '.bb');
+    tk(ctx, bb, [[0, { opacity: 0 }], [560, { opacity: 0 }, OUT], [1160, { opacity: 1 }]]);
+    press(ctx, bb, PRESS);
+    const seq = [[PRESS + 100, 1], [OPEN2 + 350, 2]];
+    roll(ctx, qa(L, '.tt > .ri'), 0, seq);
+    roll(ctx, qa(L, '.ts > .ri'), 0, seq);
+    roll(ctx, qa(L, '.bl > .ri'), 0, seq, 460);
+    if (ok) roll(ctx, qa(L, '.dg > .ri'), 0, [[OPEN2 + 900, 1]], 560);
+    const later = q(L, '.x-later');
+    if (ok) life(ctx, later, { in: 560, id: 600, out: PRESS, od: 250 });
+    else life(ctx, later, { in: 560, id: 600, out: PRESS, od: 250, back: OPEN2 + 650, bd: 500 });
+    const s = (x, o) => ({ transform: `scaleX(${x})`, opacity: o });
+    tk(ctx, q(L, '.fill'), [[0, s(0, 1)], [P0, s(0, 1), IO], [P1, s(1, 1)], [OPEN2 + 300, s(1, 1), OUT], [OPEN2 + 650, s(1, 0)]]);
+    if (!ok) shake(ctx, q(L, '.pc2'), OPEN2 + 1000);
+  };
+
+  /* ---------- U3 Home card ---------- */
+  function cardOpens(ctx, L, t) {
+    const uc = q(L, '.ucard');
+    const dy = uc.offsetHeight + 16;
+    const R = ctx.reduced;
+    const shut = R ? 'inset(0px 0px 0% 0px round 12px)' : 'inset(0px 0px 100% 0px round 12px)';
+    tk(ctx, uc, [[0, { opacity: 0, clipPath: shut }], [t, { opacity: 0, clipPath: shut }, R ? 'ease' : IO], [t + 700, { opacity: 1, clipPath: 'inset(0px 0px 0% 0px round 12px)' }]]);
+    if (!R) tk(ctx, q(L, '.tiles'), [[0, { transform: `translateY(-${dy}px)` }], [t, { transform: `translateY(-${dy}px)` }, IO], [t + 700, { transform: 'translateY(0px)' }]]);
+    return uc;
+  }
+  OPTS.u3 = (ctx, ok) => {
+    windowLife(ctx);
+    const [Lo, Lu, Le] = layers(ctx, CLOSE + 400);
+    cardOpens(ctx, Lo, 1000);
+    const g = geo(ctx);
+    shapeFromButton(ctx, q(Lo, '.o-go'), { x: 0, y: 0, w: g.BW, h: g.BH }, 0, CLOSE + 400);
+    life(ctx, q(Lu, '.x-t'), { in: PRESS + 700, id: 600, from: rise(ctx, 10) });
+    life(ctx, q(Lu, '.x-s'), { in: PRESS + 800, id: 600, from: rise(ctx, 10) });
+    life(ctx, q(Lu, '.x-bar'), { in: PRESS + 900, id: 500 });
+    tk(ctx, q(Lu, '.x-bar span'), [[0, { transform: 'scaleX(0)' }], [P0, { transform: 'scaleX(0)' }, IO], [P1, { transform: 'scaleX(1)' }]]);
+    if (ok) {
+      roll(ctx, qa(Le, '.hs > .ri'), 0, [[OPEN2 + 900, 1]]);
+    } else {
+      cardOpens(ctx, Le, OPEN2 + 450);
+      draw(ctx, q(Le, '.undo'), OPEN2 + 1000, 620, OUT);
+      shake(ctx, q(Le, '.ucard'), OPEN2 + 1500);
+    }
+  };
+
+  /* ---------- U4 Dot ---------- */
+  OPTS.u4 = (ctx, ok) => {
+    const R = ctx.reduced;
+    const FOLD = CLOSE + 700, OPEN4 = 8000;
+    const card = ctx.$('.card'), dot = ctx.$('.ddot');
+    const [Lo, Lu, Le] = layers(ctx, FOLD);
+    const g = geo(ctx);
+    const rc = g.rect(q(Lu, '.core'));
+    const cx = Math.round(rc.x + rc.w / 2 + 1), cy = Math.round(rc.y + rc.h / 2 + 1);
+    dot.style.left = (card.offsetLeft + cx - 8) + 'px';
+    dot.style.top = (card.offsetTop + cy - 8) + 'px';
+    const C0 = `circle(8px at ${cx}px ${cy}px)`, C1 = `circle(560px at ${cx}px ${cy}px)`;
+    if (R) {
+      tk(ctx, card, [[0, { opacity: 0 }], [300, { opacity: 0 }, 'ease'], [900, { opacity: 1 }], [CLOSE, { opacity: 1 }, 'ease'], [CLOSE + 400, { opacity: 0 }], [OPEN4, { opacity: 0 }, 'ease'], [OPEN4 + 500, { opacity: 1 }]]);
+      tk(ctx, dot, [[0, { opacity: 0 }], [CLOSE + 400, { opacity: 0 }, 'ease'], [CLOSE + 700, { opacity: 1 }], [OPEN4, { opacity: 1 }, 'ease'], [OPEN4 + 400, { opacity: 0 }]]);
+    } else {
+      tk(ctx, card, [[0, { clipPath: C0, opacity: 0 }], [380, { clipPath: C0, opacity: 0 }, IO], [1200, { clipPath: C1, opacity: 1 }],
+        [CLOSE, { clipPath: C1, opacity: 1 }, IO], [FOLD, { clipPath: C0, opacity: 1 }], [FOLD + 40, { clipPath: C0, opacity: 0 }],
+        [OPEN4, { clipPath: C0, opacity: 0 }, IO], [OPEN4 + 800, { clipPath: C1, opacity: 1 }]]);
+      const d = (o, s) => ({ opacity: o, transform: `scale(${s})` });
+      tk(ctx, dot, [[0, d(0, 0)], [60, d(0, 0), OUT], [400, d(1, 1)], [1200, d(1, 1)], [1200, d(0, 1)],
+        [FOLD - 20, d(0, 1)], [FOLD - 20, d(1, 1)], [FOLD + 100, d(1, 1), IO], [FOLD + 500, d(1, 1.3)], [FOLD + 500, d(1, 1.3), IO], [FOLD + 950, d(1, 1)],
+        [OPEN4 + 250, d(1, 1), 'ease'], [OPEN4 + 400, d(0, 1)]]);
+    }
+    life(ctx, ctx.$('.desk-note'), { in: FOLD + 150, id: 300, ie: 'ease', out: OPEN4 - 150, od: 200, oe: 'ease' });
+    offerIn(ctx, Lo, '.x-art');
+    shapeFromButton(ctx, q(Lo, '.o-go'), rc, 8, FOLD + 40);
+    life(ctx, q(Lu, '.trk'), { in: PRESS + 800, id: 400 });
+    life(ctx, q(Lu, '.x-text'), { in: PRESS + 520, id: 600, from: rise(ctx, 10) });
+    draw(ctx, q(Lu, '.prog'), P0, P1 - P0, IO);
+    life(ctx, q(Le, '.dial4'), { in: OPEN4 + 150, id: 650, from: grow(ctx, 0.24) });
+    life(ctx, q(Le, '.x-text'), { in: OPEN4 + 400, id: 560, from: rise(ctx, 10) });
+    life(ctx, q(Le, '.x-acts'), { in: OPEN4 + 520, id: 560, from: rise(ctx, 10) });
+    if (ok) draw(ctx, q(Le, '.tick'), OPEN4 + 550, 460, OUT);
+    else { draw(ctx, q(Le, '.undo'), OPEN4 + 550, 620, OUT); shake(ctx, q(Le, '.shk'), OPEN4 + 1250); }
+  };
+
+  /* ---------- U5 Two versions ---------- */
+  OPTS.u5 = (ctx, ok) => {
+    windowLife(ctx);
+    const [Lo, Lu, Le] = layers(ctx, CLOSE + 400);
+    offerIn(ctx, Lo, '.x-art', true);
+    const g = geo(ctx);
+    shapeFromButton(ctx, q(Lo, '.o-go'), g.rect(q(Lu, '.chip.core')), 10, CLOSE + 400);
+    life(ctx, q(Lu, '.cw'), { in: PRESS + 820, id: 360 });
+    draw(ctx, q(Lu, '.arc-s'), P0, P1 - P0, IO);
+    // A4 hush: just before the window closes, the old parts go quiet one after the other.
+    const hush = [q(Lu, '.chip.a'), q(Lu, '.la'), q(Lu, '.arc'), q(Lu, '.lb'), q(Lu, '.x-text')];
+    hush.forEach((el, i) => {
+      const t = 5650 + (ctx.reduced ? 0 : i * 110);
+      if (el.classList.contains('x-text')) return; // its own track below
+      tk(ctx, el, [[0, { opacity: 1 }], [t, { opacity: 1 }, IO], [t + 420, { opacity: 0.35 }]]);
+    });
+    const tt = 5650 + (ctx.reduced ? 0 : 4 * 110);
+    tk(ctx, q(Lu, '.x-text'), ctx.reduced
+      ? [[0, { opacity: 0 }], [PRESS + 520, { opacity: 0 }, OUT], [PRESS + 1120, { opacity: 1 }], [tt, { opacity: 1 }, IO], [tt + 420, { opacity: 0.35 }]]
+      : [[0, { opacity: 0, transform: 'translateY(10px)' }], [PRESS + 520, { opacity: 0, transform: 'translateY(10px)' }, OUT], [PRESS + 1120, { opacity: 1, transform: 'none' }], [tt, { opacity: 1, transform: 'none' }, IO], [tt + 420, { opacity: 0.35, transform: 'none' }]]);
+    endIn(ctx, Le, '.chip', OPEN2);
+    life(ctx, q(Le, '.clab'), { in: OPEN2 + 450, id: 500 });
+    endMark(ctx, Le, ok, OPEN2);
+  };
+
+  document.querySelectorAll('.opt').forEach((opt) => {
+    const fn = OPTS[opt.dataset.opt];
+    const ok = opt.dataset.outcome !== 'fail';
+    if (fn) Kit.register(opt, (ctx) => fn(ctx, ok));
+  });
+})();
+
+</script>
+</body>
+</html>

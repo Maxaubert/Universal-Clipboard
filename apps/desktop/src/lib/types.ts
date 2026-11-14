@@ -93,7 +93,7 @@ export interface UpdateStatus {
   available: string | null;
   failed_version: string | null;
   notes_url: string | null;
-  state: 'none' | 'available' | 'applying' | 'failed';
+  state: 'none' | 'available' | 'applying' | 'failed' | 'updated';
   dismissed: boolean;
   checked: boolean;
   checks: number;

@@ -171,7 +171,8 @@ it off at run time). Code: `crates/uc-update`, `crates/uc-agent/src/update.rs`.
    rollout percentage. Then download, check size, hash and signature, and unpack (system `tar`).
 4. **Nothing installs by itself.** The version is now "available": the agent emits the IPC
    event `update` and opens the window once on its update screen ("Version X is ready.",
-   Update now, Later; see "How the agent opens the window" below). Later (IPC `update.later`,
+   Update now, Later; see "How the agent opens the window" below; a window already open on
+   Home shows it as a card there instead). Later (IPC `update.later`,
    `uc update later`) stops the asking until the next agent start. Update now (IPC
    `update.apply`, `uc update --install` or `uc update now`) copies the agent to
    `<state>/update/helper/` and starts the copy with `--apply-update` (detached, own process
@@ -181,14 +182,19 @@ it off at run time). Code: `crates/uc-update`, `crates/uc-agent/src/update.rs`.
    agent, and wait up to 2 minutes for: the new version answers, the network is up, and at
    least one peer is back if one was connected before.
 5. On failure: stop it, copy `previous` back, start the old agent, mark the version bad, and
-   write `<state>/update/apply-failed.json`. The agent that runs next reads (and removes) it at
-   its one check: `update.status` state `failed`, and the window opens once to say so.
+   write `<state>/update/apply-failed.json`. On success it writes `<state>/update/apply-ok.json`.
+   The agent that runs then reads (and removes) the note on its next tick (it looks every tick,
+   because the note comes after the 2 minute health check): `update.status` state `failed` or
+   `updated`, and the window opens once to say so ("The update did not work." or "Updated to
+   X"). Try again: when the helper did not start, or the failed version is not marked bad (its
+   start check stages it again), `available` stays set in state `failed` and `update.apply`
+   (`uc update --install`) runs once more. A version marked bad cannot be tried again.
    Three failures in a row: status "Needs attention: The app could not update itself."
 6. The report (`uc diagnostics`) shows the last result, failures in a row and bad versions.
    The helper keeps the last 50 results in `<state>/update/helper.log`.
 
 `update.status` = `{enabled, current, available, failed_version, notes_url, state
-(none|available|applying|failed), dismissed, checked, checks, last_check_ms, last_error}`.
+(none|available|applying|failed|updated), dismissed, checked, checks, last_check_ms, last_error}`.
 `uc update` shows it (`--json` for scripts).
 
 **How the agent opens the window** (`open_window` in `crates/uc-agent/src/update.rs`; the agent

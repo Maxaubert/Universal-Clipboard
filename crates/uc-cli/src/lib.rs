@@ -876,10 +876,15 @@ pub fn update_text(v: &Value) -> String {
             "Installing version {}. The app restarts by itself.",
             v["available"].as_str().unwrap_or("")
         ),
-        "failed" => format!(
-            "Version {} could not be installed. You still have {current}.",
+        "failed" if v["available"].is_string() => format!(
+            "The update to {} did not work. You still have {current}.\nTry again: uc update --install",
             v["failed_version"].as_str().unwrap_or("")
         ),
+        "failed" => format!(
+            "The update to {} did not work. You still have {current}.",
+            v["failed_version"].as_str().unwrap_or("")
+        ),
+        "updated" => format!("Updated to {current}. You have the newest version."),
         _ if v["checked"] == json!(true) => format!("Version {current} is the newest."),
         _ => format!("Version {current}. The app looks for a new version shortly after it starts."),
     };
@@ -907,7 +912,10 @@ async fn update(c: &mut Client, j: bool, install: bool, later: bool) -> Result<(
         out(j, &st, || update_text(&st));
         return Ok(());
     }
-    if st["state"] != json!("available") {
+    // Update now, or Try again after a failed attempt whose files are still there.
+    let ready = st["state"] == json!("available")
+        || (st["state"] == json!("failed") && st["available"].is_string());
+    if !ready {
         return Err(Fail(update_text(&st), 1));
     }
     let v = call(c, "update.apply", json!({})).await?;
@@ -1038,6 +1046,11 @@ mod tests {
         let v = json!({"enabled": true, "current": "0.1.0", "available": "0.1.1",
             "state": "available", "checked": true});
         assert!(update_text(&v).contains("Version 0.1.1 is ready"));
+        let f = json!({"enabled": true, "current": "0.1.0", "available": "0.1.1",
+            "failed_version": "0.1.1", "state": "failed", "checked": true});
+        assert!(update_text(&f).contains("Try again: uc update --install"));
+        let u = json!({"enabled": true, "current": "0.1.1", "state": "updated", "checked": true});
+        assert!(update_text(&u).starts_with("Updated to 0.1.1."));
     }
 
     #[test]

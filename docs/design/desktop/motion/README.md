@@ -21,6 +21,7 @@ option. URL switches for checks: `?reduce=1` (reduced motion) and `?t=1200` (fre
 | `errors.html` | E1 to E8 | Wrong code, old code, too many tries, no network, device not found |
 | `home.html` | H1 to H8 | Ways to show this PC apart from the other devices |
 | `activity.html` | A1 to A7 | Copy sent or received, Pause and Resume, Needs attention, code renew |
+| `update.html` | U1 to U5 | The update message the window shows by itself, success and failure. Picked: U1 and U3 (2026-11-14, `docs/desktop.md`) |
 | `kit.html` | K1 to K7 | Static copies of the real screens that the pages build on |
 
 Shared files: `kit.css` (tokens and gallery layout, copied from `apps/desktop/src`), `kit.js`
