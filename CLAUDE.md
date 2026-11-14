@@ -2,7 +2,7 @@
 
 Clipboard sync between Windows, macOS, Linux, iOS and Android. Rust workspace in `crates/`.
 Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 first).
-Desktop design (locked): `docs/design/desktop`.
+Desktop design (locked): `docs/design/desktop`. Desktop window (M8b): `docs/desktop.md`.
 Core library choices (M1): `docs/core.md`.
 Networking choices (M2, plain QUIC, LAN only): `docs/net.md`. Spike S1 so far: `docs/spikes/s1-interfaces.md`.
 Windows clipboard backend and `tools/winhost` (M4): `docs/windows.md`.
@@ -25,6 +25,7 @@ Agent, IPC and the `uc` CLI (M7), test switches, measurements: `docs/agent.md`.
 - Network lab (plan 6.3, Linux root, WSL): `wsl -d Ubuntu -u root -- bash tools/netsim/run-wsl.sh`
 - Real Windows clipboard tests: `crates/uc-clip-win/tests/real.rs`, run by nextest inside a private window station (winhost).
 - E2E (headless): multi-agent tests `cargo nextest run -p uc-cli` (real agents on loopback, paired through `uc`; one in winhost on Windows). Linux live agents: `sh crates/uc-clip-linux/live/docker.sh`. Cross-OS runner `tools/e2e/cross-os.ps1` is PENDING (no lab VMs). Run when: apps/desktop/**, crates/uc-agent/**, crates/uc-cli/**
+- Desktop UI: in `apps/desktop`: `npm ci && npm run check && npm test && npm run e2e` (headless; screenshots compared with the design, 1%). Shell: `cd apps/desktop/src-tauri && cargo test` and `npx tauri build --no-bundle` (never run it on screen). The shell is not in the root workspace.
 - Build / package: `cargo build --workspace`   Artifact: n/a (installer tool not chosen yet, ask first)
 - Known failures to tolerate: none
 - Version source: `Cargo.toml` (`workspace.package.version`)   Release: release.yml on push to main (not added yet)
