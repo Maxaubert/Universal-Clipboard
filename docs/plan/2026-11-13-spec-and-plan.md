@@ -922,6 +922,12 @@ adapter (they sit on your real LAN, like separate computers), all run without a 
 | `lin-gnome`: Ubuntu, GNOME on Wayland | Hyper-V on the PC | Linux release gate, the GNOME path. |
 | `lin-kde`: Kubuntu, KDE Plasma 6 on Wayland | Hyper-V on the PC | Linux release gate, the KDE path, Linux to Linux. |
 
+**Decision (Max, 2026-11-14): Linux VMs only.** `win-b` and `mac-b` are dropped (no Win11 ISO, no
+tart). Windows and Mac tests use Max's real PC and Mac; CI runners cover clean installs.
+Windows-to-Windows and Mac-to-Mac pairs stay untested on real machines until a second device of
+that OS exists. Rows below that name `win-b` or `mac-b` move to the PC, the Mac or CI. Max uses the
+iOS Simulator on the Mac for iOS work; S5 still needs a real iPhone for paste prompts.
+
 - VPN tests that break the network run **in the VMs, never on your own PC or Mac**. A kill switch
   on your PC would cut your network, and the PC is managed by Defender for Endpoint.
 - The VMs use their real clipboards (nobody works on them). Your PC and Mac use isolated
