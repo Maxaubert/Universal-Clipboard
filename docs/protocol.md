@@ -28,7 +28,7 @@ Contents: 1 review result, 2 decisions, 3 building blocks, 4 pairing, 5 membersh
 | F6 | 3.6 | QR path: no rule for what the joiner checks, and no rule against a pairing link from a web page. | The joiner checks the TLS key against the key in the QR before it sends anything. Payloads are accepted only from the in-app scanner. No URL scheme is registered (4.3). |
 | F7 | 3.6 | The `spake2` crate does not reject low-order points, and it is not the RFC 9382 wire format. | Our wrapper rejects low-order points. The page says plainly which SPAKE2 variant this is (2.1, 4.4). |
 | F8 | 3.6 | A pairing that breaks after the inviter signed "add" left the joiner half paired. | Pairing a key that is already a member sends the state again and signs nothing new (4.7). |
-| F9 | 3.6 | An attacker gets 5 new guesses each time the user makes a new code. | After 5 codes in a row die from wrong tries, the short code is off for 1 hour. The QR code still works (4.6). |
+| F9 | 3.6 | An attacker gets 5 new guesses each time the user makes a new code. | After 15 failed code tries in a row, counted over all pairings, the short code is off for 1 hour. The QR code still works (4.6). |
 | F10 | 3.7 | **"Two devices remove each other: the older device wins."** A removed device can always sign a removal with old parents, so it looks like "the same moment". A stolen device that joined early could cancel its own removal for ever. | **Removal always wins.** A removal counts if its signer was a member in the removal's own past. Nothing that happens beside it can cancel it. Two devices that remove each other are both removed (5.4, 5.6). |
 | F11 | 3.7 | The validity rule was circular: whether a removal counts depended on other removals that depended on it. Two devices could reach two different, both "correct", results. | A rule in two layers that always ends and has one result (5.4). |
 | F12 | 3.7 | Could a removed key be added again? Not said. | No. A removed key is dead in that group for ever. A removed device makes a new key (5.4, 5.7). |
@@ -91,11 +91,11 @@ transcript all differ, and the confirmation fails.
 |---|---|
 | Lifetime of one open pairing (code and QR) | 10 minutes |
 | Tries for the 6-digit code | 5, counted when the inviter sends its reply |
-| Tries for the QR secret | 20 (only to bound work; guessing 128 bits is not possible) |
+| Tries for the QR secret | 20 per source address (only to bound work; guessing 128 bits is not possible) |
 | Open pairings per device | 1 |
 | Pairing connections handled at the same time | 4 |
 | Time allowed for each protocol step | 10 seconds |
-| Codes killed by wrong tries in a row before the short code is turned off | 3, then off for 1 hour |
+| Failed code tries in a row, over all pairings, before the short code is turned off | 15, then off for 1 hour |
 
 ### 2.4 QR payload
 
@@ -298,7 +298,10 @@ conf_b = HMAC-SHA256(kc_b, T)
 
 - `tries_code` and `tries_qr` start at 0 for each open pairing.
 - When a `PairHello` arrives: if the mode is code and (`tries_code` is 5 or the short code is off),
-  or the mode is QR and `tries_qr` is 20, the inviter answers `PairAbort(2)`.
+  or the mode is QR and `tries_qr` for the remote address of that connection is 20, the inviter
+  answers `PairAbort(2)`. The QR count is kept per remote IP address, so a device on the LAN
+  cannot use up the QR tries of the real joiner. At most 1,024 addresses are tracked per pairing;
+  a QR hello from a new address after that gets `PairAbort(2)`.
 - **The inviter adds 1 to the counter of that mode just before it sends `PairReply`.** The check
   and the add are one atomic step, so 4 connections at once cannot pass the limit.
 - A run that does not end with a correct `conf_b` within 10 seconds stays counted. That covers a
@@ -309,20 +312,28 @@ conf_b = HMAC-SHA256(kc_b, T)
 - A correct `conf_b` ends the pairing for both modes. All other pairing connections are closed.
 - More than 4 pairing connections at once: the extra ones get `PairAbort(3)`. This is not a try.
 - A connection that sends no `PairHello` within 10 seconds is closed. This is not a try.
-- **Lockout.** The device counts open pairings that ended with a dead code (5 failed tries). A
-  pairing that succeeds resets the count. At 5 in a row the short code is off on this device for
-  1 hour: a new pairing shows only the QR code and the text "Someone on this network keeps
+- **Lockout.** The device counts failed code tries over all pairings (not dead codes: an attacker
+  who stops at 4 tries per code must still be counted). A failed try counts even when its pairing
+  was cancelled, expired or replaced by a new one before the try ended. A correct `conf_b` resets
+  the count. At 15 the short code is off on this device for 1 hour: no further code try is
+  answered, and a new pairing shows only the QR code and the text "Someone on this network keeps
   guessing the code. Use the QR code, or try again in an hour." The count and the time are kept in
-  memory only; an agent restart clears them.
+  memory only; an agent restart clears them. When the lockout starts, the count goes back to 0.
+- **Denial of service.** A device on the same LAN can always stop a pairing: it can use up the 5
+  code tries, start the lockout, or hold the 4 pairing connections. This is accepted. It reveals
+  nothing, the user sees the notice, and the per-address QR count means the QR code cannot be
+  killed with a few junk hellos.
 
-Result: per open pairing a guesser has at most 5 in 1,000,000. Per hour at most 15 in 1,000,000,
-and only while the user keeps pressing "Add a device".
+Result: per open pairing a guesser has at most 5 in 1,000,000. Before each 1-hour lockout a
+guesser has at most 15 tries, so over time at most about 15 in 1,000,000 per hour, and only while
+the user keeps pressing "Add a device".
 
 ### 4.7 After confirmation
 
 `PairConfirm` carries the joiner's device record: `device_type` (0 unknown, 1 Windows, 2 macOS,
 3 Linux, 4 iPhone, 5 iPad, 6 Android phone, 7 Android tablet) and `name` (1 to 64 bytes of UTF-8,
-no control characters).
+no control characters). A `device_type` above 7 is refused, here and in changes (5.2): the
+parsers are strict.
 
 The inviter, after it checked `conf_b`:
 
@@ -527,7 +538,9 @@ adds C" case rare.
 
 Limits: a device opens no pairing when the group has 8 members. A device signs no add or rename
 when its graph holds 1,024 changes (the app then says "Set up your devices again"). It accepts and
-signs `remove` and `rotate` up to 2,048 changes and refuses every change after that.
+signs `remove` and `rotate` up to 2,048 changes and refuses every change after that. "Signs no add or
+rename" also means "accepts no add or rename": from 1,024 changes on, an incoming add or rename is
+refused too.
 
 ### 5.8 Group secret
 
@@ -598,6 +611,7 @@ read them. A vector file changes only together with this page.
   "joiner_code": "418207",
   "inviter_rng": "<64 bytes>",
   "joiner_rng": "<64 bytes>",
+  "tamper_msg_b": null,
   "expect": {
     "msg_b": "<33 bytes>",
     "msg_a": "<33 bytes>",
@@ -614,7 +628,11 @@ read them. A vector file changes only together with this page.
 - `inviter_sees_joiner_key`, `joiner_sees_inviter_key` and the two exporters let a vector model a
   man in the middle: in an honest run they equal the real keys and each other.
 - `inviter_code` and `joiner_code` (or `qr_secret` on both sides in mode 2) let a vector model a
-  wrong code.
+  wrong code. In mode 2 a non-null `joiner_code` means the joiner uses those 6 digits as its QR
+  secret (password `"uclip-pair/1 qr:" || digits`); this is the `mode-mismatch` vector.
+- `tamper_msg_b` (hex or `null`) is the message the inviter receives in place of the joiner's
+  `msg_b`. It models a low-order point or a wrong side byte. `expect.msg_b` stays the joiner's own
+  message.
 - `result` is one of: `ok`, `joiner-rejects-conf-a`, `inviter-rejects-conf-b`, `bad-message`.
   When the result is not `ok`, the fields of a side that never computes them are `null`.
 
@@ -663,7 +681,11 @@ Vectors with `"valid": false` hold only `text` and `note`. Required: one IPv4; I
 - A vector may hold several `views`: the same changes with different `have` sets. That tests a
   device that has not yet seen a removal, and then has.
 - The test feeds the changes of `have` in at least 20 random orders and expects the same result.
-- A change that must be refused as not well formed has `"well_formed": false` and a `why`.
+- A change that must be refused as not well formed has `"well_formed": false` and a `why` in its
+  entry in `changes`. In a view, `expect.well_formed` is true only if every change in `have` is
+  stored. A view's expected results ignore the refused changes.
+- A device knows its group ID before it gets any change, so a test graph is created with the ID
+  of the change labelled `g`. Changes whose parents are missing wait in the pool until they come.
 
 Required vectors, one for each row of 5.6 and each line of 5.5, and also: bad signature; parents
 not sorted; second genesis; signer never added; rotate with a wrong epoch; two rotates with the
@@ -678,7 +700,9 @@ back-dated add that then signs a rename (invalid) and a remove (effective, see 5
 Pairing: every vector of 6.1 and 6.2; the 5-try limit with 4 connections at once (never more than
 5 `PairReply` frames per code); a dropped connection after `PairReply` stays counted; a fake
 inviter gets no byte after a wrong `conf_a`; the QR joiner sends nothing to a wrong key; QR stays
-valid after the code is dead; lockout after 5 dead codes; expiry at 10 minutes; a pairing from a
+valid after the code is dead; lockout after 15 failed code tries in a row, also when spread as 4
+per code over many pairings and when the pairing was cancelled; QR tries counted per address;
+both secrets wiped after success; expiry at 10 minutes; a pairing from a
 non-local address is refused; no `uclip-pair/1` when no pairing is open; pairing an existing member
 signs nothing; the joiner refuses a `PairState` in which it is not a member or the secret does not
 match.
