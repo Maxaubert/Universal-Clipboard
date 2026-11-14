@@ -220,6 +220,23 @@ test('title bar: custom controls and a drag region, no native decorations', asyn
   expect(await page.evaluate(() => window.__ucMock!.windowLog)).toEqual(['minimize', 'maximize', 'close']);
 });
 
+test('macOS frame: no drawn controls, full-width drag strip, headers clear of the traffic lights', async ({ page }) => {
+  await page.goto('/?scenario=home&route=settings&platform=mac');
+  await expect(page.getByTestId('card')).toBeVisible();
+  for (const name of ['Minimize', 'Maximize', 'Close']) {
+    await expect(page.getByRole('button', { name })).toHaveCount(0);
+  }
+  const card = (await page.getByTestId('card').boundingBox())!;
+  const drag = (await page.locator('[data-tauri-drag-region]').boundingBox())!;
+  expect(Math.round(drag.width)).toBe(Math.round(card.width) - 2);
+  // The lights end 18 + 3 x 12 + 2 x 8 = 70 px from the left edge; the back button starts after them.
+  const back = (await page.getByRole('button', { name: 'Back' }).boundingBox())!;
+  expect(back.x - card.x).toBeGreaterThanOrEqual(74);
+  await page.goto('/?scenario=attention&platform=mac');
+  const gear = (await page.getByRole('button', { name: 'Settings' }).boundingBox())!;
+  expect(card.x + card.width - (gear.x + gear.width)).toBeLessThanOrEqual(30);
+});
+
 test('no send, get or fetch anywhere in the window', async ({ page }) => {
   for (const [scenario, route] of [['home', ''], ['fresh', 'add'], ['home', 'settings'], ['home', 'device'], ['paused', '']]) {
     await open(page, scenario, route || undefined);

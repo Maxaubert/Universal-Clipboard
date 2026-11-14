@@ -35,6 +35,20 @@ html.tauri .stage { width: 100vw; height: 100vh; padding: 0; background: #F7F6F4
 html.tauri .card { width: 100vw; height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
 
 .drag { position: absolute; top: 0; left: 0; right: 108px; height: 36px; z-index: 0; }
+
+/* macOS frame. The window is native (tauri.macos.conf.json): rounded corners, shadow and the
+   traffic lights at the top left, so no drawn controls. Headers leave room for the lights:
+   --tl is the inset that clears them, --wc the right inset Windows keeps for its buttons. */
+:root { --tl: 0px; --wc: 92px; }
+html.mac { --tl: 64px; --wc: 0px; }
+html.mac .drag { right: 0; }
+/* Browser preview of the mac frame (?platform=mac): the lights drawn where macOS puts them. */
+.lights { position: absolute; top: 15px; left: 18px; z-index: 2; display: flex; gap: 8px; pointer-events: none; }
+.lights span { width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; border: 0.5px solid rgba(0,0,0,0.18); }
+.lights span:nth-child(1) { background: #FF5F57; }
+.lights span:nth-child(2) { background: #FEBC2E; }
+.lights span:nth-child(3) { background: #28C840; }
+html.mac:not(.tauri) .card { border-radius: 12px; }
 .body { flex: 1; display: flex; flex-direction: column; min-height: 0; pointer-events: none; position: relative; z-index: 1; }
 /* The drag strip sits under the screen. Only controls take the mouse, so empty space at the top drags the window. */
 .body button, .body input, .body [role='switch'], .body a { pointer-events: auto; }
