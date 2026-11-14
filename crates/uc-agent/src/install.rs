@@ -114,9 +114,21 @@ fn env_key(p: &Profile) -> String {
     }
 }
 
+/// This program's path with symlinks resolved. On macOS and Linux `uc` is often run through a
+/// link in `/usr/local/bin`, `~/.local/bin` or `/usr/bin`, and `current_exe` then returns the
+/// link, so sibling programs (`uc-agent`) would be looked up next to the link. Windows keeps
+/// `current_exe` as is (canonical paths there get a `\\?\` prefix).
+pub fn real_exe() -> std::io::Result<PathBuf> {
+    let exe = std::env::current_exe()?;
+    if cfg!(windows) {
+        return Ok(exe);
+    }
+    Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+}
+
 /// The folder of this program.
 pub fn own_dir() -> PathBuf {
-    std::env::current_exe()
+    real_exe()
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
         .unwrap_or_default()

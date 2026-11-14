@@ -156,7 +156,11 @@ fn our_write_carries_marker_and_current_host_only() {
     let t = b.types().unwrap();
     assert!(t.iter().any(|x| x == types::MARKER), "{t:?}");
     assert_eq!(b.data(types::TEXT).unwrap(), b"from pc");
-    assert_eq!(b.data(types::HTML).unwrap(), b"<i>from pc</i>");
+    // AppKit needs the charset tag to read UTF-8 HTML (types::with_charset_meta).
+    assert_eq!(
+        b.data(types::HTML).unwrap(),
+        b"<meta charset=\"utf-8\"><i>from pc</i>"
+    );
 
     // The read sees the marker and the counter, and does not read the content.
     let s = b.read().unwrap();

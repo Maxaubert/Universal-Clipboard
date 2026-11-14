@@ -49,14 +49,14 @@ pub fn plays_broken(p: &Profile) -> bool {
 }
 
 fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe()
+    crate::install::real_exe()
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
 }
 
 /// The folder that an update replaces: the `.app` bundle on macOS, else the binary's folder.
 pub fn install_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
+    let exe = crate::install::real_exe().ok()?;
     let dir = exe.parent()?.to_path_buf();
     if cfg!(target_os = "macos")
         && dir.file_name().is_some_and(|n| n == "MacOS")
@@ -247,7 +247,7 @@ fn kind_word(k: Kind) -> &'static str {
 /// detached, in its own process group (so stopping the agent, or launchd ending its job,
 /// does not end the helper).
 fn launch_helper(p: &Profile, s: &Staged) -> std::io::Result<()> {
-    let me = std::env::current_exe()?;
+    let me = crate::install::real_exe()?;
     let install = install_dir().ok_or_else(|| std::io::Error::other("no install folder"))?;
     let rel = me
         .strip_prefix(&install)

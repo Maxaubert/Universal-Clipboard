@@ -2,8 +2,9 @@
 
 Date: 2026-11-14. Plan: sections 2.1, 3.2, 3.13, 4.1, 7 (M9), 8. Spike: `docs/spikes/s8-msix.md`.
 
-Everything is **unsigned** for now: no Windows code signing, no Apple Developer ID. Only the
-update manifest is signed (with our own updater key). Nothing in this milestone was installed
+Windows builds are **unsigned**. macOS builds are ad hoc by default and can be signed with
+Max's Developer ID (see "Signing and notarization"). The update manifest is signed with our own
+updater key. Nothing in this milestone was installed
 on Max's PC or Mac: install and uninstall tests run on CI runners and in Docker.
 
 ## What is built
@@ -141,16 +142,18 @@ updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the la
 - Local signing, if ever needed: `uc-release manifest --key <file> --version V --rollout 10
   --base-url URL --out latest.json windows-x86_64:nsis:<setup.exe> macos-aarch64:tar:<app.tar.gz>`.
 
-## Signing and notarization (documented, not done)
+## Signing and notarization
 
-- **macOS (needs Max's Developer ID, not used tonight):**
-  1. `codesign --force --options runtime --timestamp --sign "Developer ID Application: <name> (<team>)"`
-     each of `Contents/MacOS/*`, then the bundle.
-  2. `xcrun notarytool submit <dmg> --keychain-profile <profile> --wait`
-     (profile made once with `xcrun notarytool store-credentials`).
-  3. `xcrun stapler staple <dmg>` (and the app).
-  In CI the certificate and an App Store Connect API key would be secrets of the `release`
-  environment.
+- **macOS:** `build-app.sh` signs ad hoc unless told otherwise (checked on the Mac mini 2026-11-14):
+  `SIGN_IDENTITY="Developer ID Application: MAX AUBERT (WV7BY8CUM8)"` signs every program and
+  the bundle with hardened runtime and a secure timestamp (and the DMG). `NOTARY_PROFILE=notary`
+  also notarizes and staples the app (before the update archive and the DMG are made) and the
+  DMG. The profile is made once: `xcrun notarytool store-credentials notary --apple-id <id>
+  --team-id WV7BY8CUM8`. The certificate is in the Mac mini's login keychain. Without
+  notarization, `spctl` says "Unnotarized Developer ID" and a downloaded copy is blocked.
+  A Developer ID also keeps Keychain access and privacy grants across updates (an ad-hoc
+  signature changes with every build). CI does not sign yet: the certificate and an App Store
+  Connect API key would be secrets of the `release` environment.
 - **Windows:** the exe stays unsigned until SignPath Foundation (or Certum) accepts the project
   (plan 8.1). The Store signs the MSIX on submit; its `Publisher` must then be the one Partner
   Center gives (`build.ps1 -Publisher`).

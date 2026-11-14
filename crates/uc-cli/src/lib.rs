@@ -320,7 +320,7 @@ pub async fn connect(p: &Profile) -> Result<Client, Fail> {
 }
 
 fn start_agent(p: &Profile) {
-    let Ok(me) = std::env::current_exe() else {
+    let Ok(me) = uc_agent::install::real_exe() else {
         return;
     };
     let name = if cfg!(windows) {
@@ -707,7 +707,7 @@ async fn setup(c: &mut Client, p: &Profile, j: bool, all_yes: bool) -> Result<()
     // Linux; a dragged app has no install step.
     if cfg!(target_os = "macos")
         && !p.is_test()
-        && let Ok(me) = std::env::current_exe()
+        && let Ok(me) = uc_agent::install::real_exe()
         && me.to_string_lossy().contains(".app/Contents/MacOS/")
     {
         let o = std::process::Command::new(me.with_file_name("uc-agent"))
@@ -733,7 +733,7 @@ fn firewall_rule(p: &Profile, j: bool) -> bool {
     if p.is_test() || !uc_agent::firewall::needs_helper() {
         return true;
     }
-    let agent = std::env::current_exe()
+    let agent = uc_agent::install::real_exe()
         .map(|e| {
             e.with_file_name(if cfg!(windows) {
                 "uc-agent.exe"

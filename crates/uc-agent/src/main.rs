@@ -117,6 +117,11 @@ fn main() {
         Ok(()) => {}
         Err(e) if e.0 == "already running" => {
             eprintln!("uc-agent: already running for this user");
+            // Started by the login item (launchd) while the window or `uc` already runs an
+            // agent: exit 0, or KeepAlive {SuccessfulExit=false} restarts it every 10 s.
+            if cfg!(target_os = "macos") && uc_agent::autostart::started_by_launchd() {
+                std::process::exit(0);
+            }
             std::process::exit(EXIT_ALREADY_RUNNING);
         }
         Err(e) => {

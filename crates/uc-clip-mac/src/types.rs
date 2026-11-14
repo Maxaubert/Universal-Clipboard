@@ -97,9 +97,47 @@ pub fn html_to_utf8(bytes: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// What [`with_charset_meta`] puts in front of HTML without a charset.
+pub const CHARSET_META: &[u8] = b"<meta charset=\"utf-8\">";
+
+/// UTF-8 HTML for the pasteboard. AppKit (TextEdit, Mail, Notes) reads HTML that names no
+/// charset as Latin-1, so "blåbær" would paste as "blÃ¥bÃ¦r". Chromium adds the same tag.
+pub fn with_charset_meta(html: &[u8]) -> Vec<u8> {
+    let head = &html[..html.len().min(1024)];
+    if head
+        .to_ascii_lowercase()
+        .windows(7)
+        .any(|w| w == b"charset")
+    {
+        return html.to_vec();
+    }
+    [CHARSET_META, html].concat()
+}
+
+/// Remove the tag [`with_charset_meta`] adds, so a clip that went through a Mac is not
+/// changed by it.
+pub fn strip_charset_meta(html: Vec<u8>) -> Vec<u8> {
+    match html.strip_prefix(CHARSET_META) {
+        Some(rest) => rest.to_vec(),
+        None => html,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn charset_meta_round_trip() {
+        let h = "<b>blåbær</b>".as_bytes();
+        let w = with_charset_meta(h);
+        assert!(w.starts_with(CHARSET_META));
+        assert_eq!(strip_charset_meta(w), h);
+        // HTML that already names its charset is left alone.
+        let named = b"<meta charset=\"iso-8859-1\"><b>x</b>";
+        assert_eq!(with_charset_meta(named), named);
+        assert_eq!(strip_charset_meta(named.to_vec()), named);
+    }
 
     /// Type lists in the shape real apps write them. They are written from public sources, not
     /// recorded on Max's Mac: tests never read the general pasteboard. The `mac-b` VM can
