@@ -1,0 +1,44 @@
+# Raise (or lower) the rollout of the newest release (plan 3.13, 8.4): re-sign latest.json with
+# a new percentage and replace it on the release. Needs Max's approval (environment "release").
+name: rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+      percent:
+        description: "Rollout percentage (0 to 100)"
+        required: true
+        default: "100"
+
+permissions:
+  contents: read
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
+      - name: Re-sign latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UCLIP_UPDATER_KEY: ${{ secrets.UCLIP_UPDATER_KEY }}
+          TAG: ${{ inputs.tag }}
+          PCT: ${{ inputs.percent }}
+        run: |
+          set -eu
+          case "$PCT" in ''|*[!0-9]*) echo "percent must be a number"; exit 1 ;; esac
+          [ -n "${UCLIP_UPDATER_KEY:-}" ] || { echo "no UCLIP_UPDATER_KEY"; exit 1; }
+          cargo build --release --locked -p uc-update --bin uc-release
+          gh release download "$TAG" --pattern latest.json --dir in
+          ./target/release/uc-release rollout --in in/latest.json --pct "$PCT" --out latest.json
+          ./target/release/uc-release verify latest.json
+          gh release upload "$TAG" latest.json --clobber

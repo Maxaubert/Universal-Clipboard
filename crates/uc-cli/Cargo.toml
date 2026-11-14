@@ -27,6 +27,7 @@ uc-agent = { version = "0.0.1", path = "../uc-agent" }
 
 [dev-dependencies]
 tempfile = "3"
+uc-update = { version = "0.0.1", path = "../uc-update" }
 
 [target.'cfg(windows)'.dev-dependencies]
 uc-winhost = { version = "0.0.1", path = "../../tools/winhost" }

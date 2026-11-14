@@ -55,6 +55,11 @@ pub fn supervise(exe: &std::path::Path, args: &[String], limit: Option<u32>) -> 
     let mut backoff = Backoff::default();
     let mut starts = 0u32;
     loop {
+        // Plan 8.5: after `apt remove` the binary is gone; the supervisor ends quietly.
+        if !exe.exists() {
+            eprintln!("uc-agent is not installed any more; the supervisor stops");
+            return 0;
+        }
         starts += 1;
         let t = Instant::now();
         let status = Command::new(exe).args(args).status();
@@ -80,6 +85,12 @@ pub fn supervise(exe: &std::path::Path, args: &[String], limit: Option<u32>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stops_when_the_binary_is_gone() {
+        let gone = std::env::temp_dir().join("uclip-no-such-agent-binary");
+        assert_eq!(supervise(&gone, &[], Some(3)), 0);
+    }
 
     #[test]
     fn backoff_doubles_and_resets() {

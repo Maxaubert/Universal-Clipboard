@@ -344,6 +344,8 @@ fn start_agent(p: &Profile) {
         use std::os::windows::process::CommandExt;
         // DETACHED_PROCESS | CREATE_NO_WINDOW: no console, nothing on screen.
         c.creation_flags(0x0000_0008 | 0x0800_0000);
+        // The agent must not hold our output pipe ("uc status | ..." would never end).
+        uc_agent::win::no_inherit_std_handles();
     }
     let _ = c.spawn();
 }
@@ -476,7 +478,7 @@ pub async fn run(cli: Cli) -> Result<(), Fail> {
             let v = call(&mut c, "diagnostics", json!({})).await?;
             out(j, &v, || v["report"].as_str().unwrap_or("").to_string());
         }
-        Cmd::Setup { yes } => setup(&mut c, j, yes).await?,
+        Cmd::Setup { yes } => setup(&mut c, &p, j, yes).await?,
         Cmd::Leave { yes } => {
             if !yes {
                 match yes_no(
@@ -653,7 +655,7 @@ async fn pair(c: &mut Client, j: bool, action: PairCmd) -> Result<(), Fail> {
     Ok(())
 }
 
-async fn setup(c: &mut Client, j: bool, all_yes: bool) -> Result<(), Fail> {
+async fn setup(c: &mut Client, p: &Profile, j: bool, all_yes: bool) -> Result<(), Fail> {
     let v = call(c, "setup.status", json!({})).await?;
     if !j {
         println!("Copy on one device, paste on another.");
@@ -687,6 +689,11 @@ async fn setup(c: &mut Client, j: bool, all_yes: bool) -> Result<(), Fail> {
                 None => return Err(Fail("Add --yes to answer yes to every step.".into(), 2)),
             }
         };
+        let answer = if id == "firewall" && answer {
+            firewall_rule(p, j)
+        } else {
+            answer
+        };
         call(c, "setup.step", json!({"row": id, "answer": answer})).await?;
         if !j {
             if answer {
@@ -696,11 +703,55 @@ async fn setup(c: &mut Client, j: bool, all_yes: bool) -> Result<(), Fail> {
             }
         }
     }
+    // macOS app bundle: put "uc" (or "uclip") on PATH. The installers do this on Windows and
+    // Linux; a dragged app has no install step.
+    if cfg!(target_os = "macos")
+        && !p.is_test()
+        && let Ok(me) = std::env::current_exe()
+        && me.to_string_lossy().contains(".app/Contents/MacOS/")
+    {
+        let o = std::process::Command::new(me.with_file_name("uc-agent"))
+            .arg("--install-hook")
+            .output();
+        if let Ok(o) = o
+            && !j
+        {
+            print!("\n{}", String::from_utf8_lossy(&o.stdout));
+        }
+    }
     let v = call(c, "setup.step", json!({"row": "done", "answer": true})).await?;
     out(j, &v, || {
         "\nSetup is done. Next: \"uc pair show\" on this device, or \"uc pair enter\" with a code from another device.".into()
     });
     Ok(())
+}
+
+/// "Let your devices find this PC": add the firewall rule with the one-time helper (one UAC
+/// prompt). The Store build has the rule in its package, and test profiles never elevate, so
+/// both skip the helper. A "No" in the UAC prompt counts as "no" (outbound-only mode).
+fn firewall_rule(p: &Profile, j: bool) -> bool {
+    if p.is_test() || !uc_agent::firewall::needs_helper() {
+        return true;
+    }
+    let agent = std::env::current_exe()
+        .map(|e| {
+            e.with_file_name(if cfg!(windows) {
+                "uc-agent.exe"
+            } else {
+                "uc-agent"
+            })
+        })
+        .unwrap_or_default();
+    if !j {
+        println!("  Windows asks for permission once, to add the firewall rule.");
+    }
+    let st = std::process::Command::new(&agent)
+        .arg("--firewall")
+        .arg("add")
+        .arg("--exe")
+        .arg(&agent)
+        .status();
+    matches!(st, Ok(s) if s.success())
 }
 
 fn print_help() {

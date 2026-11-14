@@ -13,10 +13,15 @@
 //! | [`pairing`] | the pairing stream I/O |
 //! | [`supervise`] | `uc-agent --supervise`: restart after a crash (Linux) |
 //! | [`log`] | rotating log without content |
+//! | [`install`] | installer hooks: CLI name and PATH, uninstall, stop |
+//! | [`firewall`] | the Windows firewall rule helper (Private, LocalSubnet) |
+//! | [`update`] | self-update check and the update helper (exe and dmg builds) |
 
 pub mod agent;
 pub mod autostart;
 pub mod clip;
+pub mod firewall;
+pub mod install;
 pub mod ipc;
 pub mod log;
 pub mod pairing;
@@ -24,5 +29,6 @@ pub mod profile;
 pub mod settings;
 pub mod state;
 pub mod supervise;
+pub mod update;
 #[cfg(windows)]
 pub mod win;

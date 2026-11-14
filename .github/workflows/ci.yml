@@ -53,6 +53,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb sway wl-clipboard xclip libdbus-1-dev pkg-config
       - run: sh crates/uc-clip-linux/live/run.sh
 
+  # Installers on all three OS, unsigned, with install and uninstall tests on the runners.
+  package:
+    uses: ./.github/workflows/package.yml
+
   # Desktop window (M8b): types, component tests, headless Playwright with screenshot compare.
   desktop-ui:
     runs-on: ubuntu-latest
