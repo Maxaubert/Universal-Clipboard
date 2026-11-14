@@ -13,6 +13,17 @@
 //! | Windows | adapter type Ethernet or IEEE 802.11, up, and no tunnel, VPN or virtual name or description (WireGuard, Wintun, TAP, OpenVPN, Tailscale, vEthernet, Hyper-V virtual switch, VMware, VirtualBox host-only, Wi-Fi Direct, Bluetooth, Npcap) |
 //! | macOS, iOS | `en*` with type Ethernet or Wi-Fi. `utun*`, `ipsec*`, `ppp*`, `bridge*`, `awdl*`, `llw*`, `anpi*`, `ap*` are never physical |
 //! | Linux, Android | `/sys/class/net/<if>/device` exists, the link type is Ethernet (ARPHRD 1), and DEVTYPE is not bridge, wireguard, vlan or similar; no docker, veth, virbr, tailscale or wg name |
+//!
+//! **The host's own adapter on a virtual switch** (2026-11-14, Max's PC). When a physical NIC
+//! is bound to a Hyper-V *external* switch, the NIC itself has no address any more; the host's
+//! LAN address lives on `vEthernet (<switch>)`, a "Hyper-V Virtual Ethernet Adapter". The same
+//! happens on Linux when the NIC is enslaved to a host bridge (`br0`, Proxmox `vmbr0`) or a
+//! bond. Such an adapter counts as [`Kind::Physical`] when it has an IPv4 default gateway on a
+//! private address inside its own private IPv4 subnet ([`lan_gateway`]). Internal switches
+//! (Default Switch, WSL) and container or NAT bridges (docker, virbr, lxc, cni) have no default
+//! gateway, so they stay [`Kind::Virtual`]. VPN detection runs first, so a VPN never qualifies.
+//! Not applied on macOS: VM bridging there keeps the host address on `en*`, and `bridge*` is
+//! the Thunderbolt bridge or Internet Sharing.
 
 use std::net::IpAddr;
 
@@ -139,6 +150,10 @@ pub struct RawIface {
     /// Linux: ARPHRD link type from `/sys/class/net/<if>/type` (1 = Ethernet).
     #[serde(default)]
     pub arphrd: Option<u32>,
+    /// Default gateway addresses on this interface (Windows: `FirstGatewayAddress` of
+    /// `GetAdaptersAddresses`; Linux and macOS: the default route). Empty when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gateways: Vec<IpAddr>,
     /// Addresses.
     pub addrs: Vec<IfAddr>,
 }
@@ -277,6 +292,24 @@ fn contains_any(text: &str, words: &[&str]) -> bool {
     words.iter().any(|w| text.contains(w))
 }
 
+/// Does this interface carry the default route of a private LAN? True when it has an IPv4
+/// default gateway that is a private (RFC 1918) address inside one of the interface's own
+/// private IPv4 subnets. This tells a host's external-switch or host-bridge adapter (the LAN)
+/// from an internal switch or a NAT bridge (no default gateway).
+pub fn lan_gateway(raw: &RawIface) -> bool {
+    raw.gateways.iter().any(|g| match g {
+        IpAddr::V4(g4) if g4.is_private() => raw.addrs.iter().any(|a| {
+            matches!(a.ip, IpAddr::V4(v4) if v4.is_private()) && crate::addr::in_subnet(*g, a)
+        }),
+        _ => false,
+    })
+}
+
+/// A Hyper-V host adapter (`vEthernet (<switch>)`, "Hyper-V Virtual Ethernet Adapter").
+fn hyperv_host_adapter(desc: &str) -> bool {
+    desc.starts_with("vethernet") || desc.contains("hyper-v virtual ethernet")
+}
+
 /// Classify one raw record from OS `os`.
 pub fn classify(os: Os, raw: &RawIface, opts: &ClassifyOptions) -> Kind {
     if opts.force_physical.iter().any(|n| n == &raw.name) {
@@ -295,10 +328,19 @@ pub fn classify(os: Os, raw: &RawIface, opts: &ClassifyOptions) -> Kind {
     {
         return Kind::Vpn;
     }
+    let ether_or_wifi = matches!(raw.link, LinkType::Ethernet | LinkType::Wifi);
+    // The host's adapter on a Hyper-V external switch carries the LAN (module text).
+    if os == Os::Windows
+        && hyperv_host_adapter(&desc)
+        && ether_or_wifi
+        && !raw.point_to_point
+        && lan_gateway(raw)
+    {
+        return Kind::Physical;
+    }
     if starts_with_any(&name, VIRTUAL_NAME_PREFIXES) || contains_any(&desc, VIRTUAL_DESC_WORDS) {
         return Kind::Virtual;
     }
-    let ether_or_wifi = matches!(raw.link, LinkType::Ethernet | LinkType::Wifi);
     match os {
         Os::Windows => {
             if ether_or_wifi && !raw.point_to_point {
@@ -316,6 +358,12 @@ pub fn classify(os: Os, raw: &RawIface, opts: &ClassifyOptions) -> Kind {
         }
         Os::Linux => {
             if NON_PHYSICAL_DEVTYPES.contains(&devtype.as_str()) {
+                // A host bridge or bond that holds the NIC and the LAN default route
+                // (module text). Container and NAT bridges were already caught by name.
+                let host_link = matches!(devtype.as_str(), "bridge" | "bond");
+                if host_link && raw.arphrd.is_none_or(|t| t == 1) && lan_gateway(raw) {
+                    return Kind::Physical;
+                }
                 return Kind::Virtual;
             }
             let hw = raw.has_device == Some(true);
@@ -384,6 +432,47 @@ pub fn usable(ifaces: &[Interface]) -> Vec<Interface> {
     ifaces.iter().filter(|i| i.usable()).cloned().collect()
 }
 
+impl Interface {
+    /// A short name for logs: the Windows friendly name, else the OS name.
+    pub fn short_name(&self) -> &str {
+        match self.description.split(" | ").next() {
+            Some(f) if !f.is_empty() => f,
+            _ => &self.name,
+        }
+    }
+
+    /// Why this interface carries no sync traffic, or `None` when it is usable.
+    pub fn skip_reason(&self) -> Option<&'static str> {
+        if self.usable() {
+            return None;
+        }
+        Some(match self.kind {
+            Kind::Loopback => "loopback",
+            Kind::Vpn => "VPN or tunnel",
+            Kind::Virtual => "virtual, no LAN default gateway",
+            Kind::Other => "not Ethernet or Wi-Fi",
+            Kind::Physical if !self.up => "down",
+            Kind::Physical => "no address",
+        })
+    }
+}
+
+/// One line for the "no usable network" warning: every skipped interface and why, by name
+/// only (`vEthernet (WSL): virtual, no LAN default gateway; Ethernet: no address`). Loopback
+/// is left out.
+pub fn skipped_summary(ifaces: &[Interface]) -> String {
+    let parts: Vec<String> = ifaces
+        .iter()
+        .filter(|i| i.kind != Kind::Loopback)
+        .filter_map(|i| i.skip_reason().map(|r| format!("{}: {r}", i.short_name())))
+        .collect();
+    if parts.is_empty() {
+        "no interfaces".into()
+    } else {
+        parts.join("; ")
+    }
+}
+
 /// Read the raw interface list of this machine.
 pub fn raw_interfaces() -> Vec<RawIface> {
     netdev::get_interfaces()
@@ -424,6 +513,17 @@ pub fn raw_interfaces() -> Vec<RawIface> {
                 prefix: n.prefix_len(),
             }));
             let (has_device, devtype, arphrd) = linux_sysfs(&i.name);
+            let gateways: Vec<IpAddr> = i
+                .gateway
+                .as_ref()
+                .map(|g| {
+                    g.ipv4
+                        .iter()
+                        .map(|a| IpAddr::V4(*a))
+                        .chain(g.ipv6.iter().map(|a| IpAddr::V6(*a)))
+                        .collect()
+                })
+                .unwrap_or_default();
             RawIface {
                 up: i.is_up() && !matches!(i.oper_state, netdev::interface::state::OperState::Down),
                 point_to_point: i.is_point_to_point(),
@@ -434,6 +534,7 @@ pub fn raw_interfaces() -> Vec<RawIface> {
                 has_device,
                 devtype,
                 arphrd,
+                gateways,
                 addrs,
             }
         })
@@ -481,6 +582,7 @@ mod tests {
             has_device: None,
             devtype: None,
             arphrd: None,
+            gateways: Vec::new(),
             addrs: vec![IfAddr {
                 ip: "192.168.1.2".parse().unwrap(),
                 prefix: 24,
@@ -637,6 +739,149 @@ mod tests {
             r.point_to_point = p2p;
             assert_eq!(k(Os::Linux, &r), want, "{n}");
         }
+    }
+
+    fn gw(mut r: RawIface, ip: &str, prefix: u8, gateway: Option<&str>) -> RawIface {
+        r.addrs = vec![IfAddr {
+            ip: ip.parse().unwrap(),
+            prefix,
+        }];
+        r.gateways = gateway.into_iter().map(|g| g.parse().unwrap()).collect();
+        r
+    }
+
+    #[test]
+    fn hyperv_external_switch_host_adapter_is_lan() {
+        // Max's PC, 2026-11-14: the Realtek NIC is bound to the external switch "uc-lan", so
+        // the host's only LAN address is on vEthernet (uc-lan).
+        use LinkType::*;
+        let w = |d: &str, l, ip, p, g| gw(raw("{GUID}", d, l), ip, p, g);
+        let uc_lan = w(
+            "vEthernet (uc-lan) | Hyper-V Virtual Ethernet Adapter #3",
+            Ethernet,
+            "192.168.0.139",
+            24,
+            Some("192.168.0.1"),
+        );
+        assert_eq!(k(Os::Windows, &uc_lan), Kind::Physical);
+        // Internal switches: no default gateway.
+        for d in [
+            "vEthernet (Default Switch) | Hyper-V Virtual Ethernet Adapter",
+            "vEthernet (WSL (Hyper-V firewall)) | Hyper-V Virtual Ethernet Adapter #2",
+        ] {
+            let r = w(d, Ethernet, "172.20.16.1", 20, None);
+            assert_eq!(k(Os::Windows, &r), Kind::Virtual, "{d}");
+        }
+        // A gateway that is public, outside the subnet, or only IPv6 does not count.
+        for (ip, p, g) in [
+            ("192.168.0.139", 24, "8.8.8.8"),
+            ("192.168.0.139", 24, "10.0.0.1"),
+            ("192.168.0.139", 24, "fe80::1"),
+            ("100.64.0.5", 10, "100.64.0.1"),
+        ] {
+            let r = w(
+                "vEthernet (x) | Hyper-V Virtual Ethernet Adapter",
+                Ethernet,
+                ip,
+                p,
+                Some(g),
+            );
+            assert_eq!(k(Os::Windows, &r), Kind::Virtual, "{ip} via {g}");
+        }
+        // A VPN with a LAN-looking gateway stays a VPN.
+        for d in [
+            "OpenVPN Data Channel Offload | OpenVPN Data Channel Offload",
+            "Ethernet 4 | Cisco AnyConnect Secure Mobility Client Virtual Miniport Adapter",
+            "vEthernet (vpn) | WireGuard Tunnel",
+        ] {
+            let r = w(d, Ethernet, "10.8.0.2", 24, Some("10.8.0.1"));
+            assert_eq!(k(Os::Windows, &r), Kind::Vpn, "{d}");
+        }
+        // Other virtual adapters with a gateway stay virtual (only Hyper-V host adapters).
+        let vmware = w(
+            "VMware Network Adapter VMnet8 | VMware Virtual Ethernet Adapter for VMnet8",
+            Ethernet,
+            "192.168.80.1",
+            24,
+            Some("192.168.80.2"),
+        );
+        assert_eq!(k(Os::Windows, &vmware), Kind::Virtual);
+        // A normal PC is unchanged.
+        let nic = w(
+            "Ethernet | Realtek Gaming 5GbE Family Controller",
+            Ethernet,
+            "192.168.0.20",
+            24,
+            Some("192.168.0.1"),
+        );
+        assert_eq!(k(Os::Windows, &nic), Kind::Physical);
+    }
+
+    #[test]
+    fn linux_host_bridge_with_default_route_is_lan() {
+        let lin = |n: &str, dt: &str, g| {
+            let mut r = gw(raw(n, "", LinkType::Ethernet), "192.168.1.10", 24, g);
+            r.has_device = Some(false);
+            r.devtype = Some(dt.into());
+            r.arphrd = Some(1);
+            r
+        };
+        assert_eq!(
+            k(Os::Linux, &lin("br0", "bridge", Some("192.168.1.1"))),
+            Kind::Physical
+        );
+        assert_eq!(
+            k(Os::Linux, &lin("vmbr0", "bridge", Some("192.168.1.1"))),
+            Kind::Physical
+        );
+        assert_eq!(
+            k(Os::Linux, &lin("bond0", "bond", Some("192.168.1.1"))),
+            Kind::Physical
+        );
+        assert_eq!(k(Os::Linux, &lin("br0", "bridge", None)), Kind::Virtual);
+        // Container and NAT bridges stay virtual even with a gateway.
+        for n in ["docker0", "virbr0", "br-1a2b3c", "lxcbr0", "cni0"] {
+            assert_eq!(
+                k(Os::Linux, &lin(n, "bridge", Some("192.168.1.1"))),
+                Kind::Virtual,
+                "{n}"
+            );
+        }
+        // Not on macOS.
+        let mut b = gw(
+            raw("bridge0", "", LinkType::Ethernet),
+            "192.168.1.10",
+            24,
+            Some("192.168.1.1"),
+        );
+        b.point_to_point = false;
+        assert_eq!(k(Os::Apple, &b), Kind::Virtual);
+    }
+
+    #[test]
+    fn skipped_summary_names_and_reasons() {
+        let o = ClassifyOptions::default();
+        let list = classify_all(
+            Os::Windows,
+            &[
+                raw(
+                    "{A}",
+                    "vEthernet (WSL) | Hyper-V Virtual Ethernet Adapter",
+                    LinkType::Ethernet,
+                ),
+                {
+                    let mut r = raw("{B}", "Ethernet | Realtek PCIe 5GbE", LinkType::Ethernet);
+                    r.addrs.clear();
+                    r
+                },
+                raw("{C}", "Loopback Pseudo-Interface 1 | x", LinkType::Loopback),
+            ],
+            &o,
+        );
+        assert_eq!(
+            skipped_summary(&list),
+            "vEthernet (WSL): virtual, no LAN default gateway; Ethernet: no address"
+        );
     }
 
     #[test]

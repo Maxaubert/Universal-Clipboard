@@ -61,6 +61,26 @@ addresses, nothing listens.
   the agent (peers learn it through gossip).
 - Classification (`ifaces::classify`) is a pure function, tested with recorded adapter lists
   from the PC, the Mac mini, WSL and a netns with WireGuard (`tests/fixtures/`).
+- **The host's adapter on a virtual switch is the LAN** (2026-11-14, Max's PC). With the NIC
+  bound to a Hyper-V *external* switch, the NIC has no address and the host's LAN address is
+  on `vEthernet (<switch>)`. Before the fix every vEthernet was `Virtual`, so the agent bound
+  no socket at all ("endpoint bound sockets=0", pairing said "Cannot find the other device").
+  Rule: a Hyper-V host adapter (`vEthernet` / "Hyper-V Virtual Ethernet") with an **IPv4
+  default gateway that is private and inside its own private IPv4 subnet** counts as
+  `Physical`. Internal switches (Default Switch, WSL) have no default gateway and stay
+  `Virtual`. VPN detection runs first, so a VPN never qualifies. Gateways come from netdev
+  (`GetAdaptersAddresses` with `GAA_FLAG_INCLUDE_GATEWAYS` on Windows, the default route on
+  Linux and macOS), recorded as `RawIface.gateways`.
+  Same rule on Linux for a host **bridge or bond** (`br0`, Proxmox `vmbr0`, `bond0`) that
+  holds the default route; docker, virbr, `br-*`, lxc and cni bridges are caught by name
+  first and stay `Virtual`. **Not on macOS**: VM bridging there keeps the host address on
+  `en*`, and `bridge0` is the Thunderbolt bridge or Internet Sharing. Other Windows virtual
+  adapters (VMware, VirtualBox) stay `Virtual` even with a gateway.
+- **No usable network.** When no socket can be bound, `uc-net` logs one WARN with each
+  skipped interface and why, names only (`vEthernet (WSL): virtual, no LAN default gateway;
+  Ethernet: no address`). The agent then shows "Needs attention" with the reason "This device
+  found no network it can use." (`fix_code` `no-lan`), and `uc pair enter` fails at once with
+  the same text (error code `no-lan`) instead of "Cannot find the other device".
 - **"A VPN is up" needs a non-link-local address on a VPN interface.** macOS always has 4 to 8
   `utun` system tunnels with only `fe80::` (seen on the Mac mini); counting them would raise
   the VPN help on every Mac.

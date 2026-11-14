@@ -162,6 +162,9 @@ enum Wake {
     Resume,
 }
 
+/// Status reason and pairing error when no interface can carry sync traffic.
+const NO_LAN_TEXT: &str = "This device found no network it can use.";
+
 /// The joiner's finder for test profiles and mDNS.
 struct Finder {
     fixed: Vec<SocketAddr>,
@@ -209,6 +212,8 @@ pub struct Core {
     disc: Option<Arc<dyn uc_net::Discovery>>,
     policy: Policy,
     ifaces: Vec<Interface>,
+    /// The network sent its first interface list (until then `ifaces` is not known).
+    ifaces_seen: bool,
     vpn_up: bool,
     port: u16,
     host: Host,
@@ -387,6 +392,7 @@ impl Core {
             disc: None,
             policy: Policy::default(),
             ifaces: Vec::new(),
+            ifaces_seen: false,
             vpn_up: false,
             port,
             host,
@@ -500,6 +506,7 @@ impl Core {
         self.net = None;
         self.peers.clear();
         self.paths.clear();
+        self.ifaces_seen = false;
         if let Err(e) = self.net_allowed() {
             self.net_error = Some(e);
             return;
@@ -535,6 +542,24 @@ impl Core {
                 addrs: vec![IfAddr { ip, prefix: 8 }],
             }];
             self.ifaces = list.clone();
+            cfg.ifaces = Some(Arc::new(move || list.clone()));
+            disc = Arc::new(uc_net::NoDiscovery);
+            binder = Arc::new(uc_net::AddressBinder);
+            self.disc = None;
+        } else if self.profile.test_env("UCLIP_TEST_NO_LAN").as_deref() == Some("1") {
+            // Test profiles only: a machine whose only adapter is a Hyper-V internal switch,
+            // so no socket can be bound.
+            let list = vec![Interface {
+                name: "{test-default-switch}".into(),
+                index: 25,
+                description: "vEthernet (Default Switch) | Hyper-V Virtual Ethernet Adapter".into(),
+                kind: Kind::Virtual,
+                up: true,
+                addrs: vec![IfAddr {
+                    ip: "172.28.64.1".parse().expect("address"),
+                    prefix: 20,
+                }],
+            }];
             cfg.ifaces = Some(Arc::new(move || list.clone()));
             disc = Arc::new(uc_net::NoDiscovery);
             binder = Arc::new(uc_net::AddressBinder);
@@ -876,10 +901,15 @@ impl Core {
                 self.dirty = true;
             }
             NetEvent::Interfaces { physical, vpn_up } => {
+                let was = self.no_lan();
                 if !self.policy.allow_loopback {
                     self.ifaces = physical;
                 }
+                self.ifaces_seen = true;
                 self.vpn_up = vpn_up;
+                if self.no_lan() != was {
+                    self.emit("status", json!({}));
+                }
             }
         }
     }
@@ -1793,6 +1823,9 @@ impl Core {
                 "The network is not on yet. Run \"uc setup\" first.",
             ));
         };
+        if self.no_lan() {
+            return Err(IpcError::new("no-lan", NO_LAN_TEXT));
+        }
         let record = uc_pair::frame::DeviceRecord::new(own_device_type(), &self.own_name())
             .ok_or_else(|| IpcError::new("bad-name", "This device's name is not valid."))?;
         // Test profiles only: where to look (no mDNS on loopback). The CLI passes
@@ -1985,6 +2018,18 @@ impl Core {
             .count()
     }
 
+    /// The network is on but this device has no LAN address it can use (every interface is
+    /// virtual, a VPN, down or without a LAN address), so no socket is bound.
+    fn no_lan(&self) -> bool {
+        self.net.is_some()
+            && self.ifaces_seen
+            && !self.policy.allow_loopback
+            && !self
+                .ifaces
+                .iter()
+                .any(|i| !uc_net::endpoint::bind_addrs(i, 0, &self.policy).is_empty())
+    }
+
     /// The "Needs attention" reason and its fix, if any (plan 2.7).
     fn attention(&self) -> Option<(&'static str, String, String)> {
         if self.state.notice == Some(Notice::Removed) {
@@ -2014,6 +2059,13 @@ impl Core {
                 "network",
                 format!("The network could not start ({e})."),
                 "Run \"uc diagnostics\" and send the report.".into(),
+            ));
+        }
+        if self.no_lan() {
+            return Some((
+                "no-lan",
+                NO_LAN_TEXT.into(),
+                "Connect it to Wi-Fi or a network cable.".into(),
             ));
         }
         if self.clip_error.is_some() {
@@ -2204,6 +2256,7 @@ impl Core {
         }
         match &self.net_error {
             Some(e) => lines.push(format!("Network: off ({e})")),
+            None if self.no_lan() => lines.push(format!("Network: on. {NO_LAN_TEXT}")),
             None => lines.push("Network: on".into()),
         }
         let lan = uc_net::LAN_ONLY;

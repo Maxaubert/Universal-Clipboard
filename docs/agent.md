@@ -136,7 +136,8 @@ only), `device-name` (a `rename` change when in a group).
 Only test profiles (any `UCLIP_PROFILE` that is not empty) read these; see `profile.rs`.
 `UCLIP_STATE_DIR`, `UCLIP_TEST_KEYSTORE=file`, `UCLIP_TEST_CLIPBOARD=os`,
 `UCLIP_TEST_PASTEBOARD`, `UCLIP_TEST_LOOPBACK`, `UCLIP_TEST_PAIR_ADDRS` (read by `uc`),
-`UCLIP_TEST_FAST`. **A test profile never opens the user's clipboard:** the OS backend only
+`UCLIP_TEST_FAST`, `UCLIP_TEST_NO_LAN=1` (only a Hyper-V internal switch, no socket: the
+"no network it can use" path). **A test profile never opens the user's clipboard:** the OS backend only
 inside `tools/winhost` (Windows), on a named pasteboard (macOS), or on a display the test
 started (Linux, Docker). Elsewhere it refuses, and two tests check that.
 

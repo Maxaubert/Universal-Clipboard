@@ -418,6 +418,8 @@ struct Actor {
     pending: BTreeMap<u64, (Vec<Vec<u8>>, bool)>,
     /// Links that were refused or replaced: their late events are dropped.
     retired: BTreeSet<u64>,
+    /// The "no usable network" warning was logged for the current spell without sockets.
+    no_lan_warned: bool,
 }
 
 impl Actor {
@@ -456,6 +458,7 @@ impl Actor {
             last_scan: now,
             pending: BTreeMap::new(),
             retired: BTreeSet::new(),
+            no_lan_warned: false,
         };
         let list = a.scan();
         a.apply_ifaces(list, true)?;
@@ -524,6 +527,7 @@ impl Actor {
                 }
             }
         }
+        self.warn_if_no_lan(&new_use);
         if changed || vpn_changed || old_use != new_use {
             let _ = self.ev.send(NetEvent::Interfaces {
                 physical: new_use,
@@ -532,6 +536,33 @@ impl Actor {
             self.announce_all();
         }
         Ok(())
+    }
+
+    /// Log once (per spell) when no socket is bound: which interfaces were skipped and why,
+    /// by name only. Logs again after sockets came back and went away again.
+    fn warn_if_no_lan(&mut self, in_use: &[Interface]) {
+        let sockets = self.ep.as_ref().map_or(0, |e| e.sockets().len());
+        if sockets > 0 {
+            if self.no_lan_warned {
+                tracing::info!(sockets, "a usable network is back");
+            }
+            self.no_lan_warned = false;
+            return;
+        }
+        if self.no_lan_warned {
+            return;
+        }
+        self.no_lan_warned = true;
+        let mut skipped = ifaces::skipped_summary(&self.ifaces);
+        for i in in_use {
+            if crate::endpoint::bind_addrs(i, 0, &self.cfg.policy).is_empty() {
+                skipped.push_str(&format!("; {}: no LAN address", i.short_name()));
+            }
+        }
+        tracing::warn!(
+            skipped = %skipped,
+            "no usable network: this device found no LAN interface to use"
+        );
     }
 
     /// Bind a fresh endpoint. `port` 0 or a taken port picks a new port and reports it.

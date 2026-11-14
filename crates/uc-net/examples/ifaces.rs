@@ -28,4 +28,11 @@ fn main() {
         );
     }
     println!("vpn_up={}", ifaces::vpn_up(&list));
+    let usable: Vec<&str> = list
+        .iter()
+        .filter(|i| i.usable())
+        .map(|i| i.short_name())
+        .collect();
+    println!("usable=[{}]", usable.join(", "));
+    println!("skipped: {}", ifaces::skipped_summary(&list));
 }
