@@ -31,3 +31,10 @@ Write a small test helper (Rust, `windows` crate, same calls) that creates the s
 
 ## Not tested
 Clipboard history and cloud clipboard (Win+V), and UI Automation inside the private desktop. Those features tie to the user session and are expected to be off there.
+
+## Correction (2026-11-14, found in M4)
+
+A NULL-name window station is NOT new on each call: Windows names it after the logon session
+(`Service-0x0-<LUID>$`), so every run in one session shares one clipboard. It is still isolated from
+Max's `WinSta0`. `tools/winhost` therefore holds a session-wide named mutex
+(`Local\UniversalClipboard.winhost`) so only one test child uses it at a time. See `docs/windows.md`.
