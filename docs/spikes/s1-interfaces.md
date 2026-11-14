@@ -49,8 +49,8 @@ interface. A down Windows VPN adapter also has a `169.254` address; it does not 
 `mdns-sd` 0.21.7: one daemon, every interface disabled (loopback too), then each physical
 interface enabled by name. iroh's mDNS crate is moot without iroh. Measured in WSL netns: three
 fresh nodes find each other and connect about 1.3 s after start with the RFC 6762 name probe;
-the probe is now skipped (the names are per-device HMAC tags, unique by construction).
-Measured after that change: see section 4, row 1.
+the probe is now skipped (the names are per-device HMAC tags, unique by construction), and
+the full mesh is up 0.54 to 0.80 s after start.
 
 ## 4. Network rows (plan 6.3), WSL network namespaces, kernel 6.18
 
@@ -60,15 +60,15 @@ a bridge and one namespace per device; the device runs `examples/lan-node.rs`: r
 
 | Row | Setup | Result |
 |---|---|---|
-| Same LAN | 3 nodes, mDNS only | Full mesh, direct on `lan0`. Times in the table below. |
+| Same LAN | 3 nodes, mDNS only, nothing remembered | Full mesh, direct on `lan0`, 0.54 to 0.80 s after start (plan: under 1 s). |
 | Multicast blocked | nft drops 224.0.0.0/4 and ff02::/16 udp 5353 | Found by remembered address. A never-seen node: `NoPath(NotFound)` on all sides. |
 | VPN, LAN allowed | WireGuard `wg0` with the default route | `vpn=true` seen; direct path on `lan0` to `10.77.0.2`, not through the tunnel. |
 | **VPN, overlapping route** | two /25 routes into `wg0` cover the /24 LAN; `ip route get` shows `dev wg0` | **Direct LAN path.** `SO_BINDTODEVICE(lan0)` wins over the route table. Socket shows `Tie::Device`. |
 | VPN, kill switch | nft drops all but `lo` and `wg0` after the link was up | `NoPath(VpnBlocksLan)` on the VPN side **and** on the other side (from the peer's signed VPN flag). |
 | Client isolation | bridge port isolation after the link was up | `NoPath(Unreachable)` both sides (guest-network help), no VPN false alarm. |
 | Both inbound-blocked | nft drops udp 4500 inbound on both | No path, no crash. Heals when one side opens and the other only allows replies. |
-| Address change | node 2 moves from .2 to .12 | Both peers reconnect to `.12`, same port, in about 0.5 s (plan: under 5 s). |
-| Sleep and wake | `SIGSTOP` node 2, copy on node 1, `SIGCONT` | Reconnect and the newest clip arrives about 0.3 s after wake. Run with 60 s and 300 s (the plan's 5 minutes). |
+| Address change | node 2 moves from .2 to .12 | Both peers reconnect to `.12`, same port, in 0.5 to 0.75 s (plan: under 5 s). |
+| Sleep and wake | `SIGSTOP` node 2, copy on node 1, `SIGCONT` | Reconnect and the newest clip arrives about 0.3 s after wake. Run with 60 s and with 300 s (the plan's 5 minutes): healed 0.31 s after `SIGCONT`. |
 | Lossy Wi-Fi | netem 5 % loss, 100 ms on every port | 20 copies in a row; every node ends with the last one. |
 
 Detection rule checks (false alarms and misses), all in the table above:
