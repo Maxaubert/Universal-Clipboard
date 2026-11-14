@@ -28,6 +28,8 @@ interface Screen {
   file: string;
   scenario: string;
   route?: string;
+  /** More query switches for the mock (for example update=update-failed). */
+  extra?: Record<string, string>;
   act?: (page: Page) => Promise<void>;
   /** A higher limit where the app differs from the reference on purpose. */
   maxDiff?: number;
@@ -72,6 +74,17 @@ const screens: Screen[] = [
   { id: 'L10', file: 'L10-paused', scenario: 'paused', ref: { kind: 'baseline' }, why: 'app baseline (H3 layout, paused)' },
   { id: 'L11', file: 'L11-attention', scenario: 'attention' },
   { id: 'L12', file: 'L12-other-network', scenario: 'home', route: 'vpn' },
+  // Update (Max's pick 2026-11-14, motion/update.html): U1 "One shape" and U3 "Home card". App
+  // baselines like L10: the U1 frames match the mockup (0.06 to 0.15% on 2026-11-14), but the
+  // mockup has no frame of the app's H3 Home with the card, so all six are pictures of the app.
+  { id: 'U1', file: 'U1-ready', scenario: 'update', route: 'update', ref: { kind: 'baseline' }, why: 'app baseline (U1 ready)' },
+  { id: 'U1', file: 'U1-updating', scenario: 'update-applying', route: 'update', ref: { kind: 'baseline' }, why: 'app baseline (U1 updating)' },
+  { id: 'U1', file: 'U1-updated', scenario: 'updated', route: 'update', ref: { kind: 'baseline' }, why: 'app baseline (U1 updated)' },
+  { id: 'U1', file: 'U1-failed', scenario: 'update-failed', route: 'update', ref: { kind: 'baseline' }, why: 'app baseline (U1 failed)' },
+  // U3: the baselines were made on Windows; Linux CI draws the many lines of text a little
+  // differently (1.06% and 0.88% on 2026-11-14, text edges only), so the limit is 2%.
+  { id: 'U3', file: 'U3-card', scenario: 'h3', extra: { update: 'update' }, maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (U3 card on H3 Home)' },
+  { id: 'U3', file: 'U3-card-failed', scenario: 'h3', extra: { update: 'update-failed' }, maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (U3 card, failed)' },
 ];
 
 function fontCss(): string {
@@ -119,6 +132,7 @@ async function shotMockup(page: Page, file: string, option: string): Promise<Buf
 async function shotApp(page: Page, s: Screen): Promise<Buffer> {
   const q = new URLSearchParams({ scenario: s.scenario });
   if (s.route) q.set('route', s.route);
+  for (const [k, v] of Object.entries(s.extra ?? {})) q.set(k, v);
   await page.goto(`/?${q}`);
   await expect(page.getByTestId('card')).toBeVisible();
   await page.waitForFunction(() => !!window.__ucMock);
@@ -148,7 +162,7 @@ const results: { id: string; file: string; percent: number; ref: string }[] = []
 test.beforeAll(() => fs.mkdirSync(outDir, { recursive: true }));
 
 for (const s of screens) {
-  test(`${s.id} ${s.file} matches its reference`, async ({ page }) => {
+  test(`${s.file} matches its reference`, async ({ page }) => {
     const ref = s.ref ?? { kind: 'design' };
     let reference: Buffer;
     if (ref.kind === 'mockup') reference = await shotMockup(page, ref.page, ref.option);
@@ -180,8 +194,9 @@ test.afterAll(() => {
 Made by \`apps/desktop/tests/e2e/visual.spec.ts\` (\`npm run e2e\`). Each picture shows three
 parts, from left to right: the reference, the app after its motion has settled, and the
 difference in red. The reference is the locked design, except Home (L07), which is the end
-frame of the H3 "You are here" motion mockup (picked 2026-11-14), and Paused (L10), which is a
-picture of the app (\`tests/e2e/baselines\`) because no design shows Paused in the H3 layout.
+frame of the H3 "You are here" motion mockup (picked 2026-11-14), and Paused (L10) and the update
+screens (U1, U3), which are pictures of the app (\`tests/e2e/baselines\`) because no design shows
+them in the H3 layout.
 The QR code is hidden in both (the design has a fixed picture, the app draws the real code).
 Limit: ${MAX_DIFF_PERCENT}% of pixels.
 

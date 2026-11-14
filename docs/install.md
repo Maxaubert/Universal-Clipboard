@@ -158,29 +158,67 @@ Only the Windows exe build and the macOS DMG build update themselves (cargo feat
 `self-update`, on by default; the `.deb` is built with `--no-default-features`; the MSIX turns
 it off at run time). Code: `crates/uc-update`, `crates/uc-agent/src/update.rs`.
 
-1. 10 minutes after start, then once a day, the agent fetches
+1. **Once per agent start, never again in that agent's life** (decision 2026-11-14, Max): 15 s
+   after the agent starts (login, reboot, after an update) it fetches
    `https://github.com/Maxaubert/Universal-Clipboard/releases/latest/download/latest.json`
-   with the system `curl` (HTTPS only; no TLS library in the agent, no GitHub API).
+   with the system `curl` (HTTPS only; no TLS library in the agent, no GitHub API). There is no
+   periodic check and no "check now" command.
 2. `latest.json` = `{"manifest": "<json>", "signature": "<minisign>"}`. The signature covers the
    manifest (version, rollout, files with URL, size, SHA-256 and a signature each). Trusted
    comments bind each signature to the file name and the version.
 3. Take it only if: newer than this version, not on the bad list, fewer than 3 failures in a
    row, and the device's rollout bucket (BLAKE3 of the device ID, 0 to 99) is under the
    rollout percentage. Then download, check size, hash and signature, and unpack (system `tar`).
-4. After 60 s with no clipboard activity, the agent copies itself to
+4. **Nothing installs by itself.** The version is now "available": the agent emits the IPC
+   event `update` and opens the window once on its update screen ("Version X is ready.",
+   Update now, Later; see "How the agent opens the window" below; a window already open on
+   Home shows it as a card there instead). Later (IPC `update.later`,
+   `uc update later`) stops the asking until the next agent start. Update now (IPC
+   `update.apply`, `uc update --install` or `uc update now`) copies the agent to
    `<state>/update/helper/` and starts the copy with `--apply-update` (detached, own process
    group). The helper: note the connected peers, ask the agent to quit (IPC `quit`, a service
    call with no `uc` command), copy the install folder to `<state>/update/previous`, install
    (Windows: `setup.exe /S /UPDATE /D=...`; macOS: swap the bundle contents), start the new
    agent, and wait up to 2 minutes for: the new version answers, the network is up, and at
    least one peer is back if one was connected before.
-5. On failure: stop it, copy `previous` back, start the old agent, mark the version bad.
+5. On failure: stop it, copy `previous` back, start the old agent, mark the version bad, and
+   write `<state>/update/apply-failed.json`. On success it writes `<state>/update/apply-ok.json`.
+   The agent that runs then reads (and removes) the note on its next tick (it looks every tick,
+   because the note comes after the 2 minute health check): `update.status` state `failed` or
+   `updated`, and the window opens once to say so ("The update did not work." or "Updated to
+   X"). Try again: when the helper did not start, or the failed version is not marked bad (its
+   start check stages it again), `available` stays set in state `failed` and `update.apply`
+   (`uc update --install`) runs once more. A version marked bad cannot be tried again.
    Three failures in a row: status "Needs attention: The app could not update itself."
 6. The report (`uc diagnostics`) shows the last result, failures in a row and bad versions.
    The helper keeps the last 50 results in `<state>/update/helper.log`.
 
+`update.status` = `{enabled, current, available, failed_version, notes_url, state
+(none|available|applying|failed|updated), dismissed, checked, checks, last_check_ms, last_error}`.
+`uc update` shows it (`--json` for scripts).
+
+**How the agent opens the window** (`open_window` in `crates/uc-agent/src/update.rs`; the agent
+itself never shows a dialog). It starts the window as its own app with `--route update`:
+
+| OS | How |
+|---|---|
+| Windows | `Universal Clipboard.exe` next to `uc-agent.exe`, detached |
+| macOS | `/usr/bin/open -a "<the .app>" --args --route update` (LaunchServices: the window is its own responsible process, so no permission moves between it and the agent). Only when `Contents/MacOS/universal-clipboard` exists |
+| Linux | `universal-clipboard` next to the agent (`/usr/lib/universal-clipboard/`), detached |
+
+A window that is already open gets `--route update` through its single-instance handler
+(Windows, Linux; on macOS `open` brings the running app forward) and also follows the
+`update` event. The shell puts the window in the middle of the screen with the mouse pointer
+and raises it once (always-on-top on and off again, plus a taskbar flash where focus is
+refused). A pairing in progress (Show or Enter a code) is not interrupted: the update screen
+follows when it ends. Test profiles never start a window: they append the route to
+`<state>/update/window-opens.log`.
+
 **Acceptance test "N, then a broken N+1, then rollback to N"**: `crates/uc-cli/tests/update.rs`,
 headless and offline (a `file://` feed signed with a test key, test profile, fake clipboard).
+Update now is the `uc update --install` call. A third test checks the start-only rule: one
+check, one window request, nothing installed over a quiet run, Later holds until the agent
+starts again.
 It passes on Windows (PC), macOS (Mac mini over ssh) and in CI on all three. A second test
 updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the lab VMs.
 

@@ -83,6 +83,24 @@ export const S = {
   vpnTip: 'Turn on Local network sharing in your VPN',
   vpnBack: 'Back',
 
+  // Update: U1 "One shape" screen and U3 "Home card" (Max's pick 2026-11-14,
+  // docs/design/desktop/motion/update.html).
+  updateReady: (v: string) => `Version ${v} is ready.`,
+  updateReadySub: 'A newer Universal Clipboard is ready to install.',
+  updateHave: (cur: string) => `You have ${cur}.`,
+  updateNow: 'Update now',
+  updateLater: 'Later',
+  updating: 'Updating...',
+  updatingSub: 'The app closes and opens again by itself.',
+  updated: (v: string) => `Updated to ${v}`,
+  updatedSub: 'You have the newest version.',
+  updateDone: 'Done',
+  updateFailed: 'The update did not work.',
+  updateFailedSub: (cur: string) => `You still have ${cur}.`,
+  updateTryAgain: 'Try again',
+  updateNone: (cur: string) => `Version ${cur} is the newest.`,
+  updateOk: 'OK',
+
   agentDown: 'The background service is not running.',
   retry: 'Try again',
 } as const;

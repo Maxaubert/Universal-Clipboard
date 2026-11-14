@@ -243,10 +243,9 @@ pub struct Core {
     shutdown: bool,
     started: Instant,
     dirty: bool,
-    /// Self-update (Windows exe and macOS dmg builds; test feeds in test profiles).
+    /// Self-update (Windows exe and macOS dmg builds; test feeds in test profiles). It checks
+    /// once, shortly after start, and never installs without the user.
     updater: Option<crate::update::Updater>,
-    /// Last clipboard activity (the updater waits for 60 s of quiet).
-    last_clip: Instant,
     /// The version this agent reports.
     version: String,
 }
@@ -425,7 +424,6 @@ impl Core {
             dirty: false,
             updater: crate::update::UpdateCfg::from_profile(&profile_for_update)
                 .map(|c| crate::update::Updater::new(c, profile_for_update.clone())),
-            last_clip: Instant::now(),
             version: crate::update::current_version(&profile_for_update),
         };
         core.reset_engine();
@@ -783,9 +781,11 @@ impl Core {
         }
         self.last_tick = (now, wall);
         let me = self.key.public();
-        let idle = self.last_clip.elapsed();
-        if let Some(u) = &mut self.updater {
-            u.tick(me, idle);
+        if let Some(u) = &mut self.updater
+            && u.tick(me)
+        {
+            let v = u.status_json();
+            self.emit("update", v);
         }
         // Pause for a time ends.
         if let Pause::Until(t) = self.state.pause
@@ -863,7 +863,6 @@ impl Core {
     // ------------------------------------------------------------ clipboard
 
     fn on_local_change(&mut self) {
-        self.last_clip = Instant::now();
         if self.clip_error.is_some() {
             return;
         }
@@ -872,9 +871,6 @@ impl Core {
     }
 
     fn on_engine(&mut self, evs: Vec<EngineEvent>) {
-        if !evs.is_empty() {
-            self.last_clip = Instant::now();
-        }
         for e in evs {
             match e {
                 EngineEvent::Sent { kind, peers, .. } => {
@@ -1570,6 +1566,16 @@ impl Core {
             "setup.status" => Ok(self.setup_status()),
             "setup.step" => self.setup_step(&p),
             "firewall.check" => Ok(self.firewall_check()),
+            "update.status" => Ok(self.update_status()),
+            "update.apply" => self.update_apply(),
+            "update.later" => {
+                if let Some(u) = &mut self.updater {
+                    u.later();
+                }
+                let v = self.update_status();
+                self.emit("update", v.clone());
+                Ok(v)
+            }
             "debug.copy" => {
                 let t = p.get("text").and_then(Value::as_str).unwrap_or_default();
                 match self.clip.debug_copy(t) {
@@ -1960,6 +1966,36 @@ impl Core {
             Some(true) => "present",
             Some(false) => "absent",
             None => "not-needed",
+        }
+    }
+
+    /// IPC `update.status`.
+    fn update_status(&self) -> Value {
+        match &self.updater {
+            Some(u) => u.status_json(),
+            None => crate::update::disabled_status_json(&self.profile),
+        }
+    }
+
+    /// IPC `update.apply`: run the signed apply and rollback helper for the staged version.
+    fn update_apply(&mut self) -> Result<Value, IpcError> {
+        let Some(u) = &mut self.updater else {
+            return Err(IpcError::new(
+                "no-updater",
+                "This app is updated by the store or the package manager.",
+            ));
+        };
+        match u.apply() {
+            Ok(version) => {
+                let v = self.update_status();
+                self.emit("update", v);
+                Ok(json!({"applying": true, "version": version}))
+            }
+            Err(e) => {
+                let v = self.update_status();
+                self.emit("update", v);
+                Err(IpcError::new("update", e))
+            }
         }
     }
 

@@ -9,6 +9,6 @@ Status: draft for an app in development. Not final.
   relay sees IP addresses and encrypted bytes. It stores nothing.
 - The app skips copies that a password manager marks as private.
 - The app does not send analytics or crash reports.
-- A daily update check fetches a public file from GitHub. GitHub sees your IP address, as for any download.
+- An update check each time the app starts (never in between) fetches a public file from GitHub. GitHub sees your IP address, as for any download.
 
 Contact: use the repository's private security reporting for privacy problems.

@@ -44,6 +44,9 @@ pub const CALLS: &[&str] = &[
     "setup.step",
     "firewall.check",
     "version",
+    "update.status",
+    "update.apply",
+    "update.later",
 ];
 
 /// Calls for the installers and the updater (not window actions, so no `uc` command).

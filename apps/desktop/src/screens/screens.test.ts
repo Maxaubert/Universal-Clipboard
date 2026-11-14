@@ -134,3 +134,4 @@ describe('Qr', () => {
     expect(p?.getAttribute('d')?.length).toBeGreaterThan(100);
   });
 });
+

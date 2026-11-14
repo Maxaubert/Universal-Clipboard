@@ -4,17 +4,29 @@
 //!   without the cargo feature `self-update`, and test profiles unless a test sets
 //!   `UCLIP_TEST_UPDATE_URL` and `UCLIP_TEST_UPDATE_KEY` (a local `file://` feed signed with a
 //!   test key). So the whole flow runs headless in tests, with no network.
-//! - Once a day (10 minutes after start for the first time) a thread fetches `latest.json`,
-//!   checks the signature, the version, the rollout and the bad list, then downloads, checks
-//!   and unpacks the file into `<state>/update/<version>/`.
-//! - When the clipboard has been idle for 60 s, the agent copies itself to
-//!   `<state>/update/helper/` and starts that copy with `--apply-update`. The helper stops the
-//!   agent, keeps the old version, installs the new one, starts it and checks its health
-//!   (2 minutes), and rolls back on failure ([`uc_update::apply`]).
+//! - **One check per agent start, never again in that agent's life** (decision 2026-11-14,
+//!   Max). The agent starts at login, after a reboot and after an update; 15 s after it starts
+//!   (1 s with `UCLIP_TEST_FAST=1`) a thread fetches `latest.json`, checks the signature, the
+//!   version, the rollout and the bad list, then downloads, checks and unpacks the file into
+//!   `<state>/update/<version>/`. There is no periodic check and no "check now".
+//! - **Nothing installs by itself.** A staged version is "available": the agent emits the
+//!   `update` event and opens the window on its update screen once ([`open_window`]). The
+//!   user picks Update now (IPC `update.apply`, `uc update --install`) or Later (IPC
+//!   `update.later`: no more asking until the next agent start).
+//! - `update.apply` copies the agent to `<state>/update/helper/` and starts that copy with
+//!   `--apply-update`. The helper stops the agent, keeps the old version, installs the new one,
+//!   starts it and checks its health (2 minutes), and rolls back on failure
+//!   ([`uc_update::apply`]). A failed attempt leaves `<state>/update/apply-failed.json`, a
+//!   good one `<state>/update/apply-ok.json`; the agent that runs then shows it (state `failed`
+//!   or `updated`, window opened once) and removes it. It looks for both notes every tick,
+//!   because the helper writes them only after its health check, when that agent already runs.
+//! - Try again: a failed attempt keeps (or stages again) the files when the version is not
+//!   marked bad, so `update.apply` can run once more from the `failed` state.
 //!
 //! Test switches (test profiles only): `UCLIP_TEST_UPDATE_URL`, `UCLIP_TEST_UPDATE_KEY`, and
 //! two files next to the agent binary: `test-version.txt` (the version this copy claims to
-//! be) and `test-broken` (this copy exits at once, like a broken release).
+//! be) and `test-broken` (this copy exits at once, like a broken release). Test profiles never
+//! open a window: [`open_window`] appends the route to `<state>/update/window-opens.log`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -77,11 +89,16 @@ pub fn install_dir() -> Option<PathBuf> {
 pub struct UpdateCfg {
     pub source: Source,
     pub dir: PathBuf,
+    /// The delay between agent start and its one check (startup stays quick; the network may
+    /// need a few seconds after login).
     pub first: Duration,
-    pub every: Duration,
-    pub idle: Duration,
     pub health: Duration,
+    /// Release notes page for a version (`{v}` is replaced), or `None` (test feeds).
+    pub notes: Option<String>,
 }
+
+/// The delay before the one check of a real agent.
+pub const FIRST_CHECK: Duration = Duration::from_secs(15);
 
 impl UpdateCfg {
     pub fn from_profile(p: &Profile) -> Option<UpdateCfg> {
@@ -98,10 +115,13 @@ impl UpdateCfg {
                     target: uc_update::manifest::current_target().into(),
                 },
                 dir,
-                first: Duration::from_secs(if fast { 1 } else { 600 }),
-                every: Duration::from_secs(if fast { 5 } else { 86_400 }),
-                idle: Duration::from_secs(if fast { 1 } else { 60 }),
+                first: if fast {
+                    Duration::from_secs(1)
+                } else {
+                    FIRST_CHECK
+                },
                 health: Duration::from_secs(if fast { 20 } else { 120 }),
+                notes: None,
             });
         }
         if !cfg!(feature = "self-update") || !(cfg!(windows) || cfg!(target_os = "macos")) {
@@ -114,22 +134,127 @@ impl UpdateCfg {
         Some(UpdateCfg {
             source: Source::real(),
             dir,
-            first: Duration::from_secs(600),
-            every: Duration::from_secs(86_400),
-            idle: Duration::from_secs(60),
+            first: FIRST_CHECK,
             health: Duration::from_secs(120),
+            notes: Some(
+                "https://github.com/Maxaubert/Universal-Clipboard/releases/tag/v{v}".into(),
+            ),
         })
     }
+}
+
+/// The one check of an agent's life: due once, `delay` after start, then never again.
+#[derive(Debug)]
+pub struct OneCheck {
+    at: Option<Instant>,
+}
+
+impl OneCheck {
+    pub fn new(start: Instant, delay: Duration) -> OneCheck {
+        OneCheck {
+            at: Some(start + delay),
+        }
+    }
+
+    /// True exactly once: the first call at or after the due time.
+    pub fn due(&mut self, now: Instant) -> bool {
+        match self.at {
+            Some(t) if now >= t => {
+                self.at = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// True until the check has started.
+    pub fn pending(&self) -> bool {
+        self.at.is_some()
+    }
+}
+
+/// Where the update stands, for `update.status`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    /// Nothing to install (not checked yet, up to date, or the check failed).
+    None,
+    /// A newer version is downloaded and checked, and waits for the user.
+    Available,
+    /// The helper runs: the agent stops soon.
+    Applying,
+    /// The last attempt failed (the old version is back), or the helper did not start.
+    Failed,
+    /// This agent is the new version, started by the helper after a good update.
+    Updated,
+}
+
+impl Phase {
+    pub fn word(self) -> &'static str {
+        match self {
+            Phase::None => "none",
+            Phase::Available => "available",
+            Phase::Applying => "applying",
+            Phase::Failed => "failed",
+            Phase::Updated => "updated",
+        }
+    }
+}
+
+/// What a failed attempt leaves for the next agent (`<state>/update/apply-failed.json`).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ApplyFailed {
+    pub version: String,
+    pub error: String,
+}
+
+fn apply_failed_file(dir: &Path) -> PathBuf {
+    dir.join("apply-failed.json")
+}
+
+/// What a good update leaves for the new agent (`<state>/update/apply-ok.json`).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ApplyOk {
+    pub version: String,
+}
+
+fn apply_ok_file(dir: &Path) -> PathBuf {
+    dir.join("apply-ok.json")
+}
+
+/// Read and remove a note the helper left.
+fn take_note<T: serde::de::DeserializeOwned>(f: &Path) -> Option<T> {
+    let b = std::fs::read(f).ok()?;
+    let _ = std::fs::remove_file(f);
+    serde_json::from_slice(&b).ok()
+}
+
+/// Read and remove the note of a failed attempt.
+fn take_apply_failed(dir: &Path) -> Option<ApplyFailed> {
+    take_note(&apply_failed_file(dir))
+}
+
+/// Read and remove the note of a good update.
+fn take_apply_ok(dir: &Path) -> Option<ApplyOk> {
+    take_note(&apply_ok_file(dir))
 }
 
 /// The updater inside the agent's core. Polled from the core's 1 s tick.
 pub struct Updater {
     cfg: UpdateCfg,
     profile: Profile,
-    next: Instant,
+    check: OneCheck,
+    /// Checks started in this agent's life (0 or 1).
+    checks: u32,
     rx: Option<mpsc::Receiver<Result<Option<Staged>, String>>>,
     staged: Option<Staged>,
-    launched: bool,
+    phase: Phase,
+    /// The version the last failure was about.
+    failed_version: Option<String>,
+    /// "Later" was picked: do not ask again until the next agent start.
+    dismissed: bool,
+    /// The window was opened for this agent's update news (at most once per life).
+    window_opened: bool,
+    last_error: Option<String>,
     /// The last result, for the diagnostic report.
     pub last: Option<String>,
 }
@@ -137,12 +262,17 @@ pub struct Updater {
 impl Updater {
     pub fn new(cfg: UpdateCfg, profile: Profile) -> Updater {
         Updater {
-            next: Instant::now() + cfg.first,
+            check: OneCheck::new(Instant::now(), cfg.first),
             cfg,
             profile,
+            checks: 0,
             rx: None,
             staged: None,
-            launched: false,
+            phase: Phase::None,
+            failed_version: None,
+            dismissed: false,
+            window_opened: false,
+            last_error: None,
             last: None,
         }
     }
@@ -152,22 +282,39 @@ impl Updater {
         UpdateState::load(&self.cfg.dir)
     }
 
-    /// Call once a second. `idle_for`: time since the last clipboard activity.
-    pub fn tick(&mut self, device_id: [u8; 32], idle_for: Duration) {
+    /// Call once a second. Returns true when the status changed (the core emits `update`).
+    pub fn tick(&mut self, device_id: [u8; 32]) -> bool {
+        let mut changed = false;
         if let Some(rx) = &self.rx {
             match rx.try_recv() {
                 Ok(r) => {
                     self.rx = None;
+                    changed = true;
                     match r {
-                        Ok(Some(s)) => {
-                            tracing::info!(version = %s.version, "update ready");
-                            self.last = Some(format!("{} downloaded and checked", s.version));
+                        Ok(Some(s))
+                            if self.phase == Phase::Failed
+                                && self.failed_version.as_deref() == Some(s.version.as_str()) =>
+                        {
+                            // The version that failed is not marked bad: keep "failed" on
+                            // screen, and Try again can install it.
+                            tracing::info!(version = %s.version, "staged again for Try again");
+                            self.last = Some(format!("{} downloaded again", s.version));
                             self.staged = Some(s);
+                        }
+                        Ok(Some(s)) => {
+                            tracing::info!(version = %s.version, "update ready, asking the user");
+                            self.last = Some(format!("{} downloaded and checked", s.version));
+                            self.last_error = None;
+                            self.staged = Some(s);
+                            self.phase = Phase::Available;
+                            self.failed_version = None;
+                            self.ask();
                         }
                         Ok(None) => {}
                         Err(e) => {
                             tracing::warn!(error = %e, "update check");
-                            self.last = Some(e);
+                            self.last = Some(e.clone());
+                            self.last_error = Some(e);
                         }
                     }
                 }
@@ -175,29 +322,15 @@ impl Updater {
                 Err(mpsc::TryRecvError::Disconnected) => self.rx = None,
             }
         }
-        if let Some(s) = &self.staged
-            && !self.launched
-            && idle_for >= self.cfg.idle
-        {
-            match launch_helper(&self.profile, s) {
-                Ok(()) => {
-                    tracing::info!(version = %s.version, "update helper started");
-                    self.launched = true;
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "update helper");
-                    self.last = Some(format!("could not start the update helper: {e}"));
-                    self.staged = None;
-                }
-            }
-        }
-        if self.rx.is_none() && self.staged.is_none() && Instant::now() >= self.next {
-            self.next = Instant::now() + self.cfg.every;
+        changed |= self.notice_notes();
+        if self.check.due(Instant::now()) {
             // Run from the disk image or a translocated copy: the bundle cannot be replaced.
             if !self.profile.is_test() && crate::launch::app_location_problem().is_some() {
                 self.last = Some("not checked: the app is not in the Applications folder".into());
-                return;
+                return changed;
             }
+            self.checks += 1;
+            tracing::info!("update check (the only one in this agent's life)");
             let (tx, rx) = mpsc::channel();
             self.rx = Some(rx);
             let cfg = self.cfg.clone();
@@ -208,7 +341,181 @@ impl Updater {
                     let _ = tx.send(check_and_stage(&cfg, &current, &device_id));
                 });
         }
+        changed
     }
+
+    /// The helper left a note about the last attempt: show it (once). The helper writes it
+    /// after its health check, so it can come at any time, not only at the start.
+    fn notice_notes(&mut self) -> bool {
+        if let Some(f) = take_apply_failed(&self.cfg.dir) {
+            tracing::warn!(version = %f.version, error = %f.error, "the last update failed");
+            self.phase = Phase::Failed;
+            self.failed_version = Some(f.version);
+            self.last_error = Some(f.error);
+            self.ask();
+            return true;
+        }
+        if let Some(o) = take_apply_ok(&self.cfg.dir) {
+            tracing::info!(version = %o.version, "updated");
+            self.last = Some(format!("updated to {}", o.version));
+            if self.phase == Phase::None {
+                self.phase = Phase::Updated;
+                self.failed_version = None;
+                self.last_error = None;
+                self.ask();
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Open the window on its update screen, at most once per agent life, never after Later.
+    fn ask(&mut self) {
+        if self.window_opened || self.dismissed {
+            return;
+        }
+        self.window_opened = true;
+        if let Err(e) = open_window(&self.profile, "update") {
+            tracing::warn!(error = %e, "could not open the window for the update");
+        }
+    }
+
+    /// IPC `update.status`.
+    pub fn status_json(&self) -> serde_json::Value {
+        let available = self.staged.as_ref().map(|s| s.version.clone());
+        let notes = available
+            .as_deref()
+            .and_then(|v| self.cfg.notes.as_ref().map(|n| n.replace("{v}", v)));
+        let st = self.state();
+        json!({
+            "enabled": true,
+            "current": current_version(&self.profile),
+            "available": available,
+            "failed_version": self.failed_version,
+            "notes_url": notes,
+            "state": self.phase.word(),
+            "dismissed": self.dismissed,
+            "checked": !self.check.pending() && self.rx.is_none(),
+            "checks": self.checks,
+            "last_check_ms": st.last_check_ms,
+            "last_error": self.last_error,
+        })
+    }
+
+    /// IPC `update.later`: no more asking in this agent's life.
+    pub fn later(&mut self) {
+        self.dismissed = true;
+    }
+
+    /// IPC `update.apply`: start the helper for the staged version.
+    pub fn apply(&mut self) -> Result<String, String> {
+        if self.phase == Phase::Applying {
+            return Err("The update is being installed.".into());
+        }
+        let Some(s) = self.staged.clone() else {
+            return Err("There is no update to install.".into());
+        };
+        match launch_helper(&self.profile, &s) {
+            Ok(()) => {
+                tracing::info!(version = %s.version, "update helper started");
+                self.phase = Phase::Applying;
+                self.last = Some(format!("installing {}", s.version));
+                Ok(s.version)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "update helper");
+                let msg = format!("Could not start the update: {e}");
+                self.phase = Phase::Failed;
+                self.failed_version = Some(s.version.clone());
+                self.last = Some(msg.clone());
+                self.last_error = Some(msg.clone());
+                let mut st = self.state();
+                st.failed(&s.version, &msg, false);
+                let _ = st.save(&self.cfg.dir);
+                // The files stay staged: Try again (update.apply) can start the helper again.
+                Err(msg)
+            }
+        }
+    }
+}
+
+/// The "no updater" reply of `update.status` (the Store, apt, builds without the feature).
+pub fn disabled_status_json(p: &Profile) -> serde_json::Value {
+    json!({
+        "enabled": false,
+        "current": current_version(p),
+        "available": null,
+        "failed_version": null,
+        "notes_url": null,
+        "state": "none",
+        "dismissed": false,
+        "checked": false,
+        "checks": 0,
+        "last_check_ms": 0,
+        "last_error": null,
+    })
+}
+
+/// Open the window with `--route <route>`, detached, as its own app. The agent shows no
+/// dialog of its own. A window that is already open gets the arguments through its
+/// single-instance handler (Windows, Linux) or is brought to the front (macOS) and follows the
+/// `update` event.
+///
+/// - Windows: `Universal Clipboard.exe` next to `uc-agent.exe`.
+/// - macOS: `/usr/bin/open -a <the .app> --args --route <route>`. LaunchServices starts the
+///   app as its own responsible process, so no permission moves between the agent and it.
+/// - Linux: `universal-clipboard` next to the agent (`/usr/lib/universal-clipboard/`).
+///
+/// Test profiles never start anything: the route is appended to
+/// `<state>/update/window-opens.log`.
+pub fn open_window(p: &Profile, route: &str) -> std::io::Result<()> {
+    if p.is_test() {
+        use std::io::Write;
+        let dir = p.state_dir().join("update");
+        std::fs::create_dir_all(&dir)?;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("window-opens.log"))?;
+        return writeln!(f, "{route}");
+    }
+    let mut c = window_command(route)?;
+    detach(&mut c);
+    c.spawn().map(|_| ())
+}
+
+#[cfg(target_os = "macos")]
+fn window_command(route: &str) -> std::io::Result<Command> {
+    let app = install_dir()
+        .filter(|d| d.extension().is_some_and(|e| e == "app"))
+        .ok_or_else(|| std::io::Error::other("the agent is not in an app bundle"))?;
+    if !app
+        .join("Contents")
+        .join("MacOS")
+        .join("universal-clipboard")
+        .exists()
+    {
+        return Err(std::io::Error::other("this build has no window"));
+    }
+    let mut c = Command::new("/usr/bin/open");
+    c.arg("-a").arg(&app).args(["--args", "--route", route]);
+    Ok(c)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn window_command(route: &str) -> std::io::Result<Command> {
+    let name = if cfg!(windows) {
+        "Universal Clipboard.exe"
+    } else {
+        "universal-clipboard"
+    };
+    let exe = exe_dir()
+        .map(|d| d.join(name))
+        .filter(|e| e.exists())
+        .ok_or_else(|| std::io::Error::other("this build has no window"))?;
+    let mut c = Command::new(exe);
+    c.args(["--route", route]);
+    Ok(c)
 }
 
 fn check_and_stage(
@@ -466,9 +773,8 @@ pub fn run_helper(p: &Profile, args: &[String]) -> i32 {
             source: Source::real(),
             dir: p.state_dir().join("update"),
             first: Duration::ZERO,
-            every: Duration::ZERO,
-            idle: Duration::ZERO,
             health: Duration::from_secs(120),
+            notes: None,
         })
     }) else {
         return 2;
@@ -504,6 +810,28 @@ pub fn run_helper(p: &Profile, args: &[String]) -> i32 {
     let o = apply(&mut *files, &mut agent, &mut st, &a.version, cfg.health);
     crate::launch::set_update_marker(p, false);
     let _ = st.save(&cfg.dir);
+    // A failed attempt: the agent that runs now (the old version) shows it at its one check.
+    let failure = match &o {
+        Outcome::Updated => None,
+        Outcome::NotStarted(e) | Outcome::RolledBack(e) | Outcome::RollbackFailed(e) => {
+            Some(e.clone())
+        }
+    };
+    // A good one: the new agent shows "Updated to X" (window opened once).
+    let note = match failure {
+        Some(error) => serde_json::to_vec(&ApplyFailed {
+            version: a.version.clone(),
+            error,
+        })
+        .map(|b| (apply_failed_file(&cfg.dir), b)),
+        None => serde_json::to_vec(&ApplyOk {
+            version: a.version.clone(),
+        })
+        .map(|b| (apply_ok_file(&cfg.dir), b)),
+    };
+    if let Ok((f, b)) = note {
+        let _ = std::fs::write(f, b);
+    }
     let line = format!(
         "{} update to {}: {o:?}\n",
         crate::agent::now_ms(),
@@ -561,6 +889,64 @@ mod tests {
         assert_eq!(h.version, "1.2.3");
         assert_eq!(h.kind, Kind::Tar);
         assert!(HelperArgs::parse(&a[..4]).is_err());
+    }
+
+    /// Decision 2026-11-14: one check per agent start, never periodic. A simulated 30-day
+    /// run of 1 s ticks starts exactly one check, `delay` after start.
+    #[test]
+    fn one_check_per_agent_life() {
+        let start = Instant::now();
+        let mut c = OneCheck::new(start, FIRST_CHECK);
+        let mut due = Vec::new();
+        for s in 0..(30 * 24 * 3600u64) {
+            if c.due(start + Duration::from_secs(s)) {
+                due.push(s);
+            }
+        }
+        assert_eq!(due, vec![FIRST_CHECK.as_secs()]);
+        assert!(!c.pending());
+    }
+
+    #[test]
+    fn real_check_is_soon_after_start() {
+        assert!(FIRST_CHECK >= Duration::from_secs(5) && FIRST_CHECK <= Duration::from_secs(60));
+        let p = Profile::new("").unwrap();
+        if let Some(c) = UpdateCfg::from_profile(&p) {
+            assert_eq!(c.first, FIRST_CHECK);
+        }
+    }
+
+    #[test]
+    fn a_failed_attempt_is_shown_once() {
+        let d = tempfile::tempdir().unwrap();
+        let note = ApplyFailed {
+            version: "9.9.9".into(),
+            error: "health check failed".into(),
+        };
+        std::fs::write(
+            apply_failed_file(d.path()),
+            serde_json::to_vec(&note).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(take_apply_failed(d.path()).unwrap().version, "9.9.9");
+        assert!(take_apply_failed(d.path()).is_none());
+        let ok = ApplyOk {
+            version: "9.9.8".into(),
+        };
+        std::fs::write(apply_ok_file(d.path()), serde_json::to_vec(&ok).unwrap()).unwrap();
+        assert_eq!(take_apply_ok(d.path()).unwrap().version, "9.9.8");
+        assert!(take_apply_ok(d.path()).is_none());
+    }
+
+    #[test]
+    fn test_profiles_never_open_a_window() {
+        let d = tempfile::tempdir().unwrap();
+        let p = Profile::test("upd-win", d.path().to_path_buf()).unwrap();
+        open_window(&p, "update").unwrap();
+        open_window(&p, "update").unwrap();
+        let log =
+            std::fs::read_to_string(p.state_dir().join("update").join("window-opens.log")).unwrap();
+        assert_eq!(log, "update\nupdate\n");
     }
 
     #[test]

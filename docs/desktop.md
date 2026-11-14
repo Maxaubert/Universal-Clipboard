@@ -45,8 +45,13 @@ The font is Figtree, bundled from `@fontsource/figtree`. Nothing loads from the 
 | L09 Settings | `settings.get`, `settings.set` (`start-at-login`), `leave` |
 | L11 Needs attention | `status` (reason and fix code). Fix for `firewall`: the shell command `firewall_add` (the helper, one UAC prompt, the same code as `uc firewall add`), then `firewall.check` |
 | L12 VPN help | none |
+| Update (U1, `src/screens/Update.svelte`) and the Home card (U3, `src/screens/Home.svelte`) | `update.status`, `update.apply`, `update.later`; event `update`. Phases: ready ("Version X is ready.", Update now, Later), updating ("Updating...", ring), updated ("Updated to X", Done), failed ("The update did not work.", Try again when the agent still has the files, Later; else OK). Done, Later and OK send `update.later` |
 
-Window rules: the window opens only when the user starts the app. Closing it ends the window
+Window rules: the window opens when the user starts the app, and once when the agent finds a
+newer version at its start (and once more after the update, to show how it went) (the agent starts it with `--route update`; the shell's
+`launch_route` command tells the page, and a second start forwards the route through the
+single-instance handler as the page event `open`). While the update helper has the agent
+stopped, the update screen stays instead of "agent is down". Closing it ends the window
 process and leaves the agent running. A second start brings the first window to the front.
 Windows and Linux: the title bar is our own (no native frame) with a drag strip and drawn
 minimize, maximize and close buttons. macOS (2026-11-14): a native window
@@ -71,12 +76,15 @@ Run from `apps/desktop`:
 - `npm run e2e`: Playwright in headless Chromium against the Vite build with the mock agent.
   It covers the whole setup flow, show and enter a code, wrong code, lockout notice, home,
   device detail, rename and remove, settings, paused, needs attention, VPN help, the title bar
-  and the agent-down screen. Nothing opens on screen.
+  and the agent-down screen. Nothing opens on screen. `update.spec.ts`: U1 (route update) and
+  U3 (Home card), success, failure and Later, each with full and reduced motion.
 - `visual.spec.ts` takes a picture of each screen after its motion has settled and compares it
   with its reference rendered in the same browser (limit 1% of pixels): the locked design, except
-  Home (L07, compared with the last frame of the H3 mockup, mock scenario `h3`) and Paused (L10,
-  compared with a picture of the app in `tests/e2e/baselines`, because no design shows Paused in
-  the H3 layout; `UPDATE_BASELINES=1` writes it again). The setup screens show 4 step dots where
+  Home (L07, compared with the last frame of the H3 mockup, mock scenario `h3`), Paused (L10) and the
+  update screens (U1-ready, U1-updating, U1-updated, U1-failed, U3-card, U3-card-failed), each
+  compared with a picture of the app in `tests/e2e/baselines`, because no design shows them in
+  the H3 layout (`UPDATE_BASELINES=1` writes them again). The U1 frames matched the update
+  mockup within 0.15% when they were made (2026-11-14). The setup screens show 4 step dots where
   the design has 5 (a few pixels). L02 uses the mock's `mac-blocked` (macOS blocks the network
   and paste access) and shows those two rows, not the design's Windows rows, so its limit is 2%. The side-by-side pictures are in
   `docs/design/desktop/impl-check/`.
@@ -99,6 +107,8 @@ are taken from them):
 | H3 "You are here" | Home: this device is a dark bar at the bottom with the last copy (facts only); build-in from the top; a device that comes on pops its dot | `Home.svelte` |
 | A3 "Ticker" | A copy that moves: the line under the headline rolls to it for 2.8 s (arrow up sent, green arrow down received), the sender's tile edge turns green, the bar's line runs across and the logo rings | `Home.svelte` |
 | A4 "Hush" | Pause and Resume: headline and line roll, a colour wave runs from the button across the tiles | `Home.svelte` |
+| U1 "One shape" | Update screen, when the agent opened the window for the update (`--route update`): Update now grows into a round dial with the arrow, a ring fills while updating; after the restart the dial is the green check, or a red circle with a back arrow and one damped 7 px shake | `Update.svelte`, `src/lib/update-motion.ts`, `flow.ts` |
+| U3 "Home card" | A ready or failed update while Home shows (or when the user opens the app and it is not put off with Later): a card at the top pushes the tiles down. Update now goes on with U1 (the shape grows from the card's button into the dial), not U3's black fill. A failure of that try returns to Home: the card shows it and shakes once (E1). Later closes the card. On any other screen the news opens the U1 screen; during a pairing it waits | `Home.svelte`, `update-motion.ts` |
 
 How it works: each screen is a `.layer` in a `{#key}` in `App.svelte`, so the old screen leaves
 while the new one arrives. `store.go(route, { from })` passes the pressed button. Back,

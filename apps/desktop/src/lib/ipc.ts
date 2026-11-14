@@ -9,6 +9,8 @@ export interface Api {
   /** Windows: add the firewall rule (the helper, one UAC prompt), then `firewall.check`. The
    * same path as `uc firewall add`. Not an agent call: the window shell runs the helper. */
   firewallAdd(): Promise<FirewallCheck>;
+  /** The screen the window was started for (`--route update` from the agent), or null. */
+  launchRoute(): Promise<string | null>;
   window: {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<void>;
@@ -36,6 +38,9 @@ export const ALLOWED_CALLS = [
   'setup.step',
   'firewall.check',
   'version',
+  'update.status',
+  'update.apply',
+  'update.later',
 ] as const;
 
 export function isFailure(e: unknown): e is IpcFailure {
@@ -64,6 +69,10 @@ function tauriApi(): Api {
     async firewallAdd() {
       const { invoke } = await core();
       return (await invoke('firewall_add')) as FirewallCheck;
+    },
+    async launchRoute() {
+      const { invoke } = await core();
+      return ((await invoke('launch_route')) as string | null) ?? null;
     },
     onEvent(cb) {
       let off: (() => void) | null = null;

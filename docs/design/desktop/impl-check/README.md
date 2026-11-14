@@ -3,8 +3,9 @@
 Made by `apps/desktop/tests/e2e/visual.spec.ts` (`npm run e2e`). Each picture shows three
 parts, from left to right: the reference, the app after its motion has settled, and the
 difference in red. The reference is the locked design, except Home (L07), which is the end
-frame of the H3 "You are here" motion mockup (picked 2026-11-14), and Paused (L10), which is a
-picture of the app (`tests/e2e/baselines`) because no design shows Paused in the H3 layout.
+frame of the H3 "You are here" motion mockup (picked 2026-11-14), and Paused (L10) and the update
+screens (U1, U3), which are pictures of the app (`tests/e2e/baselines`) because no design shows
+them in the H3 layout.
 The QR code is hidden in both (the design has a fixed picture, the app draws the real code).
 Limit: 1% of pixels.
 
@@ -19,6 +20,12 @@ Limit: 1% of pixels.
 | L07 | L07-home | H3 mockup end frame | 0.27% | ![L07](L07-home.png) |
 | L08 | L08-device | locked design | 0.00% | ![L08](L08-device.png) |
 | L09 | L09-settings | locked design | 0.00% | ![L09](L09-settings.png) |
-| L10 | L10-paused | app baseline (H3 layout, paused) | 0.00% | ![L10](L10-paused.png) |
+| L10 | L10-paused | app baseline (H3 layout, paused) | 0.01% | ![L10](L10-paused.png) |
 | L11 | L11-attention | locked design | 0.00% | ![L11](L11-attention.png) |
 | L12 | L12-other-network | locked design | 0.00% | ![L12](L12-other-network.png) |
+| U1 | U1-ready | app baseline (U1 ready) | 0.00% | ![U1](U1-ready.png) |
+| U1 | U1-updating | app baseline (U1 updating) | 0.00% | ![U1](U1-updating.png) |
+| U1 | U1-updated | app baseline (U1 updated) | 0.00% | ![U1](U1-updated.png) |
+| U1 | U1-failed | app baseline (U1 failed) | 0.00% | ![U1](U1-failed.png) |
+| U3 | U3-card | app baseline (U3 card on H3 Home) | 0.00% | ![U3](U3-card.png) |
+| U3 | U3-card-failed | app baseline (U3 card, failed) | 0.00% | ![U3](U3-card-failed.png) |

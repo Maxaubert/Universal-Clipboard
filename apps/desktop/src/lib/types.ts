@@ -85,6 +85,22 @@ export interface PairOffer {
   lockout_ms?: number;
 }
 
+/** Reply of `update.status`, also the data of the agent's `update` event. The agent checks
+ * once when it starts and installs nothing without the user. */
+export interface UpdateStatus {
+  enabled: boolean;
+  current: string;
+  available: string | null;
+  failed_version: string | null;
+  notes_url: string | null;
+  state: 'none' | 'available' | 'applying' | 'failed' | 'updated';
+  dismissed: boolean;
+  checked: boolean;
+  checks: number;
+  last_check_ms: number;
+  last_error: string | null;
+}
+
 export interface IpcFailure {
   code: string;
   message: string;

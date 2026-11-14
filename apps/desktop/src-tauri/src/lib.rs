@@ -5,12 +5,13 @@
 //! CLI, with the same peer checks) and a background task forwards the agent's events to the
 //! page as `uc-event`. If no agent answers, the window starts it, like `uc` does.
 //!
-//! The window opens only when the user starts the app. Closing it ends this process and
-//! leaves the agent running.
+//! The window opens when the user starts the app, and once when the agent found a newer
+//! version at its start (decision 2026-11-14): the agent starts it with `--route update`.
+//! Closing it ends this process and leaves the agent running.
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use uc_agent::ipc::Client;
 use uc_agent::profile::Profile;
 
@@ -34,6 +35,9 @@ pub const ALLOWED: &[&str] = &[
     "setup.step",
     "firewall.check",
     "version",
+    "update.status",
+    "update.apply",
+    "update.later",
 ];
 
 pub fn is_allowed(call: &str) -> bool {
@@ -98,6 +102,45 @@ async fn firewall_add() -> Result<Value, Failure> {
     ipc_call("firewall.check".into(), json!({})).await
 }
 
+/// The screen the agent asked for with `--route <name>`. Only `update` is known.
+pub fn route_arg(args: &[String]) -> Option<String> {
+    let i = args.iter().position(|a| a == "--route")?;
+    args.get(i + 1).filter(|r| *r == "update").cloned()
+}
+
+/// The screen this process was started for (`--route update` from the agent), or none.
+#[tauri::command]
+fn launch_route() -> Option<String> {
+    route_arg(&std::env::args().collect::<Vec<_>>())
+}
+
+/// Bring the window up. `ask`: the agent opened it for an update: put it in the middle of the
+/// screen that has the mouse, and above other windows once (without staying on top).
+fn present(app: &AppHandle, ask: bool) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    if ask
+        && let (Ok(c), Ok(size)) = (app.cursor_position(), w.outer_size())
+        && let Ok(Some(m)) = app.monitor_from_point(c.x, c.y)
+    {
+        let (mp, ms) = (m.position(), m.size());
+        let x = mp.x + (ms.width.saturating_sub(size.width) / 2) as i32;
+        let y = mp.y + (ms.height.saturating_sub(size.height) / 2) as i32;
+        let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+    let _ = w.unminimize();
+    let _ = w.show();
+    let _ = w.set_focus();
+    if ask {
+        // Windows may refuse the focus to a window that a background process started: raise
+        // it above the others once, then let it be a normal window again.
+        let _ = w.set_always_on_top(true);
+        let _ = w.set_always_on_top(false);
+        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    }
+}
+
 /// Forward the agent's events to the page. Reconnects when the agent restarts.
 async fn event_loop(app: tauri::AppHandle) {
     let Ok(p) = profile() else { return };
@@ -120,19 +163,27 @@ async fn event_loop(app: tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
-        // A second launch only brings the first window to the front.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
+        // A second launch only brings the first window to the front. The agent's
+        // `--route update` also moves the page to the update screen.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let route = route_arg(&args);
+            if let Some(r) = &route {
+                let _ = app.emit("uc-event", json!({"event": "open", "data": {"route": r}}));
             }
+            present(app, route.is_some());
         }))
         .setup(|app| {
+            if launch_route().is_some() {
+                present(app.handle(), true);
+            }
             tauri::async_runtime::spawn(event_loop(app.handle().clone()));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ipc_call, firewall_add])
+        .invoke_handler(tauri::generate_handler![
+            ipc_call,
+            firewall_add,
+            launch_route
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the Universal Clipboard window");
 }
@@ -161,6 +212,18 @@ mod tests {
                 .iter()
                 .any(|c| c.contains("send") || c.contains("fetch"))
         );
+    }
+
+    #[test]
+    fn only_the_update_route_is_taken() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            route_arg(&a(&["uc", "--route", "update"])).as_deref(),
+            Some("update")
+        );
+        assert_eq!(route_arg(&a(&["uc", "--route", "settings"])), None);
+        assert_eq!(route_arg(&a(&["uc", "--route"])), None);
+        assert_eq!(route_arg(&a(&["uc"])), None);
     }
 
     #[test]

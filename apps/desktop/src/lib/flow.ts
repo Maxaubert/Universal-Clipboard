@@ -6,6 +6,8 @@
 // (the Connected moment). Timings, easings and art come from the S1 timeline: the mockup's
 // t1..t4 are 0 here, the moment the route changes.
 // H3 "You are here" (home.html): Home builds in from the top, This PC's dark bar docks last.
+// U1 "One shape" (update.html): Update now on Home's card grows into the update screen's dial;
+// the update screen's own entrances and phase changes are in src/lib/update-motion.ts.
 // Everything else (back, settings, device, help): a short cross-fade, S1's reduced variant.
 // Reduced motion: every change is that cross-fade, with the Connected check fading in.
 //
@@ -15,6 +17,7 @@
 // data-m="text|art|cta|back|os|rows|hdr|tiles|here" and the S1 target with data-shape.
 import { anim, canAnimate, draw, IN, IO, OUT, press, reduced, rise, track } from './motion';
 import { store, type View } from './store.svelte';
+import { endIn, offerIn, updatingIn } from './update-motion';
 
 const SETUP = new Set<View>(['welcome', 'perms', 'add', 'show', 'enter', 'connected']);
 const INK = '#1D1C1A';
@@ -39,7 +42,8 @@ let plan: Plan | null = null;
 function rectIn(el: Element, body: Element): Rect {
   const b = body.getBoundingClientRect();
   const r = el.getBoundingClientRect();
-  const rad = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+  const cr = getComputedStyle(el).borderTopLeftRadius;
+  const rad = cr.endsWith('%') ? (r.width * parseFloat(cr)) / 100 : parseFloat(cr) || 0;
   return { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height, r: rad };
 }
 
@@ -63,6 +67,10 @@ function decide(from: View, to: View, oldNode: Element): Plan {
     return { kind: 'paired', to, src: src && oldNode.parentElement ? rectIn(src, oldNode.parentElement) : null };
   }
   if (nav.kind === 'forward' && to === 'home' && from === 'connected') return { kind: 'home', to, src: null };
+  // U1: Update now on Home's card grows into the dial.
+  if (nav.kind === 'forward' && to === 'update' && isBlack(nav.from) && oldNode.contains(nav.from) && oldNode.parentElement) {
+    return { kind: 'shape', to, src: rectIn(nav.from, oldNode.parentElement) };
+  }
   if (nav.kind === 'forward' && SETUP.has(from) && SETUP.has(to) && to !== 'welcome') {
     const f = nav.from && oldNode.contains(nav.from) ? nav.from : null;
     if (isBlack(f) && oldNode.parentElement) return { kind: 'shape', to, src: rectIn(f, oldNode.parentElement) };
@@ -91,6 +99,13 @@ export function screenOut(node: Element) {
   }
   // S1: the pressed button (or the code box) is handed to the shape; the rest leaves.
   const src = pl.kind === 'shape' || pl.kind === 'paired' ? sourceIn(node) : null;
+  if (pl.to === 'update' && src) {
+    // U1 from Home's card: the button presses and hands over; Home fades as one.
+    press(src);
+    anim(src.querySelector('.lbl'), [{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: IN, fill: 'forwards' });
+    anim(node, [{ opacity: 1 }, { opacity: 0 }], { duration: 300, delay: 120, easing: IN, fill: 'forwards' });
+    return { duration: 900 };
+  }
   const handOff = pl.kind === 'paired' ? 200 : 150;
   if (src) {
     if (src.tagName === 'BUTTON') press(src);
@@ -155,6 +170,7 @@ function enter(node: HTMLElement, view: View, pl: Plan) {
     case 'boot':
       if (view === 'welcome') return welcomeIn(node, r);
       if (view === 'home') return homeIn(node);
+      if (view === 'update') return updateBoot(node);
       return;
     case 'fade':
       anim(node, [{ opacity: 0 }, { opacity: 1 }], { duration: 320, delay: 180, easing: 'ease' });
@@ -208,11 +224,31 @@ function shape(node: HTMLElement, src: Rect, dst: Rect, start: number, end: numb
   return null;
 }
 
+// U1: the window opened by itself on the update screen (the agent's `--route update`).
+function updateBoot(node: HTMLElement) {
+  const ph = node.querySelector<HTMLElement>('[data-phase]')?.dataset.phase;
+  if (ph === 'offer') offerIn(node);
+  else if (ph === 'ok' || ph === 'fail') endIn(node);
+  else if (ph === 'updating') updatingIn(node, 0);
+}
+
+/** The black shape inside one screen (U1: Update now grows into the dial): from `from` to `to`. */
+export function shapeBetween(from: Element, to: Element, start: number, end: number): void {
+  const body = to.closest<HTMLElement>('.body');
+  const blob = body?.querySelector<HTMLElement>(':scope > .blob');
+  if (!body || !blob || !canAnimate() || reduced()) return;
+  const a = clip(body, rectIn(from, body));
+  const b = clip(body, rectIn(to, body));
+  track(blob, [[0, { clipPath: a, opacity: 0 }], [start, { clipPath: a, opacity: 0 }], [start, { clipPath: a, opacity: 1 }, IO], [end, { clipPath: b, opacity: 1 }], [end, { clipPath: b, opacity: 0 }]], 'none');
+}
+
 // Per target screen: when the shape lands, and when each part arrives [delay, duration, rise].
 const SHAPE_IN: Record<string, { end: number; parts: Record<string, [number, number, number]> }> = {
   add: { end: 850, parts: { art: [350, 620, 12], text: [650, 620, 12], cta: [600, 500, 0] } },
   perms: { end: 850, parts: { back: [420, 520, 8], text: [480, 520, 8], rows: [540, 520, 8], cta: [600, 500, 0] } },
   show: { end: 950, parts: { back: [420, 520, 8], text: [480, 520, 8], os: [540, 520, 8], cta: [600, 520, 8] } },
+  // U1: the parts arrive in updatingIn (src/lib/update-motion.ts).
+  update: { end: 900, parts: {} },
 };
 
 function shapeIn(node: HTMLElement, view: View, src: Rect | null) {
@@ -224,6 +260,7 @@ function shapeIn(node: HTMLElement, view: View, src: Rect | null) {
   }
   const end = spec.end;
   shape(node, src, rectIn(target, node.parentElement!), 150, end);
+  if (view === 'update') return updatingIn(node, end);
   // The target hides until the shape lands on it, then its label fades in.
   anim(target, [{ opacity: 0 }, { opacity: 0 }], { duration: end, fill: 'none' });
   anim(target.querySelector('.lbl'), [{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: end, easing: OUT });
