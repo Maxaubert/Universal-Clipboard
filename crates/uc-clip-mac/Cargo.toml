@@ -9,3 +9,16 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+uc-clip = { version = "0.0.1", path = "../uc-clip" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSEnumerator", "NSString", "NSValue"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSImageRep", "NSBitmapImageRep"] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+blake3 = "1.8.7"
+png = "0.18.1"
+uc-core = { version = "0.0.1", path = "../uc-core" }
