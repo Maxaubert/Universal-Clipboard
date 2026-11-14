@@ -22,7 +22,11 @@ static NEXT: AtomicU32 = AtomicU32::new(0);
 pub fn agent_exe() -> PathBuf {
     static BUILT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     let uc = PathBuf::from(env!("CARGO_BIN_EXE_uc"));
-    let exe = uc.with_file_name(if cfg!(windows) { "uc-agent.exe" } else { "uc-agent" });
+    let exe = uc.with_file_name(if cfg!(windows) {
+        "uc-agent.exe"
+    } else {
+        "uc-agent"
+    });
     BUILT.get_or_init(|| {
         if let Ok(cargo) = std::env::var("CARGO") {
             let st = Command::new(cargo)
