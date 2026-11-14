@@ -59,6 +59,7 @@ impl FakeClipboard {
         self.state.has_marker = marker;
         self.state.private = private;
         self.state.has_files = files;
+        self.state.remote = false;
         self.state.seq
     }
 
