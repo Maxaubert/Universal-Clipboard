@@ -1,10 +1,14 @@
-# Creates the external switch "uc-lab" on the active physical adapter.
-# The network drops for a few seconds, once. Run elevated.
+# Creates the external switch "uc-lan" on the physical adapter that carries the default route.
+# The host network drops for a few seconds, once. Hyper-V Administrators is enough (no elevation).
 Import-Module "$PSScriptRoot\Lab.psm1" -Force
-Assert-LabAdmin
-if (Get-VMSwitch -Name uc-lab -ErrorAction SilentlyContinue) { Write-Host 'uc-lab exists'; return }
-$nic = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'Virtual|Hyper-V|Mullvad|Wintun|TAP' } |
-    Sort-Object ReceiveLinkSpeed -Descending | Select-Object -First 1
-if (-not $nic) { throw 'No active physical adapter found.' }
-Write-Host "Binding uc-lab to $($nic.Name)"
-New-VMSwitch -Name uc-lab -NetAdapterName $nic.Name -AllowManagementOS $true | Out-Null
+Assert-LabHyperV
+$sw = Get-LabSwitchName
+if (Get-VMSwitch -Name $sw -ErrorAction SilentlyContinue) { Write-Host "$sw exists"; return }
+$route = Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Sort-Object RouteMetric | Select-Object -First 1
+$nic = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.ifIndex -eq $route.ifIndex }
+if (-not $nic) { throw 'The default route is not on an Up physical adapter (already bridged, or on Wi-Fi or VPN).' }
+Write-Host "Binding $sw to $($nic.Name) ($($nic.InterfaceDescription))"
+New-VMSwitch -Name $sw -NetAdapterName $nic.Name -AllowManagementOS $true | Out-Null
+Start-Sleep 10
+Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "vEthernet ($sw)" | Format-Table InterfaceAlias, IPAddress, PrefixOrigin
+Test-NetConnection github.com -Port 443 | Select-Object ComputerName, TcpTestSucceeded
