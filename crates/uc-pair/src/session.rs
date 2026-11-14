@@ -34,10 +34,91 @@ pub const QR_TRIES: u32 = 20;
 pub const QR_SOURCES_MAX: usize = 1024;
 /// Pairing connections handled at the same time.
 pub const MAX_CONNECTIONS: u32 = 4;
-/// Failed code tries in a row, over all pairings, before the short code is turned off (4.6).
-pub const LOCKOUT_FAILED_TRIES: u32 = 15;
-/// How long the short code stays off.
-pub const LOCKOUT_MS: u64 = 60 * 60 * 1000;
+/// Failed code tries, over all pairings, before the short code is turned off (4.6). After each
+/// lockout the count starts again at 0, so there are always 5 more tries.
+pub const LOCKOUT_FAILED_TRIES: u32 = 5;
+/// How long the short code stays off: the first lockout, the second, and so on. The last step
+/// repeats for every further lockout (4.6). Only a successful pairing goes back to the first.
+pub const LOCKOUT_LADDER_MS: [u64; 4] =
+    [60 * 1000, 5 * 60 * 1000, 60 * 60 * 1000, 3 * 60 * 60 * 1000];
+
+/// The lockout ladder of one device (4.6). The agent keeps it in its state file, so a restart
+/// does not clear it. It holds counts and a time only, never a secret or clipboard content.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Lockout {
+    /// Failed code tries since the last lockout started, or since the last success.
+    pub failed: u32,
+    /// Lockouts since the last success. Picks the step of [`LOCKOUT_LADDER_MS`].
+    pub rounds: u32,
+    /// Wall time (ms) when the current lockout ends.
+    pub until_ms: Option<u64>,
+}
+
+impl Lockout {
+    /// The length of lockout number `round` (0 is the first).
+    pub fn step_ms(round: u32) -> u64 {
+        let last = LOCKOUT_LADDER_MS.len() - 1;
+        LOCKOUT_LADDER_MS[(round as usize).min(last)]
+    }
+
+    /// True while the short code is off.
+    pub fn is_on(&self, now_ms: u64) -> bool {
+        self.until_ms.is_some_and(|t| now_ms < t)
+    }
+
+    /// Time left in the current lockout, 0 when there is none.
+    pub fn left_ms(&self, now_ms: u64) -> u64 {
+        self.until_ms.map_or(0, |t| t.saturating_sub(now_ms))
+    }
+
+    /// One failed code try.
+    fn on_failure(&mut self, now_ms: u64) {
+        if self.is_on(now_ms) {
+            // A try that was counted before the lockout started and failed during it. It counts
+            // for the next round, but cannot start a new lockout on top of this one.
+            self.failed = (self.failed + 1).min(LOCKOUT_FAILED_TRIES - 1);
+            return;
+        }
+        self.failed += 1;
+        if self.failed >= LOCKOUT_FAILED_TRIES {
+            self.until_ms = Some(now_ms + Self::step_ms(self.rounds));
+            self.rounds = self.rounds.saturating_add(1);
+            self.failed = 0;
+        }
+    }
+
+    /// A state read back from disk. A lockout that ends later than the longest step allows
+    /// (the wall clock was set back) is cut to that step, so it can never last for days.
+    pub fn loaded(mut self, now_ms: u64) -> Self {
+        let max = now_ms + LOCKOUT_LADDER_MS[LOCKOUT_LADDER_MS.len() - 1];
+        if let Some(t) = self.until_ms.as_mut() {
+            *t = (*t).min(max);
+        }
+        self.failed = self.failed.min(LOCKOUT_FAILED_TRIES - 1);
+        self
+    }
+}
+
+/// The wait in short plain words: "1 minute", "5 minutes", "1 hour", "3 hours". Rounds up, so
+/// the user is never told to try again too early.
+pub fn wait_words(ms: u64) -> String {
+    let minutes = ms.div_ceil(60 * 1000).max(1);
+    if minutes < 60 {
+        let s = if minutes == 1 { "" } else { "s" };
+        return format!("{minutes} minute{s}");
+    }
+    let hours = minutes.div_ceil(60);
+    let s = if hours == 1 { "" } else { "s" };
+    format!("{hours} hour{s}")
+}
+
+/// Text shown while the short code is off (4.6), with the time left.
+pub fn lockout_notice(left_ms: u64) -> String {
+    format!(
+        "Too many wrong codes. Try again in {}.",
+        wait_words(left_ms)
+    )
+}
 
 /// What the pairing layer needs from one connection.
 pub trait PairTransport {
@@ -72,9 +153,6 @@ impl PairTransport for TransportInfo {
 
 /// Text of the notice after a failed try (4.6).
 pub const NOTICE_FAILED_TRY: &str = "Someone else tried this code";
-/// Text shown when the short code is off (4.6).
-pub const NOTICE_LOCKOUT: &str =
-    "Someone on this network keeps guessing the code. Use the QR code, or try again in an hour.";
 
 /// What the inviter shows after it opened a pairing.
 pub struct Opened {
@@ -107,6 +185,10 @@ pub struct Status {
     pub code_off: bool,
     /// Failed code tries over all pairings since the last success or lockout (4.6).
     pub failed_code_tries_in_a_row: u32,
+    /// Time left in the lockout, 0 when the short code is on.
+    pub lockout_left_ms: u64,
+    /// Lockouts since the last success.
+    pub lockouts: u32,
     pub active_connections: u32,
     /// The open pairing still holds the code or the QR secret in memory.
     pub holds_secrets: bool,
@@ -150,14 +232,13 @@ struct HostState {
     open: Option<Open>,
     serial: u64,
     active: u32,
-    /// Failed code tries over all pairings since the last success or lockout (4.6).
-    failed_in_a_row: u32,
-    code_off_until_ms: Option<u64>,
+    /// The lockout ladder (4.6).
+    lockout: Lockout,
 }
 
 impl HostState {
     fn code_off(&self, now_ms: u64) -> bool {
-        self.code_off_until_ms.is_some_and(|t| now_ms < t)
+        self.lockout.is_on(now_ms)
     }
 
     /// Records the end of a counted run that did not end with a correct `conf_b`.
@@ -167,11 +248,7 @@ impl HostState {
         }
         // The lockout counts every failed code try, also of a pairing that was cancelled or
         // replaced since, so neither stopping at 4 tries per code nor reopening escapes it (4.6).
-        self.failed_in_a_row += 1;
-        if self.failed_in_a_row >= LOCKOUT_FAILED_TRIES {
-            self.code_off_until_ms = Some(now_ms + LOCKOUT_MS);
-            self.failed_in_a_row = 0;
-        }
+        self.lockout.on_failure(now_ms);
         let Some(o) = self.open.as_mut().filter(|o| o.serial == serial) else {
             return;
         };
@@ -186,8 +263,9 @@ impl HostState {
     }
 }
 
-/// The inviter's pairing host. One per device for the whole agent run. The lockout count lives
-/// here, in memory only (4.6). Cheap to clone; all clones share one state.
+/// The inviter's pairing host. One per device for the whole agent run. The lockout ladder lives
+/// here; the agent saves it with [`Host::lockout`] and gives it back with [`Host::with_lockout`]
+/// after a restart (4.6). Cheap to clone; all clones share one state.
 #[derive(Clone, Default)]
 pub struct Host {
     inner: Arc<Mutex<HostState>>,
@@ -196,6 +274,18 @@ pub struct Host {
 impl Host {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A host that goes on with a saved lockout ladder (after an agent restart).
+    pub fn with_lockout(l: Lockout) -> Self {
+        let h = Self::default();
+        h.lock().lockout = l;
+        h
+    }
+
+    /// The lockout ladder, to save. Changes after failed code tries and after a success.
+    pub fn lockout(&self) -> Lockout {
+        self.lock().lockout
     }
 
     fn lock(&self) -> MutexGuard<'_, HostState> {
@@ -272,7 +362,9 @@ impl Host {
         let s = self.lock();
         let mut st = Status {
             code_off: s.code_off(now_ms),
-            failed_code_tries_in_a_row: s.failed_in_a_row,
+            failed_code_tries_in_a_row: s.lockout.failed,
+            lockout_left_ms: s.lockout.left_ms(now_ms),
+            lockouts: s.lockout.rounds,
             active_connections: s.active,
             ..Status::default()
         };
@@ -542,7 +634,8 @@ impl InviterRun {
                     o.code = None;
                     o.qr = None;
                     o.qr_by_source = HashMap::new();
-                    s.failed_in_a_row = 0;
+                    // A success goes back to the start of the ladder (4.6).
+                    s.lockout = Lockout::default();
                 }
                 None => {
                     drop(s);

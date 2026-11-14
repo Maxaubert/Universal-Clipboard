@@ -485,20 +485,26 @@ fn dropped_after_reply_stays_counted() {
 }
 
 #[test]
-fn lockout_after_fifteen_failed_tries() {
+fn lockout_after_five_failed_tries() {
     let mut w = World::new("lockout");
-    let mut now = T0;
-    for _ in 0..2 {
-        w.open(now);
-        kill_code(&mut w, now);
-        now += 1000;
-    }
-    assert_eq!(w.host.status(now).failed_code_tries_in_a_row, 10);
-    assert!(!w.host.status(now).code_off);
+    let now = T0;
     w.open(now);
-    kill_code(&mut w, now);
+    for mut run in wrong_tries(&w, 4, now) {
+        run.on_close();
+    }
+    assert_eq!(w.host.status(now).failed_code_tries_in_a_row, 4);
+    assert!(!w.host.status(now).code_off);
+    for mut run in wrong_tries(&w, 1, now) {
+        run.on_close();
+    }
     let st = w.host.status(now);
-    assert!(st.code_off);
+    assert!(st.code_off, "5 failed tries start the lockout");
+    assert_eq!(
+        st.lockout_left_ms,
+        60 * 1000,
+        "the first lockout is 1 minute"
+    );
+    assert_eq!((st.lockouts, st.failed_code_tries_in_a_row), (1, 0));
     // A new pairing shows only the QR code.
     let o = w.open(now + 1);
     assert!(o.code.is_none());
@@ -515,32 +521,194 @@ fn lockout_after_fifteen_failed_tries() {
     );
     assert_eq!(abort_reason(&step), Some(AbortReason::NotOpen));
     drop(run);
-    // QR still works during the lockout.
-    full_run(&mut w, &j, &PairSecret::Qr(o.qr_secret), Mode::Qr, now + 2).unwrap();
-    // After one hour the code is back.
-    let later = now + LOCKOUT_MS + 1;
+    assert_eq!(
+        w.host.status(now + 1).failed_code_tries_in_a_row,
+        0,
+        "a refused try is not a guess"
+    );
+    // After 1 minute the code is back, with 5 more tries.
+    let later = now + 60 * 1000;
     assert!(!w.host.status(later).code_off);
     assert!(w.open(later).code.is_some());
+    // QR works during a lockout too.
+    let o = w.open(later);
+    kill_code(&mut w, later);
+    assert!(w.host.status(later).code_off);
+    full_run(
+        &mut w,
+        &j,
+        &PairSecret::Qr(o.qr_secret),
+        Mode::Qr,
+        later + 1,
+    )
+    .unwrap();
+}
+
+/// One round: open a pairing at `now`, 5 wrong codes, and return the lockout time left. Checks
+/// that 4 wrong codes are not enough: every round gives 5 tries.
+fn lock_round(w: &mut World, now: u64) -> u64 {
+    assert!(!w.host.status(now).code_off, "the code is on at {now}");
+    w.open(now);
+    for mut run in wrong_tries(w, 4, now) {
+        run.on_close();
+    }
+    assert!(!w.host.status(now).code_off, "4 wrong codes do not lock");
+    for mut run in wrong_tries(w, 1, now) {
+        run.on_close();
+    }
+    let st = w.host.status(now);
+    assert!(st.code_off);
+    assert!(w.open(now).code.is_none(), "no code during the lockout");
+    st.lockout_left_ms
+}
+
+const MIN: u64 = 60 * 1000;
+const HOUR: u64 = 60 * MIN;
+
+/// Max's rule (2026-11-14): 5 tries, then 1 minute, 5 minutes, 1 hour, 3 hours, and 3 hours
+/// from then on. Every round gives 5 more tries.
+#[test]
+fn lockout_ladder_1m_5m_1h_3h_then_3h() {
+    let mut w = World::new("ladder");
+    let mut now = T0;
+    let want = [MIN, 5 * MIN, HOUR, 3 * HOUR, 3 * HOUR, 3 * HOUR];
+    for (i, d) in want.into_iter().enumerate() {
+        assert_eq!(lock_round(&mut w, now), d, "lockout {}", i + 1);
+        assert_eq!(w.host.status(now).lockouts, i as u32 + 1);
+        // Still off one ms before the end, back on at the end.
+        assert!(w.host.status(now + d - 1).code_off);
+        assert_eq!(w.host.status(now + d - 1).lockout_left_ms, 1);
+        now += d;
+        assert!(!w.host.status(now).code_off);
+    }
 }
 
 #[test]
-fn success_resets_failed_try_count() {
+fn success_resets_the_ladder() {
     let mut w = World::new("reset");
     let mut now = T0;
-    for _ in 0..2 {
-        w.open(now);
-        kill_code(&mut w, now);
-        now += 1000;
-    }
+    now += lock_round(&mut w, now);
+    now += lock_round(&mut w, now);
+    assert_eq!(w.host.status(now).lockouts, 2);
+    // 2 wrong tries, then the right code.
     let o = w.open(now);
+    for mut run in wrong_tries(&w, 2, now) {
+        run.on_close();
+    }
     let j = DeviceKey::from_seed(&arr32("joiner"));
     full_run(&mut w, &j, o.code.as_ref().unwrap(), Mode::Code, now).unwrap();
-    assert_eq!(w.host.status(now).failed_code_tries_in_a_row, 0);
-    for _ in 0..2 {
-        w.open(now);
-        kill_code(&mut w, now);
+    let st = w.host.status(now);
+    assert_eq!((st.lockouts, st.failed_code_tries_in_a_row), (0, 0));
+    assert_eq!(w.host.lockout(), Lockout::default());
+    // The next lockout is the first step again, after a full 5 tries.
+    assert_eq!(lock_round(&mut w, now), MIN);
+}
+
+#[test]
+fn qr_success_during_lockout_resets_the_ladder() {
+    let mut w = World::new("qrreset");
+    let now = T0;
+    lock_round(&mut w, now);
+    let o = w.open(now + 1);
+    let j = DeviceKey::from_seed(&arr32("joiner"));
+    full_run(&mut w, &j, &PairSecret::Qr(o.qr_secret), Mode::Qr, now + 2).unwrap();
+    assert!(!w.host.status(now + 2).code_off);
+    assert_eq!(w.host.lockout(), Lockout::default());
+}
+
+/// An agent restart keeps the ladder: the agent saves `Host::lockout` and starts with
+/// `Host::with_lockout`.
+#[test]
+fn ladder_survives_a_restart() {
+    let mut w = World::new("restart");
+    let mut now = T0;
+    now += lock_round(&mut w, now);
+    assert_eq!(lock_round(&mut w, now), 5 * MIN);
+    let saved = w.host.lockout();
+    // "Restart": a new host from the saved state.
+    w.host = Host::with_lockout(saved.loaded(now + MIN));
+    let st = w.host.status(now + MIN);
+    assert!(st.code_off, "the lockout goes on after a restart");
+    assert_eq!(st.lockout_left_ms, 4 * MIN);
+    assert!(w.open(now + MIN).code.is_none());
+    now += 5 * MIN;
+    assert_eq!(
+        lock_round(&mut w, now),
+        HOUR,
+        "the ladder goes on, not back to 1 minute"
+    );
+    // Failed tries of the current round survive too.
+    now += HOUR;
+    w.open(now);
+    for mut run in wrong_tries(&w, 3, now) {
+        run.on_close();
     }
-    assert!(!w.host.status(now).code_off);
+    w.host = Host::with_lockout(w.host.lockout().loaded(now));
+    w.open(now);
+    for mut run in wrong_tries(&w, 2, now) {
+        run.on_close();
+    }
+    assert_eq!(w.host.status(now).lockout_left_ms, 3 * HOUR);
+}
+
+#[test]
+fn loaded_lockout_is_cut_when_the_clock_went_back() {
+    let l = Lockout {
+        failed: 99,
+        rounds: 7,
+        until_ms: Some(T0 + 50 * HOUR),
+    };
+    let back = l.loaded(T0);
+    assert_eq!(back.until_ms, Some(T0 + 3 * HOUR));
+    assert_eq!(back.failed, LOCKOUT_FAILED_TRIES - 1);
+    assert_eq!(back.rounds, 7);
+}
+
+#[test]
+fn lockout_notice_says_the_time_left() {
+    assert_eq!(
+        lockout_notice(MIN),
+        "Too many wrong codes. Try again in 1 minute."
+    );
+    assert_eq!(
+        lockout_notice(5 * MIN),
+        "Too many wrong codes. Try again in 5 minutes."
+    );
+    assert_eq!(
+        lockout_notice(HOUR),
+        "Too many wrong codes. Try again in 1 hour."
+    );
+    assert_eq!(
+        lockout_notice(3 * HOUR),
+        "Too many wrong codes. Try again in 3 hours."
+    );
+    // Rounded up, never too early.
+    assert_eq!(wait_words(1), "1 minute");
+    assert_eq!(wait_words(MIN + 1), "2 minutes");
+    assert_eq!(wait_words(59 * MIN), "59 minutes");
+    assert_eq!(wait_words(HOUR + 1), "2 hours");
+    assert_eq!(wait_words(2 * HOUR + 30 * MIN), "3 hours");
+}
+
+/// A try counted before the lockout started that fails during it counts for the next round,
+/// but cannot start a second lockout on top of the first.
+#[test]
+fn tries_ending_during_a_lockout_carry_over() {
+    let mut w = World::new("carry");
+    let now = T0;
+    w.open(now);
+    let late = wrong_tries(&w, 3, now);
+    w.open(now); // a new code; the 3 runs of the old one are still running
+    for _ in 0..5 {
+        for mut run in wrong_tries(&w, 1, now) {
+            run.on_close();
+        }
+    }
+    assert_eq!(w.host.status(now).lockouts, 1);
+    drop(late); // these 3 end during the lockout
+    let st = w.host.status(now);
+    assert_eq!((st.lockouts, st.failed_code_tries_in_a_row), (1, 3));
+    assert_eq!(st.lockout_left_ms, MIN);
 }
 
 /// `n` failed code tries from one guesser against the open pairing. Returns the runs, which the
@@ -559,31 +727,29 @@ fn wrong_tries(w: &World, n: usize, now: u64) -> Vec<InviterRun> {
         .collect()
 }
 
-/// M3-SEC-1: a guesser that stops at 4 tries per code never kills a code, but is still locked
-/// out after 15 failed tries in all.
+/// M3-SEC-1: the lockout counts wrong guesses, not dead codes. A guesser that stops at 4 tries
+/// per code never kills a code, but is still locked out after 5 failed tries in all.
 #[test]
 fn four_tries_per_code_still_locks_out() {
     let mut w = World::new("four");
-    let mut now = T0;
-    for i in 1..=3 {
-        w.open(now);
-        for mut run in wrong_tries(&w, 4, now) {
-            run.on_close();
-        }
-        let st = w.host.status(now);
-        assert!(!st.code_dead, "4 tries never kill the code");
-        assert!(!st.code_off, "not yet after {} tries", 4 * i);
-        assert_eq!(st.failed_code_tries_in_a_row, 4 * i);
-        now += 1000;
-    }
+    let now = T0;
     w.open(now);
-    for mut run in wrong_tries(&w, 3, now) {
+    for mut run in wrong_tries(&w, 4, now) {
         run.on_close();
     }
     let st = w.host.status(now);
-    assert!(st.code_off, "15 failed tries start the lockout");
+    assert!(!st.code_dead, "4 tries never kill the code");
+    assert!(!st.code_off);
+    assert_eq!(st.failed_code_tries_in_a_row, 4);
+    w.open(now + 1000); // a new code
+    for mut run in wrong_tries(&w, 1, now + 1000) {
+        run.on_close();
+    }
+    let st = w.host.status(now + 1000);
+    assert!(st.code_off, "5 failed tries start the lockout");
+    assert!(!st.code_dead, "the new code had only 1 try");
     assert_eq!(st.failed_code_tries_in_a_row, 0);
-    assert!(w.open(now + 1).code.is_none());
+    assert!(w.open(now + 1001).code.is_none());
 }
 
 /// M3-SEC-1: a failed try counts even when its pairing was cancelled or replaced before the
@@ -592,23 +758,28 @@ fn four_tries_per_code_still_locks_out() {
 fn failed_tries_of_closed_pairings_count() {
     let mut w = World::new("closed");
     w.open(T0);
-    let runs = wrong_tries(&w, 4, T0);
+    let runs = wrong_tries(&w, 2, T0);
     w.host.cancel();
     drop(runs);
-    assert_eq!(w.host.status(T0).failed_code_tries_in_a_row, 4);
+    assert_eq!(w.host.status(T0).failed_code_tries_in_a_row, 2);
     w.open(T0);
-    let runs = wrong_tries(&w, 4, T0);
+    let runs = wrong_tries(&w, 2, T0);
     w.open(T0); // "Add a device" again replaces the pairing
     drop(runs);
     let st = w.host.status(T0);
-    assert_eq!(st.failed_code_tries_in_a_row, 8);
+    assert_eq!(st.failed_code_tries_in_a_row, 4);
     assert_eq!(
         st.failed_code_tries, 0,
         "the new pairing has no failed tries"
     );
+    w.open(T0);
+    drop(wrong_tries(&w, 1, T0));
+    assert!(
+        w.host.status(T0).code_off,
+        "the 5th counts over all pairings"
+    );
 }
 
-/// M3-SEC-5: junk QR hellos from one address use up only that address's tries.
 #[test]
 fn qr_tries_are_counted_per_address() {
     let mut w = World::new("qrdos");

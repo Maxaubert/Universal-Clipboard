@@ -138,8 +138,8 @@ export function makeWorld(s: Scenario): World {
       code: null,
       qr: w.offer.qr,
       expires_ms: 0,
-      notice:
-        'Someone on this network keeps guessing the code. Use the QR code, or try again in an hour.',
+      notice: 'Too many wrong codes. Try again in 5 minutes.',
+      lockout_ms: 5 * 60 * 1000,
     };
   }
   if (s === 'down') w.down = true;

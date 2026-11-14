@@ -42,6 +42,8 @@
         void store.refresh().then(() => store.go('connected', { replace: true }));
       } else if (e.event === 'pair.tried') {
         tried = String(e.data.notice ?? '');
+        // The 5th wrong code starts a lockout: the code is gone, the QR code stays.
+        if (e.data.lockout && offer) offer = { ...offer, code: null, notice: String(e.data.lockout) };
       } else if (e.event === 'pair.closed' && e.data.reason === 'expired') {
         void start();
       }

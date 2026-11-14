@@ -22,7 +22,9 @@ use uc_net::{LanBook, Link, Net, NetConfig, NetEvent, NoPath, PathState, Policy,
 use uc_pair::chain::{Graph, GroupSecret, Inserted, SelfAction, self_action};
 use uc_pair::frame::{AbortReason, T_CONFIRM};
 use uc_pair::gate::{Gate, UNKNOWN_PEER_MAX_BYTES, UNKNOWN_PEER_MAX_CHANGES};
-use uc_pair::session::{GroupCtx, Host, InviterRun, InviterStep, NOTICE_FAILED_TRY};
+use uc_pair::session::{
+    GroupCtx, Host, InviterRun, InviterStep, Lockout, NOTICE_FAILED_TRY, lockout_notice,
+};
 
 use crate::autostart::Autostart;
 use crate::clip::{Backend, Changes};
@@ -30,7 +32,7 @@ use crate::ipc::{self, Event, Incoming, IpcError, Reply};
 use crate::pairing::{self, PairMsg};
 use crate::profile::Profile;
 use crate::settings;
-use crate::state::{Activity, Firewall, Notice, Pause, StateFile};
+use crate::state::{Activity, Firewall, Notice, PairLockout, Pause, StateFile};
 
 const SECRET_NAME: &str = "group-secret";
 const PREV_SECRET_NAME: &str = "group-secret-prev";
@@ -357,6 +359,7 @@ impl Core {
         } else {
             profile.default_port()
         };
+        let host = Host::with_lockout(Lockout::from(state.pair_lockout).loaded(now_ms()));
         let mut core = Core {
             profile,
             dir,
@@ -379,7 +382,7 @@ impl Core {
             ifaces: Vec::new(),
             vpn_up: false,
             port,
-            host: Host::new(),
+            host,
             pair_open: false,
             runs: HashMap::new(),
             run_added: HashMap::new(),
@@ -715,6 +718,8 @@ impl Core {
             self.emit("status", json!({"paused": false}));
             self.dirty = true;
         }
+        // Runs that ended outside a pairing message can still have moved the lockout ladder.
+        self.save_lockout();
         // The open pairing ended by time.
         if self.pair_open && !self.host.is_open(wall) {
             self.pair_open = false;
@@ -1277,6 +1282,7 @@ impl Core {
                     r.on_close();
                 }
                 let st = self.host.status(now_ms());
+                self.save_lockout();
                 if let Some(name) = self.run_added.remove(&run) {
                     self.pair_open = false;
                     if let Some(d) = &self.disc {
@@ -1289,6 +1295,9 @@ impl Core {
                         json!({
                             "notice": NOTICE_FAILED_TRY,
                             "code_dead": st.code_dead,
+                            "lockout": (st.lockout_left_ms > 0)
+                                .then(|| lockout_notice(st.lockout_left_ms)),
+                            "lockout_ms": st.lockout_left_ms,
                         }),
                     );
                 }
@@ -1307,6 +1316,15 @@ impl Core {
                     p.answer(r.map(|n| json!({ "name": n })));
                 }
             }
+        }
+    }
+
+    /// Saves the lockout ladder when it changed, so an agent restart keeps it (protocol 4.6).
+    fn save_lockout(&mut self) {
+        let l = PairLockout::from(self.host.lockout());
+        if l != self.state.pair_lockout {
+            self.state.pair_lockout = l;
+            self.save();
         }
     }
 
@@ -1342,6 +1360,7 @@ impl Core {
             self.state.notice = None;
             self.after_graph_change();
         }
+        self.save_lockout();
         step
     }
 
@@ -1709,13 +1728,14 @@ impl Core {
                 .to_text(),
             )
         };
-        let lockout = self.host.status(now_ms()).code_off;
+        let left = self.host.status(now_ms()).lockout_left_ms;
         Ok(json!({
             "code": opened.code.as_ref().and_then(pairing::show_code),
             "qr": qr,
             "expires_ms": opened.expires_ms,
             "port": port,
-            "notice": if lockout { Some(uc_pair::session::NOTICE_LOCKOUT) } else { None },
+            "notice": (left > 0).then(|| lockout_notice(left)),
+            "lockout_ms": left,
         }))
     }
 
@@ -2126,8 +2146,8 @@ impl Core {
         lines.push(format!("Links open: {}", self.connected()));
         let ps = self.host.status(now_ms());
         lines.push(format!(
-            "Pairing: open={} code tries={} lockout={}",
-            ps.open, ps.tries_code, ps.code_off
+            "Pairing: open={} code tries={} lockout={} lockout ms={} lockouts={}",
+            ps.open, ps.tries_code, ps.code_off, ps.lockout_left_ms, ps.lockouts
         ));
         for a in self.state.activity.iter().rev().take(10) {
             lines.push(format!(

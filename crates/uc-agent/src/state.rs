@@ -45,6 +45,39 @@ pub enum Notice {
     Removed,
 }
 
+/// The pairing-code lockout ladder (protocol 4.6). Counts and a time only. Kept here so an
+/// agent restart does not clear it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PairLockout {
+    /// Failed code tries since the last lockout or success.
+    pub failed: u32,
+    /// Lockouts since the last success.
+    pub rounds: u32,
+    /// Wall time (ms) when the current lockout ends.
+    pub until_ms: Option<u64>,
+}
+
+impl From<uc_pair::session::Lockout> for PairLockout {
+    fn from(l: uc_pair::session::Lockout) -> Self {
+        PairLockout {
+            failed: l.failed,
+            rounds: l.rounds,
+            until_ms: l.until_ms,
+        }
+    }
+}
+
+impl From<PairLockout> for uc_pair::session::Lockout {
+    fn from(l: PairLockout) -> Self {
+        uc_pair::session::Lockout {
+            failed: l.failed,
+            rounds: l.rounds,
+            until_ms: l.until_ms,
+        }
+    }
+}
+
 /// One line of "Last activity". Kind, direction, device and time. Never content.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Activity {
@@ -86,6 +119,8 @@ pub struct StateFile {
     pub setup_done: bool,
     /// Last activity, newest last, at most [`ACTIVITY_MAX`].
     pub activity: Vec<Activity>,
+    /// The pairing-code lockout ladder.
+    pub pair_lockout: PairLockout,
 }
 
 /// Lines of "Last activity" kept.
@@ -152,6 +187,36 @@ mod tests {
         std::fs::write(StateFile::path(&dir), b"{not json").unwrap();
         assert_eq!(StateFile::load(&dir), StateFile::default());
         assert!(dir.join("state.json.bad").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pair_lockout_survives_a_restart() {
+        use uc_pair::session::{Lockout, lockout_notice};
+        let dir = std::env::temp_dir().join(format!("uc-state-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // An old file without the field loads with a fresh ladder.
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(StateFile::path(&dir), br#"{"version":1,"port":7}"#).unwrap();
+        assert_eq!(StateFile::load(&dir).pair_lockout, PairLockout::default());
+        // Two lockouts so far, the second (5 minutes) running.
+        let now = 1_000_000;
+        let l = Lockout {
+            failed: 2,
+            rounds: 2,
+            until_ms: Some(now + 5 * 60 * 1000),
+        };
+        let s = StateFile {
+            pair_lockout: l.into(),
+            ..StateFile::default()
+        };
+        s.save(&dir).unwrap();
+        let back: Lockout = StateFile::load(&dir).pair_lockout.into();
+        assert_eq!(back.loaded(now), l);
+        assert_eq!(
+            lockout_notice(back.left_ms(now)),
+            "Too many wrong codes. Try again in 5 minutes."
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
