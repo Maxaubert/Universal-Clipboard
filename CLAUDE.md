@@ -5,6 +5,7 @@ Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 fir
 Desktop design (locked): `docs/design/desktop`.
 Core library choices (M1): `docs/core.md`.
 Networking choices (M2, plain QUIC, LAN only): `docs/net.md`. Spike S1 so far: `docs/spikes/s1-interfaces.md`.
+Windows clipboard backend and `tools/winhost` (M4): `docs/windows.md`.
 Pairing and membership protocol (signed off, M3 implements it word for word): `docs/protocol.md`.
 Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 
@@ -19,6 +20,7 @@ Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 - Typecheck/lint: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings`
 - Unit: `cargo nextest run --workspace --no-tests=pass` (or `cargo test --workspace`)
 - Network lab (plan 6.3, Linux root, WSL): `wsl -d Ubuntu -u root -- bash tools/netsim/run-wsl.sh`
+- Real Windows clipboard tests: `crates/uc-clip-win/tests/real.rs`, run by nextest inside a private window station (winhost).
 - E2E (headless): none yet    Run when: apps/desktop/**, crates/uc-agent/**
 - Build / package: `cargo build --workspace`   Artifact: n/a (installer tool not chosen yet, ask first)
 - Known failures to tolerate: none
