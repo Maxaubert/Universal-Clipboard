@@ -81,11 +81,9 @@ export function makeWorld(s: Scenario): World {
           why: 'The app works after a restart.',
           state: 'done',
         },
+        // macOS lists only "Start at login" unless macOS blocks the network or paste.
         ...(isMac
-          ? [
-              { row: 'local-network', title: 'Find devices on your network', why: 'Needed to reach devices on your network.', state: 'done' as const },
-              { row: 'paste', title: 'Read what you copy', why: 'The app must read the clipboard without asking each time.', state: 'done' as const },
-            ]
+          ? []
           : [
               {
                 row: 'firewall',
@@ -111,7 +109,7 @@ export function makeWorld(s: Scenario): World {
       reason: 'This device has no other devices yet.',
     };
     w.setup.done = false;
-    w.setup.rows[1].state = 'todo';
+    for (const r of w.setup.rows) if (r.row === 'firewall' || (isMac && r.row === 'autostart')) r.state = 'todo';
     w.settings['start-at-login'].value = 'off';
   }
   if (s === 'paused') {
@@ -127,7 +125,8 @@ export function makeWorld(s: Scenario): World {
       fix_code: 'firewall',
       connected: 0,
     };
-    w.setup.rows[1].state = 'refused';
+    const fw = w.setup.rows.find((r) => r.row === 'firewall');
+    if (fw) fw.state = 'refused';
   }
   if (s === 'vpn') {
     w.status = {

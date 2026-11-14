@@ -115,9 +115,6 @@ pub struct StateFile {
     pub notice: Option<Notice>,
     /// The Windows firewall row.
     pub firewall: Firewall,
-    /// macOS: the user went through the "Find devices on your network" row. macOS has no
-    /// call that says whether Local Network access was granted, so the row is done once asked.
-    pub local_network_asked: bool,
     /// `uc setup` or the window's setup finished once.
     pub setup_done: bool,
     /// Last activity, newest last, at most [`ACTIVITY_MAX`].
