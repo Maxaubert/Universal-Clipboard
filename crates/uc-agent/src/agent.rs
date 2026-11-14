@@ -156,6 +156,7 @@ impl Pending {
 /// Inputs from other threads.
 enum Wake {
     ClipChanged,
+    #[cfg_attr(not(windows), allow(dead_code))]
     Resume,
 }
 

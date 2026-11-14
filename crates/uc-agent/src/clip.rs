@@ -189,6 +189,21 @@ impl Backend {
 
     /// Test profiles: the current text, if any.
     pub fn debug_text(&mut self) -> Option<String> {
+        // Our own writes carry the marker, and the macOS and Linux backends do not read the
+        // content of such a clip, so read the text type directly there.
+        #[cfg(target_os = "macos")]
+        if let Backend::Mac(m) = self {
+            return m.text_for_test();
+        }
+        #[cfg(target_os = "linux")]
+        if let Backend::Linux(l) = self {
+            return l
+                .read_type("text/plain;charset=utf-8")
+                .ok()
+                .flatten()
+                .or_else(|| l.read_type("UTF8_STRING").ok().flatten())
+                .map(|b| String::from_utf8_lossy(&b).into_owned());
+        }
         let snap = self.read().ok()?;
         snap.parts
             .into_iter()

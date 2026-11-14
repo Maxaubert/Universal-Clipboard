@@ -267,6 +267,18 @@ impl MacClipboard {
         })
     }
 
+    /// The text on a named pasteboard, read even when our marker is on it. For the agent's
+    /// test mode only; refused on the general pasteboard.
+    pub fn text_for_test(&self) -> Option<String> {
+        if self.is_general() {
+            return None;
+        }
+        autoreleasepool(|_| {
+            self.data(types::TEXT)
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+        })
+    }
+
     /// True if this is the user's general pasteboard.
     pub fn is_general(&self) -> bool {
         self.name() == GENERAL_NAME
