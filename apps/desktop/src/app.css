@@ -1,0 +1,57 @@
+@import '@fontsource/figtree/latin-400.css';
+@import '@fontsource/figtree/latin-500.css';
+@import '@fontsource/figtree/latin-600.css';
+@import '@fontsource/figtree/latin-700.css';
+
+:root { color-scheme: light; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: #EDEBE8;
+  font-family: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #1D1C1A;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+button:focus-visible, input:focus-visible { outline: 2px solid #1D1C1A; outline-offset: 2px; }
+.wc:hover { background: #E2DFDA; }
+.wcx:hover { background: #C42B1C; color: #FFFFFF; }
+.tile:hover { background: #FBFAF9; }
+
+/* Browser and test build: the window sits on a 540 x 720 stage, like the design boards. */
+.stage {
+  width: 540px; height: 720px; box-sizing: border-box; padding: 40px;
+  background: #EDEBE8; display: flex; align-items: center; justify-content: center;
+}
+.card {
+  position: relative; width: 460px; height: 640px; flex: none; box-sizing: border-box;
+  background: #F7F6F4; border: 1px solid #CFCBC5; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(40,35,30,0.06), 0 16px 40px rgba(40,35,30,0.12);
+  display: flex; flex-direction: column;
+}
+/* Real window: the card is the window. */
+html.tauri body { background: #F7F6F4; overflow: hidden; }
+html.tauri .stage { width: 100vw; height: 100vh; padding: 0; background: #F7F6F4; }
+html.tauri .card { width: 100vw; height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
+
+.drag { position: absolute; top: 0; left: 0; right: 108px; height: 36px; z-index: 0; }
+.body { flex: 1; display: flex; flex-direction: column; min-height: 0; pointer-events: none; position: relative; z-index: 1; }
+/* The drag strip sits under the screen. Only controls take the mouse, so empty space at the top drags the window. */
+.body button, .body input, .body [role='switch'], .body a { pointer-events: auto; }
+h1 { margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+.btn {
+  height: 46px; width: 100%; border: 0; border-radius: 10px; background: #1D1C1A; color: #FFFFFF;
+  font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.btn.ghost { background: #FFFFFF; color: #1D1C1A; border: 1px solid #BDB8B1; }
+.btn:disabled { background: #FFFFFF; color: #6E6A64; border: 1px solid #BDB8B1; }
+.link {
+  border: 0; background: transparent; padding: 6px 4px; color: #1D1C1A; font-size: 14px;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.iconbtn {
+  width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; color: #1D1C1A;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.err { color: #B42318; font-size: 13.5px; line-height: 1.4; text-align: center; }
+.dot { box-sizing: border-box; flex: none; width: 8px; height: 8px; border-radius: 50%; }

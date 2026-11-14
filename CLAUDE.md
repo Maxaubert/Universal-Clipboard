@@ -2,7 +2,7 @@
 
 Clipboard sync between Windows, macOS, Linux, iOS and Android. Rust workspace in `crates/`.
 Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 first).
-Desktop design (locked): `docs/design/desktop`.
+Desktop design (locked): `docs/design/desktop`. Desktop window (M8b): `docs/desktop.md`.
 Core library choices (M1): `docs/core.md`.
 Networking choices (M2, plain QUIC, LAN only): `docs/net.md`. Spike S1 so far: `docs/spikes/s1-interfaces.md`.
 Windows clipboard backend and `tools/winhost` (M4): `docs/windows.md`.
@@ -26,10 +26,11 @@ Installers, firewall helper, self-update, keys and releases (M9): `docs/install.
 - Network lab (plan 6.3, Linux root, WSL): `wsl -d Ubuntu -u root -- bash tools/netsim/run-wsl.sh`
 - Real Windows clipboard tests: `crates/uc-clip-win/tests/real.rs`, run by nextest inside a private window station (winhost).
 - E2E (headless): multi-agent tests `cargo nextest run -p uc-cli` (real agents on loopback, paired through `uc`; one in winhost on Windows; `tests/update.rs` = N, broken N+1, rollback). Linux live agents: `sh crates/uc-clip-linux/live/docker.sh`. Cross-OS runner `tools/e2e/cross-os.ps1` is PENDING (no lab VMs). Run when: apps/desktop/**, crates/uc-agent/**, crates/uc-cli/**
+- Desktop UI: in `apps/desktop`: `npm ci && npm run check && npm test && npm run e2e` (headless; screenshots compared with the design, 1%). Shell: `cd apps/desktop/src-tauri && cargo test` and `npx tauri build --no-bundle` (never run it on screen). The shell is not in the root workspace.
 - Build / package: `cargo build --release -p uc-agent -p uc-cli`, then `pwsh packaging/windows/build.ps1 -Version X -Bin <target>/release -Out dist` (NSIS + MSIX), `sh packaging/macos/build-app.sh X <bin> dist` (on the Mac: `SKIP_DMG=1`), `wsl -d Ubuntu -- sh packaging/linux/wsl-build.sh X` (.deb, built `--no-default-features`)   Artifact: `dist/` (`*-setup.exe`, `*.msix`, `*.dmg`, `*.app.tar.gz`, `*.deb`)
-- Install tests: CI only (`package.yml`: `packaging/windows/test-install.ps1`, DMG mount check) and Docker for the .deb (`packaging/linux/test-deb.sh`). Never install on Max's PC or Mac.
+- Install tests: CI (`package.yml`: `packaging/windows/test-install.ps1`, DMG mount check) and Docker for the .deb (`packaging/linux/test-deb.sh`). Install on Max's PC only as the install-before-merge step.
 - Known failures to tolerate: none
 - Version source: `Cargo.toml` (`workspace.package.version`)   Release: push a tag `vX.Y.Z` (must match Cargo.toml): `release.yml` builds, waits for approval in environment `release`, signs `latest.json` at 10%, makes a DRAFT release. `rollout.yml` raises the rollout.
-- Install locally after merge: not yet (no window until M8b; ask Max first)   Confirm version: `uc --version`, `uc status --json` (`version`)
+- Install locally before merge: build NSIS with the window (`Universal Clipboard.exe` from `apps/desktop` in -Bin), run `<setup.exe> /S`   Confirm version: `uc --version`, `uc status --json` (`version`)
 - Deploy: none
 - Signing: OS signing none yet (Windows exe unsigned, macOS ad-hoc, notarization steps in `docs/install.md`). Update manifests: minisign-format updater key, secret outside the repo (`~/.config/uclip-release/updater.key`, and the `release` environment secret `UCLIP_UPDATER_KEY`).
