@@ -83,6 +83,78 @@ VIAddVersionKey "LegalCopyright" "MIT OR Apache-2.0"
 
 Var IsUpdate
 Var AddFirewall
+Var Busy
+Var Tries
+Var PS
+
+; Closing the app before its files are replaced (bug 2026-11-14). The old order (stop the
+; agent, then close the window) let the open window start the agent again, so uc-agent.exe was
+; in use, NSIS skipped it without an error and the old agent kept running. Now: close the
+; window first, then stop the agent, then wait until nothing of ours runs from $INSTDIR
+; (close-app.ps1, path-filtered, "taskkill /F" only as the last resort). Then every program
+; file must be free; a file that cannot be replaced fails the install (exit code 2 in silent
+; mode, Retry/Cancel otherwise). It never leaves a mix of old and new files without saying so.
+
+; $PS = the 64-bit Windows PowerShell when there is one (this installer is 32-bit).
+!macro UcFindPowerShell
+  StrCpy $PS "$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+  ${If} ${FileExists} "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+    StrCpy $PS "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+  ${EndIf}
+!macroend
+
+; Run one phase of close-app.ps1 (unpacked to $PLUGINSDIR). Leaves the exit code in $R0
+; ("error" when PowerShell could not start). "$INSTDIR\." avoids a trailing backslash before
+; the closing quote.
+!macro UcCloseApp PHASE EXTRA
+  nsExec::ExecToStack '"$PS" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\close-app.ps1" -Dir "$INSTDIR\." -Phase ${PHASE} ${EXTRA}'
+  Pop $R0
+  Pop $R1
+  ${If} $R1 != ""
+    DetailPrint "$R1"
+  ${EndIf}
+!macroend
+
+; Add NAME to $Busy when it is there and cannot be opened for writing (a running program).
+!macro UcBusyFile NAME
+  ${If} ${FileExists} "$INSTDIR\${NAME}"
+    ClearErrors
+    FileOpen $R9 "$INSTDIR\${NAME}" a
+    ${If} ${Errors}
+      StrCpy $Busy "$Busy ${NAME};"
+    ${Else}
+      FileClose $R9
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; Remove an old program file before the copy, so a copy that fails leaves the file missing
+; (checked after the copy) instead of silently old.
+!macro UcDeleteOld NAME
+  ${If} ${FileExists} "$INSTDIR\${NAME}"
+    Delete "$INSTDIR\${NAME}"
+    ${If} ${FileExists} "$INSTDIR\${NAME}"
+      StrCpy $Busy "$Busy ${NAME};"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; The new file must be there after the copy.
+!macro UcMustExist NAME
+  ${IfNot} ${FileExists} "$INSTDIR\${NAME}"
+    StrCpy $Busy "$Busy ${NAME};"
+  ${EndIf}
+!macroend
+
+; Stop with an error: exit code 2, and a message box unless silent.
+!macro UcFail TEXT
+  DetailPrint "${TEXT}"
+  SetErrorLevel 2
+  ${IfNot} ${Silent}
+    MessageBox MB_OK|MB_ICONSTOP "${TEXT}"
+  ${EndIf}
+  Abort "${TEXT}"
+!macroend
 
 Function .onInit
   StrCpy $IsUpdate "0"
@@ -111,18 +183,77 @@ Function OpenApp
 FunctionEnd
 
 Section "Install"
-  ; Stop what runs from an older install, so its files can be replaced.
-  ${If} $IsUpdate == "0"
-  ${AndIf} ${FileExists} "$INSTDIR\uc-agent.exe"
-    nsExec::Exec '"$INSTDIR\uc-agent.exe" --stop'
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\close-app.ps1" "close-app.ps1"
+  !insertmacro UcFindPowerShell
+  StrCpy $Tries 0
+
+  ; Stop what runs from an older install, so its files can be replaced (order: see above).
+  close_app:
+  ; 1. The window first, so nothing starts the agent again. (In an update the agent is
+  ;    stopped already, and the helper's marker keeps the window from starting it.)
+  !insertmacro UcCloseApp window ""
+  ${If} $R0 != "0"
+  ${AndIf} $R0 != "10"
+    ; close-app.ps1 did not run: the old way for the window; the file check below decides.
+    nsExec::Exec 'taskkill /IM "${UI_EXE}"'
     Pop $0
+    Sleep 2000
   ${EndIf}
-  nsExec::Exec 'taskkill /IM "${UI_EXE}"'
-  Pop $0
+  ; 2. The agent (not for /UPDATE: the helper stopped it), 3. wait, end what is left.
+  ${If} $IsUpdate == "0"
+    !insertmacro UcCloseApp rest "-StopAgent"
+    ${If} $R0 != "0"
+    ${AndIf} $R0 != "10"
+    ${AndIf} ${FileExists} "$INSTDIR\uc-agent.exe"
+      nsExec::Exec '"$INSTDIR\uc-agent.exe" --stop'
+      Pop $0
+    ${EndIf}
+  ${Else}
+    !insertmacro UcCloseApp rest ""
+  ${EndIf}
+
+  ; 4. Every program file must be free, or nothing is replaced.
+  StrCpy $Busy ""
+  !insertmacro UcBusyFile "uc-agent.exe"
+  !insertmacro UcBusyFile "uc.exe"
+  !insertmacro UcBusyFile "uclip.exe"
+  !insertmacro UcBusyFile "${UI_EXE}"
+  ${If} $Busy == ""
+    ; Free: remove the old program files (an older "uclip.exe" is made again by the hook).
+    !insertmacro UcDeleteOld "uc-agent.exe"
+    !insertmacro UcDeleteOld "uc.exe"
+    !insertmacro UcDeleteOld "uclip.exe"
+    !insertmacro UcDeleteOld "${UI_EXE}"
+  ${EndIf}
+  ${If} $Busy != ""
+    IntOp $Tries $Tries + 1
+    DetailPrint "In use, cannot be replaced:$Busy"
+    ${If} ${Silent}
+      ${If} $Tries < 3
+        Sleep 1000
+        Goto close_app
+      ${EndIf}
+    ${Else}
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "${NAME} is still running, so these files cannot be replaced:$Busy$\r$\n$\r$\nClose it and click Retry." IDRETRY close_app
+    ${EndIf}
+    !insertmacro UcFail "${NAME} is still running, so it was not updated. Close it and run the installer again."
+  ${EndIf}
 
   SetOutPath "$INSTDIR"
-  ; An older "uclip.exe" (renamed "uc.exe") is replaced by the hook below.
+  SetOverwrite on
   File /r "${SRC}\*.*"
+
+  ; 5. Every new program file is there (the old ones were removed above).
+  StrCpy $Busy ""
+  !insertmacro UcMustExist "uc-agent.exe"
+  !insertmacro UcMustExist "uc.exe"
+  !if /FileExists "${SRC}\${UI_EXE}"
+    !insertmacro UcMustExist "${UI_EXE}"
+  !endif
+  ${If} $Busy != ""
+    !insertmacro UcFail "These files could not be written:$Busy The install is incomplete. Run the installer again."
+  ${EndIf}
   File "/oname=icon.ico" "..\..\assets\icon.ico"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -176,6 +307,17 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\close-app.ps1" "close-app.ps1"
+  !insertmacro UcFindPowerShell
+  ; 0. Close the window first: an open window would start the agent again after the hook
+  ;    stopped it, and that agent would make the state folder and the Run value again.
+  !insertmacro UcCloseApp window ""
+  ${If} $R0 != "0"
+  ${AndIf} $R0 != "10"
+    nsExec::Exec 'taskkill /IM "${UI_EXE}"'
+    Pop $0
+  ${EndIf}
   ; 1. Tell the group (2 s), stop the agent, remove start at login, state and keys.
   ${If} ${FileExists} "$INSTDIR\uc-agent.exe"
     nsExec::ExecToStack '"$INSTDIR\uc-agent.exe" --uninstall-hook --dir "$INSTDIR"'
@@ -183,10 +325,13 @@ Section "Uninstall"
     Pop $1
     DetailPrint "$1"
   ${EndIf}
-  nsExec::Exec 'taskkill /IM "${UI_EXE}"'
-  Pop $0
-  nsExec::Exec 'taskkill /F /IM "uc-agent.exe"'
-  Pop $0
+  ; 2. Wait for what is left from this folder; end it as the last resort.
+  !insertmacro UcCloseApp rest ""
+  ${If} $R0 != "0"
+  ${AndIf} $R0 != "10"
+    nsExec::Exec 'taskkill /F /IM "uc-agent.exe"'
+    Pop $0
+  ${EndIf}
 
   ; 2. The firewall rule needs an administrator: offer it (plan 8.5), never force it.
   ${If} ${FileExists} "$INSTDIR\uc-agent.exe"
