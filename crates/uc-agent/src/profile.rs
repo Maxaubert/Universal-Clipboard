@@ -12,6 +12,7 @@
 //! | `UCLIP_TEST_LOOPBACK=127.0.0.n` | bind only this loopback address, no mDNS |
 //! | `UCLIP_TEST_PAIR_ADDRS=ip:port,...` | where a joiner looks for the inviter (no mDNS on loopback) |
 //! | `UCLIP_TEST_FAST=1` | short timers |
+//! | `UCLIP_TEST_NO_LAN=1` | the only interface is a Hyper-V internal switch: no socket, the "no network it can use" path (used when `UCLIP_TEST_LOOPBACK` is not set) |
 
 use std::path::PathBuf;
 

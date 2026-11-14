@@ -57,6 +57,32 @@ fn windows_pc_with_hyperv_wsl_openvpn_surfshark_bluetooth() {
 }
 
 #[test]
+fn windows_pc_with_nic_on_hyperv_external_switch() {
+    // Max's PC, 2026-11-14 (later the same day): the Realtek 5GbE is bound to the Hyper-V
+    // external switch "uc-lan", so the NIC has no address and the host's LAN address
+    // (192.168.0.139/24, gateway 192.168.0.1) is on vEthernet (uc-lan). Before the fix the
+    // agent bound no socket at all here.
+    let l = load("ifaces-windows-pc-vswitch.json", Os::Windows);
+    let usable = ifaces::usable(&l);
+    assert_eq!(usable.len(), 1, "{:?}", usable_names(&l));
+    assert!(usable[0].description.starts_with("vEthernet (uc-lan)"));
+    for n in ["vEthernet (Default Switch)", "vEthernet (WSL"] {
+        assert_eq!(
+            kind_of(&l, |i| i.description.starts_with(n)),
+            vec![Kind::Virtual],
+            "{n}"
+        );
+    }
+    assert_eq!(
+        kind_of(&l, |i| i.description.contains("OpenVPN")),
+        vec![Kind::Vpn, Kind::Vpn]
+    );
+    assert!(!ifaces::vpn_up(&l));
+    // The old PC fixture (NIC with its own address, no gateways recorded) is unchanged: see
+    // `windows_pc_with_hyperv_wsl_openvpn_surfshark_bluetooth`.
+}
+
+#[test]
 fn macos_mini_with_system_utuns_and_thunderbolt_bridge() {
     // Max's Mac mini (macOS 27.2), 2026-11-14: en0 Ethernet and en1 Wi-Fi up, Thunderbolt
     // ports en2/en3/en7 in bridge0, eight utun system tunnels with only link-local addresses,

@@ -39,6 +39,14 @@ keeps it out.
 | WSL Ubuntu 26.04 | eth0 (hv_netvsc) | lo | |
 | WSL netns | (veth, forced in tests) | wg0 (WireGuard), bridge, dummy | |
 
+**Finding (fixed 2026-11-14), Max's PC with an external switch:** the Realtek 5GbE was bound
+to a Hyper-V external switch `uc-lan`. The NIC then has no address, and the host's only LAN
+address (192.168.0.139/24, gateway 192.168.0.1) is on `vEthernet (uc-lan)` ("Hyper-V Virtual
+Ethernet Adapter #3"). The classifier called every vEthernet `Virtual`, so the agent bound no
+socket. Now a Hyper-V host adapter with a private IPv4 default gateway in its own subnet is
+`Physical`; Default Switch and WSL (no gateway) stay `Virtual`. Fixture
+`ifaces-windows-pc-vswitch.json`; rule in `docs/net.md` (Sockets and interfaces).
+
 **Finding (fixed):** macOS has 4 to 8 `utun` system tunnels up at all times, each with only an
 `fe80::` address (iCloud Private Relay, Continuity and similar). Counting them as "a VPN is up"
 would show the VPN help on every Mac. The rule now needs a non-link-local address on the VPN

@@ -343,3 +343,38 @@ fn five_wrong_codes_lock_out_and_a_restart_keeps_it() {
     let _ = a.uc(&["pair", "cancel"]);
     let _ = show.wait();
 }
+
+/// No usable network on this device (2026-11-14, Max's PC: every adapter was skipped, so no
+/// socket was bound). Status and `uc pair enter` say so plainly, and the log says which
+/// interfaces were skipped and why.
+#[test]
+fn no_usable_network_is_named_in_status_and_pairing() {
+    let mut a = Agent::new(61);
+    a.remove_env.push("UCLIP_TEST_LOOPBACK".into());
+    a.extra_env.push(("UCLIP_TEST_NO_LAN".into(), "1".into()));
+    a.start();
+    let mut st = json!(null);
+    assert!(
+        until(Duration::from_secs(10), || {
+            st = a.uc_json(&["status"]);
+            st["fix_code"] == "no-lan"
+        }),
+        "{st}\n{}",
+        a.log()
+    );
+    assert_eq!(st["state"], "needs-attention");
+    assert_eq!(st["reason"], "This device found no network it can use.");
+    let o = a.uc(&["pair", "enter", "123456"]);
+    assert!(!o.status.success());
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains("This device found no network it can use."),
+        "{err}"
+    );
+    let log = a.log();
+    assert!(log.contains("no usable network"), "{log}");
+    assert!(
+        log.contains("vEthernet (Default Switch): virtual, no LAN default gateway"),
+        "{log}"
+    );
+}
