@@ -16,23 +16,23 @@ use uc_agent::profile::Profile;
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
-/// The agent binary next to the `uc` binary. Built on demand when a test run did not build
-/// it (for example `cargo test -p uc-cli`).
+/// The agent binary next to the `uc` binary. `cargo test -p uc-cli` does not build other
+/// packages' binaries, so this runs `cargo build -p uc-agent` once per test process (a no-op
+/// when it is up to date), so a test never runs a stale agent.
 pub fn agent_exe() -> PathBuf {
+    static BUILT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     let uc = PathBuf::from(env!("CARGO_BIN_EXE_uc"));
-    let exe = uc.with_file_name(if cfg!(windows) {
-        "uc-agent.exe"
-    } else {
-        "uc-agent"
+    let exe = uc.with_file_name(if cfg!(windows) { "uc-agent.exe" } else { "uc-agent" });
+    BUILT.get_or_init(|| {
+        if let Ok(cargo) = std::env::var("CARGO") {
+            let st = Command::new(cargo)
+                .args(["build", "-q", "-p", "uc-agent", "--bin", "uc-agent"])
+                .status()
+                .expect("cargo build uc-agent");
+            assert!(st.success(), "building uc-agent failed");
+        }
     });
-    if !exe.exists() {
-        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-        let st = Command::new(cargo)
-            .args(["build", "-p", "uc-agent", "--bin", "uc-agent"])
-            .status()
-            .expect("cargo build uc-agent");
-        assert!(st.success(), "building uc-agent failed");
-    }
+    assert!(exe.exists(), "no uc-agent at {}", exe.display());
     exe
 }
 
