@@ -4,6 +4,7 @@ Clipboard sync between Windows, macOS, Linux, iOS and Android. Rust workspace in
 Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 first).
 Desktop design (locked): `docs/design/desktop`.
 Core library choices (M1): `docs/core.md`.
+Linux clipboard backends (M6), live tests in Docker: `docs/linux.md`.
 Windows clipboard backend and `tools/winhost` (M4): `docs/windows.md`.
 Pairing and membership protocol (signed off, M3 implements it word for word): `docs/protocol.md`.
 macOS clipboard backend (M5): `docs/clip-mac.md`.
