@@ -1,4 +1,5 @@
 import { failureText, getApi, type Api } from './ipc';
+import { isMac } from './platform';
 import type { AgentEvent, Device, Settings, SetupStatus, Status } from './types';
 
 export type Route =
@@ -14,8 +15,14 @@ export type Route =
   | 'vpn';
 
 /** Step of the 5-step indicator for the setup screens, else 0 (no indicator). */
+/** Setup steps: 5 on Windows and Linux; 4 on macOS, which has no permissions step. */
+export const STEPS = isMac ? 4 : 5;
+
 export function stepOf(r: Route): number {
-  return { welcome: 1, perms: 2, add: 3, show: 4, enter: 4, connected: 5 }[r as string] ?? 0;
+  const steps: Record<string, number> = isMac
+    ? { welcome: 1, perms: 1, add: 2, show: 3, enter: 3, connected: 4 }
+    : { welcome: 1, perms: 2, add: 3, show: 4, enter: 4, connected: 5 };
+  return steps[r as string] ?? 0;
 }
 
 class Store {

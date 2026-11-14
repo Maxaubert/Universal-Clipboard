@@ -2,6 +2,7 @@
 // calls as the real agent (docs/agent.md) with the same reply shapes. Tests steer it through
 // `window.__ucMock` (see tests/e2e).
 import type { Api } from './ipc';
+import { isMac } from './platform';
 import type {
   AgentEvent,
   Device,
@@ -73,20 +74,13 @@ export function makeWorld(s: Scenario): World {
     devices: homeDevices(),
     setup: {
       done: true,
-      rows: [
-        {
-          row: 'autostart',
-          title: 'Start with Windows',
-          why: 'The app works after a restart.',
-          state: 'done',
-        },
-        {
-          row: 'firewall',
-          title: 'Let your devices find this PC',
-          why: 'Other devices can connect to this PC.',
-          state: 'done',
-        },
-      ],
+      // macOS asks nothing in setup (start at login is a setting, on by default).
+      rows: isMac
+        ? []
+        : [
+            { row: 'autostart', title: 'Start with Windows', why: 'The app works after a restart.', state: 'done' },
+            { row: 'firewall', title: 'Let your devices find this PC', why: 'Other devices can connect to this PC.', state: 'done' },
+          ],
     },
     settings: baseSettings(),
     offer: { code: '418 207', qr: 'UCLIP1:mock-qr-payload-0123456789', expires_ms: 0, notice: null },
@@ -103,7 +97,7 @@ export function makeWorld(s: Scenario): World {
       reason: 'This device has no other devices yet.',
     };
     w.setup.done = false;
-    w.setup.rows[1].state = 'todo';
+    for (const r of w.setup.rows) if (r.row === 'firewall' || (isMac && r.row === 'autostart')) r.state = 'todo';
     w.settings['start-at-login'].value = 'off';
   }
   if (s === 'paused') {
@@ -119,7 +113,8 @@ export function makeWorld(s: Scenario): World {
       fix_code: 'firewall',
       connected: 0,
     };
-    w.setup.rows[1].state = 'refused';
+    const fw = w.setup.rows.find((r) => r.row === 'firewall');
+    if (fw) fw.state = 'refused';
   }
   if (s === 'vpn') {
     w.status = {
@@ -221,7 +216,10 @@ export function createMockApi(initial?: Scenario): Api {
         return structuredClone(w.setup);
       case 'setup.step': {
         const row = String(p.row);
-        if (row === 'done') w.setup.done = true;
+        if (row === 'done') {
+          w.setup.done = true;
+          if (isMac) w.settings['start-at-login'].value = 'on';
+        }
         const r = w.setup.rows.find((x) => x.row === row);
         if (r) r.state = p.answer ? 'done' : 'refused';
         if (row === 'autostart') w.settings['start-at-login'].value = p.answer ? 'on' : 'off';

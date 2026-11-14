@@ -1854,23 +1854,32 @@ impl Core {
                 "state": state,
             }));
         }
+        // macOS: the agent is a launchd job, and macOS lets it use the local network and read
+        // the clipboard without a prompt (checked 2026-11-14 on macOS 27.2 with a never-seen
+        // signing identity: Local Network entry created as allowed, paste access "allow").
+        // So these rows appear only when macOS actually blocks something; no Allow button
+        // that does nothing.
         if cfg!(target_os = "macos") {
+            if self.net_error.is_some() {
+                rows.push(json!({
+                    "row": "local-network",
+                    "title": "Find devices on your network",
+                    "why": "Needed to reach devices on your network.",
+                    "if_refused": "Sync does not work on the network until this is allowed in System Settings > Privacy & Security > Local Network.",
+                    "state": "refused",
+                }));
+            }
             let access = self.clip.paste_access().unwrap_or("allow");
-            rows.push(json!({
-                "row": "local-network",
-                "title": "Find devices on your network",
-                "why": "Needed to reach devices on your network.",
-                "if_refused": "Sync does not work on the network until this is allowed in System Settings > Privacy & Security > Local Network.",
-                "state": if self.net.is_some() { "done" } else { "todo" },
-            }));
-            rows.push(json!({
-                "row": "paste",
-                "title": "Read what you copy",
-                "why": "The app must read the clipboard without asking each time.",
-                "if_refused": "Sync from this Mac does not work. Sync to this Mac still works.",
-                "state": match access { "allow" => "done", "deny" => "refused", _ => "todo" },
-                "access": access,
-            }));
+            if access != "allow" {
+                rows.push(json!({
+                    "row": "paste",
+                    "title": "Read what you copy",
+                    "why": "The app must read the clipboard without asking each time.",
+                    "if_refused": "Sync from this Mac does not work. Sync to this Mac still works.",
+                    "state": match access { "deny" | "ask" => "refused", _ => "todo" },
+                    "access": access,
+                }));
+            }
         }
         if let Some(e) = &self.clip_error {
             rows.push(json!({
@@ -1879,6 +1888,11 @@ impl Core {
                 "why": e,
                 "state": "refused",
             }));
+        }
+        // macOS: start at login is a setting (on by default, Settings and `uc settings`), not a
+        // setup question; it is turned on when setup finishes ("done" below).
+        if cfg!(target_os = "macos") {
+            return rows;
         }
         let auto = self.autostart.is_enabled();
         rows.push(json!({
@@ -1922,7 +1936,13 @@ impl Core {
                     let _ = self.clip.read();
                 }
             }
-            "local-network" => {}
+            "local-network" => {
+                // Shown only after the network failed: try again (the user may have just
+                // allowed it in System Settings).
+                if yes {
+                    self.start_net();
+                }
+            }
             "autostart" => {
                 let r = if yes {
                     self.autostart.enable()
@@ -1934,6 +1954,15 @@ impl Core {
                 self.save();
             }
             "done" => {
+                // macOS: start at login follows the setting (on by default) once setup is done.
+                if cfg!(target_os = "macos")
+                    && !self.state.setup_done
+                    && self.state.settings.start_at_login
+                    && !self.autostart.is_enabled()
+                    && let Err(e) = self.autostart.enable()
+                {
+                    tracing::warn!(error = %e, "start at login");
+                }
                 self.state.setup_done = true;
                 self.save();
             }
