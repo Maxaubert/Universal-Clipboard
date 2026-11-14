@@ -51,9 +51,9 @@ process and leaves the agent running. A second start brings the first window to 
 Windows and Linux: the title bar is our own (no native frame) with a drag strip and drawn
 minimize, maximize and close buttons. macOS (2026-11-14): a native window
 (`src-tauri/tauri.macos.conf.json`: `titleBarStyle` Overlay, hidden title, traffic lights at
-18, 15), so rounded corners, shadow and the traffic lights are the system's. `html.mac`
+18, 24: the 16 px buttons then sit 14 px from the top, centered on the 36 px header band), so rounded corners, shadow and the traffic lights are the system's. `html.mac`
 (`src/lib/platform.ts`, from the webview's user agent) hides the drawn buttons, makes the drag
-strip full width and moves headers right by `--tl` (64 px) so the back button clears the
+strip full width and moves headers right by `--tl` (72 px; the lights end 79 px from the left) so the back button clears the
 lights; "Start at sign-in" reads "Open at login". Preview it in the browser build with
 `?platform=mac` (the lights are drawn there). The locked design screenshots are the Windows
 frame.

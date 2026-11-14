@@ -11,4 +11,6 @@ export function detectFrame(): Frame {
 }
 
 export const frame: Frame = detectFrame();
+/** The real app (not the browser or test build). */
+export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 export const isMac = frame === 'mac';

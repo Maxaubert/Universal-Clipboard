@@ -32,6 +32,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #1D1C1A; outline-
 /* Real window: the card is the window. */
 html.tauri body { background: #F7F6F4; overflow: hidden; }
 html.tauri .stage { width: 100vw; height: 100vh; padding: 0; background: #F7F6F4; }
+html.tauri .lights { display: none; }
 html.tauri .card { width: 100vw; height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
 
 .drag { position: absolute; top: 0; left: 0; right: 108px; height: 36px; z-index: 0; }
@@ -40,10 +41,10 @@ html.tauri .card { width: 100vw; height: 100vh; border: 0; border-radius: 0; box
    traffic lights at the top left, so no drawn controls. Headers leave room for the lights:
    --tl is the inset that clears them, --wc the right inset Windows keeps for its buttons. */
 :root { --tl: 0px; --wc: 92px; }
-html.mac { --tl: 64px; --wc: 0px; }
+html.mac { --tl: 72px; --wc: 0px; }
 html.mac .drag { right: 0; }
 /* Browser preview of the mac frame (?platform=mac): the lights drawn where macOS puts them. */
-.lights { position: absolute; top: 15px; left: 18px; z-index: 2; display: flex; gap: 8px; pointer-events: none; }
+.lights { position: absolute; top: 16px; left: 19px; z-index: 2; display: flex; gap: 11px; pointer-events: none; }
 .lights span { width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; border: 0.5px solid rgba(0,0,0,0.18); }
 .lights span:nth-child(1) { background: #FF5F57; }
 .lights span:nth-child(2) { background: #FEBC2E; }

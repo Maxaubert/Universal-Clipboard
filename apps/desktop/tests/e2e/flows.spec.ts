@@ -229,9 +229,10 @@ test('macOS frame: no drawn controls, full-width drag strip, headers clear of th
   const card = (await page.getByTestId('card').boundingBox())!;
   const drag = (await page.locator('[data-tauri-drag-region]').boundingBox())!;
   expect(Math.round(drag.width)).toBe(Math.round(card.width) - 2);
-  // The lights end 18 + 3 x 12 + 2 x 8 = 70 px from the left edge; the back button starts after them.
+  // The native lights are 16 px buttons at x 17, 40 and 63, so they end at 79 px; the back
+  // button starts after them.
   const back = (await page.getByRole('button', { name: 'Back' }).boundingBox())!;
-  expect(back.x - card.x).toBeGreaterThanOrEqual(74);
+  expect(back.x - card.x).toBeGreaterThanOrEqual(83);
   await page.goto('/?scenario=attention&platform=mac');
   const gear = (await page.getByRole('button', { name: 'Settings' }).boundingBox())!;
   expect(card.x + card.width - (gear.x + gear.width)).toBeLessThanOrEqual(30);
