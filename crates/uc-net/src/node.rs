@@ -17,8 +17,12 @@
 //!    by itself, by polling interfaces and watching for time jumps).
 //!
 //! Connections from keys that are not members are closed right after the handshake, before
-//! any frame. Pairing connections (`uclip-pair/1`) are handed out as [`NetEvent::Pairing`]
-//! with the LAN rule already applied.
+//! any frame, with one exception: the **admission hook** of protocol 5.9. An unknown key
+//! that is not removed ([`Net::set_removed`]) may get a probation link, one at a time, for at
+//! most [`PROBATION`]. The agent runs membership sync on it (steps 1 to 4 only). If the key is
+//! a member afterwards, [`Net::set_members`] makes it a normal link; if not, the agent calls
+//! [`Net::end_probation`] (or the time runs out) and the link closes. Pairing connections
+//! (`uclip-pair/1`) are handed out as [`NetEvent::Pairing`] with the LAN rule already applied.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, SocketAddr};
@@ -47,6 +51,9 @@ use crate::tags::{self, Secrets};
 /// Interface source: the real OS, or a test's list.
 pub type IfaceSource = Arc<dyn Fn() -> Vec<Interface> + Send + Sync>;
 
+/// How long a probation link for an unknown key may stay open (protocol 5.9: 10 s).
+pub const PROBATION: Duration = Duration::from_secs(10);
+
 /// Settings.
 #[derive(Clone)]
 pub struct NetConfig {
@@ -70,6 +77,11 @@ pub struct NetConfig {
     pub backoff_max: Duration,
     /// Where interfaces come from (default: [`ifaces::detect`]).
     pub ifaces: Option<IfaceSource>,
+    /// Admission hook (protocol 5.9): give unknown keys a probation link. On by default.
+    pub probation: bool,
+    /// Accept incoming connections at all. Off is the "outbound-only" mode of plan 2.2 (the
+    /// user refused the Windows firewall row): this device only dials.
+    pub accept_incoming: bool,
 }
 
 impl NetConfig {
@@ -86,6 +98,8 @@ impl NetConfig {
             path_delay: path::BLOCK_DELAY,
             backoff_max: Duration::from_secs(30),
             ifaces: None,
+            probation: true,
+            accept_incoming: true,
         }
     }
 }
@@ -150,6 +164,8 @@ pub struct Status {
 
 enum Cmd {
     Members(Vec<DeviceId>),
+    Removed(Vec<DeviceId>),
+    EndProbation(DeviceId),
     Secrets(Secrets),
     AddAddr(DeviceId, SocketAddr),
     AddrUpdate(DeviceId, Vec<u8>),
@@ -157,7 +173,7 @@ enum Cmd {
     Wake,
     Status(oneshot::Sender<Status>),
     DialPair(
-        DeviceId,
+        Option<DeviceId>,
         SocketAddr,
         oneshot::Sender<Result<Conn, DialError>>,
     ),
@@ -167,6 +183,31 @@ enum Cmd {
 enum Internal {
     Opened(Link, Instant),
     DialFailed(DeviceId),
+}
+
+/// A cheap, cloneable handle for other tasks: pairing dials and status. It does not keep
+/// the task alive.
+#[derive(Clone)]
+pub struct NetHandle {
+    cmd: mpsc::UnboundedSender<Cmd>,
+}
+
+impl NetHandle {
+    /// See [`Net::dial_pair_any`].
+    pub async fn dial_pair_any(&self, addr: SocketAddr) -> Result<Conn, DialError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd
+            .send(Cmd::DialPair(None, addr, tx))
+            .map_err(|_| DialError::Quic("stopped".into()))?;
+        rx.await.map_err(|_| DialError::Quic("stopped".into()))?
+    }
+
+    /// See [`Net::status`].
+    pub async fn status(&self) -> Option<Status> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd.send(Cmd::Status(tx)).ok()?;
+        rx.await.ok()
+    }
 }
 
 /// The handle. Dropping it stops the task.
@@ -201,6 +242,13 @@ impl Net {
         self.id
     }
 
+    /// A handle for other tasks.
+    pub fn handle(&self) -> NetHandle {
+        NetHandle {
+            cmd: self.cmd.clone(),
+        }
+    }
+
     /// The next event. `None` after shutdown.
     pub async fn next_event(&mut self) -> Option<NetEvent> {
         self.events.recv().await
@@ -215,6 +263,17 @@ impl Net {
     /// are closed.
     pub fn set_members(&self, members: Vec<DeviceId>) {
         let _ = self.cmd.send(Cmd::Members(members));
+    }
+
+    /// Keys that an effective remove names (protocol 5.7). Their connections are refused
+    /// before any data, and they never get a probation link.
+    pub fn set_removed(&self, removed: Vec<DeviceId>) {
+        let _ = self.cmd.send(Cmd::Removed(removed));
+    }
+
+    /// Membership sync on a probation link did not make the peer a member: close it.
+    pub fn end_probation(&self, peer: DeviceId) {
+        let _ = self.cmd.send(Cmd::EndProbation(peer));
     }
 
     /// The group secrets for discovery tags.
@@ -254,7 +313,18 @@ impl Net {
     pub async fn dial_pair(&self, peer: DeviceId, addr: SocketAddr) -> Result<Conn, DialError> {
         let (tx, rx) = oneshot::channel();
         self.cmd
-            .send(Cmd::DialPair(peer, addr, tx))
+            .send(Cmd::DialPair(Some(peer), addr, tx))
+            .map_err(|_| DialError::Quic("stopped".into()))?;
+        rx.await.map_err(|_| DialError::Quic("stopped".into()))?
+    }
+
+    /// Dial a pairing connection to `addr` without knowing the key there (code mode: the
+    /// joiner found the inviter through the `_uclip-pair._udp` mDNS service). The LAN rule
+    /// applies. The PAKE proves who answered.
+    pub async fn dial_pair_any(&self, addr: SocketAddr) -> Result<Conn, DialError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd
+            .send(Cmd::DialPair(None, addr, tx))
             .map_err(|_| DialError::Quic("stopped".into()))?;
         rx.await.map_err(|_| DialError::Quic("stopped".into()))?
     }
@@ -297,6 +367,8 @@ struct PeerSt {
     backoff: Duration,
     down_since: Instant,
     path: Option<PathState>,
+    /// Set while this is a probation link for a key that is not a member yet (5.9).
+    probation: Option<Instant>,
 }
 
 impl PeerSt {
@@ -310,7 +382,12 @@ impl PeerSt {
             backoff: Duration::ZERO,
             down_since: now,
             path: None,
+            probation: None,
         }
+    }
+
+    fn is_member(&self) -> bool {
+        self.probation.is_none()
     }
 }
 
@@ -326,6 +403,7 @@ struct Actor {
     ifaces: Vec<Interface>,
     vpn_up: bool,
     members: BTreeMap<DeviceId, PeerSt>,
+    removed: BTreeSet<DeviceId>,
     secrets: Secrets,
     advertised: Option<String>,
     own_seq: u64,
@@ -365,6 +443,7 @@ impl Actor {
             ifaces: Vec::new(),
             vpn_up: false,
             members: BTreeMap::new(),
+            removed: BTreeSet::new(),
             secrets: Secrets::default(),
             advertised: None,
             own_seq: 0,
@@ -437,7 +516,7 @@ impl Actor {
             self.advertised = None;
             let now = Instant::now();
             let me = self.id;
-            for (d, p) in self.members.iter_mut() {
+            for (d, p) in self.members.iter_mut().filter(|(_, p)| p.is_member()) {
                 if p.link.is_none() {
                     p.next_dial = now + dial_delay(me, *d);
                     p.backoff = Duration::ZERO;
@@ -523,11 +602,12 @@ impl Actor {
             Cmd::Members(list) => {
                 let now = Instant::now();
                 let keep: BTreeSet<DeviceId> = list.into_iter().filter(|d| *d != self.id).collect();
+                // A probation link stays until its own end (agent or timeout).
                 let gone: Vec<DeviceId> = self
                     .members
-                    .keys()
-                    .filter(|d| !keep.contains(d))
-                    .copied()
+                    .iter()
+                    .filter(|(d, p)| !keep.contains(d) && p.is_member())
+                    .map(|(d, _)| *d)
                     .collect();
                 for d in gone {
                     if let Some(p) = self.members.remove(&d)
@@ -540,11 +620,31 @@ impl Actor {
                 }
                 let me = self.id;
                 for d in keep {
-                    self.members.entry(d).or_insert_with(|| {
+                    let p = self.members.entry(d).or_insert_with(|| {
                         let mut p = PeerSt::new(now);
                         p.next_dial = now + dial_delay(me, d);
                         p
                     });
+                    // A probation peer that membership sync made a member: a normal link now.
+                    p.probation = None;
+                }
+                self.update_paths();
+            }
+            Cmd::Removed(list) => {
+                self.removed = list.into_iter().collect();
+                let gone: Vec<DeviceId> = self
+                    .members
+                    .keys()
+                    .filter(|d| self.removed.contains(d))
+                    .copied()
+                    .collect();
+                for d in gone {
+                    self.drop_peer(d);
+                }
+            }
+            Cmd::EndProbation(d) => {
+                if self.members.get(&d).is_some_and(|p| !p.is_member()) {
+                    self.drop_peer(d);
                 }
             }
             Cmd::Secrets(s) => {
@@ -561,9 +661,11 @@ impl Actor {
             }
             Cmd::AddrUpdate(from, signed) => self.on_addr_update(from, signed),
             Cmd::Ready(d) => {
-                if let Some(p) = self.members.get_mut(&d) {
-                    p.ready = true;
-                }
+                // A probation peer never gets addresses (5.9).
+                let Some(p) = self.members.get_mut(&d).filter(|p| p.is_member()) else {
+                    return;
+                };
+                p.ready = true;
                 self.send_announcements_to(d);
             }
             Cmd::Wake => self.on_wake(),
@@ -576,7 +678,11 @@ impl Actor {
                     return;
                 };
                 tokio::spawn(async move {
-                    let _ = tx.send(ep.dial(peer, addr, ALPN_PAIR).await);
+                    let r = match peer {
+                        Some(p) => ep.dial(p, addr, ALPN_PAIR).await,
+                        None => ep.dial_pair_any(addr).await,
+                    };
+                    let _ = tx.send(r);
                 });
             }
             Cmd::Shutdown => {}
@@ -595,6 +701,7 @@ impl Actor {
             paths: self
                 .members
                 .iter()
+                .filter(|(_, p)| p.is_member())
                 .filter_map(|(d, p)| p.path.map(|s| (*d, s)))
                 .collect(),
             links: self
@@ -609,16 +716,50 @@ impl Actor {
     }
 
     fn on_incoming(&mut self, c: Conn) {
+        if !self.cfg.accept_incoming {
+            // Outbound-only mode: this device only dials.
+            c.conn.close(CLOSE_NOT_ADMITTED.into(), b"outbound only");
+            return;
+        }
         if c.alpn == ALPN_PAIR {
             let _ = self.ev.send(NetEvent::Pairing(c));
             return;
         }
-        if c.alpn != ALPN_SYNC || !self.members.contains_key(&c.peer) {
-            // Unknown keys get nothing (plan 4.1). M7 adds the protocol 5.9 probation path.
+        if c.alpn != ALPN_SYNC || self.removed.contains(&c.peer) {
             c.conn.close(CLOSE_NOT_ADMITTED.into(), b"not a member");
             return;
         }
+        if !self.members.contains_key(&c.peer) {
+            // Admission hook (protocol 5.9): an unknown key may be a device that was added
+            // while we were away. One probation link at a time, for at most 10 s; the agent
+            // runs membership sync on it and reads nothing else. Plan 4.1 still holds: unknown
+            // keys get no clip, no secret and no address.
+            let busy = self.members.values().any(|p| !p.is_member());
+            if !self.cfg.probation || busy {
+                c.conn.close(CLOSE_NOT_ADMITTED.into(), b"not a member");
+                return;
+            }
+            let now = Instant::now();
+            let mut p = PeerSt::new(now);
+            p.probation = Some(now);
+            p.next_dial = now + Duration::from_secs(3600);
+            self.members.insert(c.peer, p);
+        }
         self.spawn_open(c);
+    }
+
+    /// Forget a peer and close its link.
+    fn drop_peer(&mut self, d: DeviceId) {
+        if let Some(p) = self.members.remove(&d) {
+            if let Some(l) = p.link {
+                l.close(CLOSE_NOT_ADMITTED, b"not a member");
+                self.retired.insert(l.id);
+                let _ = self.ev.send(NetEvent::Down { peer: d });
+            }
+            if p.probation.is_none() {
+                self.book.forget(&d);
+            }
+        }
     }
 
     fn spawn_open(&self, c: Conn) {
@@ -695,8 +836,10 @@ impl Actor {
         p.link_since = Some(at);
         p.ready = false;
         p.backoff = Duration::ZERO;
-        self.book
-            .connected(l.peer, l.remote, now_ms(), &self.cfg.policy);
+        if p.probation.is_none() {
+            self.book
+                .connected(l.peer, l.remote, now_ms(), &self.cfg.policy);
+        }
         let (peer, lid) = (l.peer, l.id);
         let _ = self.ev.send(NetEvent::Up(l));
         if let Some((frames, closed)) = self.pending.remove(&lid) {
@@ -741,6 +884,14 @@ impl Actor {
                 }
                 self.retired.insert(link);
                 self.pending.remove(&link);
+                if self.members.get(&peer).is_some_and(|p| {
+                    !p.is_member() && p.link.as_ref().is_some_and(|l| l.id == link)
+                }) {
+                    // A probation link ended: forget the peer.
+                    self.members.remove(&peer);
+                    let _ = self.ev.send(NetEvent::Down { peer });
+                    return;
+                }
                 if let Some(p) = self.members.get_mut(&peer)
                     && p.link.as_ref().is_some_and(|l| l.id == link)
                 {
@@ -764,7 +915,7 @@ impl Actor {
         }
         let now = Instant::now();
         let me = self.id;
-        for (d, p) in self.members.iter_mut() {
+        for (d, p) in self.members.iter_mut().filter(|(_, p)| p.is_member()) {
             p.next_dial = now + dial_delay(me, *d);
             p.backoff = Duration::ZERO;
             if p.link.is_none() {
@@ -772,6 +923,22 @@ impl Actor {
             }
         }
         self.advertised = None;
+    }
+
+    fn end_old_probation(&mut self, now: Instant) {
+        let old: Vec<DeviceId> = self
+            .members
+            .iter()
+            .filter(|(_, p)| {
+                p.probation
+                    .is_some_and(|s| now.saturating_duration_since(s) >= PROBATION)
+            })
+            .map(|(d, _)| *d)
+            .collect();
+        for d in old {
+            tracing::debug!("probation link timed out");
+            self.drop_peer(d);
+        }
     }
 
     fn on_tick(&mut self) {
@@ -794,6 +961,7 @@ impl Actor {
                 tracing::warn!(error = %e, "rebind failed");
             }
         }
+        self.end_old_probation(now);
         self.mdns(wall);
         self.dial_due(now);
         self.update_paths();
@@ -811,7 +979,7 @@ impl Actor {
                 }
             }
         }
-        let members: Vec<DeviceId> = self.members.keys().copied().collect();
+        let members = self.member_ids();
         for f in self.disc.poll() {
             let Some(t) = tags::parse_instance(&f.instance) else {
                 continue;
@@ -832,6 +1000,15 @@ impl Actor {
         }
     }
 
+    /// Keys that are members (probation peers left out).
+    fn member_ids(&self) -> Vec<DeviceId> {
+        self.members
+            .iter()
+            .filter(|(_, p)| p.is_member())
+            .map(|(d, _)| *d)
+            .collect()
+    }
+
     fn dial_soon(&mut self, d: DeviceId) {
         let delay = dial_delay(self.id, d);
         if let Some(p) = self.members.get_mut(&d) {
@@ -845,7 +1022,7 @@ impl Actor {
         let due: Vec<DeviceId> = self
             .members
             .iter()
-            .filter(|(_, p)| p.link.is_none() && !p.dialing && p.next_dial <= now)
+            .filter(|(_, p)| p.is_member() && p.link.is_none() && !p.dialing && p.next_dial <= now)
             .map(|(d, _)| *d)
             .collect();
         for d in due {
@@ -909,7 +1086,7 @@ impl Actor {
 
     fn update_paths(&mut self) {
         let now = Instant::now();
-        let ds: Vec<DeviceId> = self.members.keys().copied().collect();
+        let ds = self.member_ids();
         for d in ds {
             let seen = self.seen_on_lan(&d);
             let peer_vpn = self.book.get(&d).is_some_and(|e| e.vpn_up);
@@ -987,8 +1164,9 @@ impl Actor {
         }
         for (other, e) in self
             .members
-            .keys()
-            .filter_map(|o| self.book.get(o).map(|e| (o, e)))
+            .iter()
+            .filter(|(_, p)| p.is_member())
+            .filter_map(|(o, _)| self.book.get(o).map(|e| (o, e)))
         {
             if *other != d
                 && let Some(a) = &e.announcement
@@ -1022,7 +1200,7 @@ impl Actor {
     }
 
     fn on_addr_update(&mut self, from: DeviceId, signed: Vec<u8>) {
-        let members: Vec<DeviceId> = self.members.keys().copied().collect();
+        let members = self.member_ids();
         if !members.contains(&from) {
             return;
         }

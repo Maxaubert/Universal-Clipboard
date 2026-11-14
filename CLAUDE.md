@@ -5,11 +5,12 @@ Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 fir
 Desktop design (locked): `docs/design/desktop`.
 Core library choices (M1): `docs/core.md`.
 Networking choices (M2, plain QUIC, LAN only): `docs/net.md`. Spike S1 so far: `docs/spikes/s1-interfaces.md`.
-Linux clipboard backends (M6), live tests in Docker: `docs/linux.md`.
 Windows clipboard backend and `tools/winhost` (M4): `docs/windows.md`.
+Linux clipboard backends (M6), live tests in Docker: `docs/linux.md`.
 Pairing and membership protocol (signed off, M3 implements it word for word): `docs/protocol.md`.
-macOS clipboard backend (M5): `docs/clip-mac.md`.
 Pairing, membership and key store code notes (M3): `docs/pairing.md`.
+macOS clipboard backend (M5): `docs/clip-mac.md`.
+Agent, IPC and the `uc` CLI (M7), test switches, measurements: `docs/agent.md`.
 
 ## Rules
 - Code goes on a branch and a PR. Never push code to main. `docs/*.md` may go to main.
@@ -23,7 +24,7 @@ Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 - Unit: `cargo nextest run --workspace --no-tests=pass` (or `cargo test --workspace`)
 - Network lab (plan 6.3, Linux root, WSL): `wsl -d Ubuntu -u root -- bash tools/netsim/run-wsl.sh`
 - Real Windows clipboard tests: `crates/uc-clip-win/tests/real.rs`, run by nextest inside a private window station (winhost).
-- E2E (headless): none yet    Run when: apps/desktop/**, crates/uc-agent/**
+- E2E (headless): multi-agent tests `cargo nextest run -p uc-cli` (real agents on loopback, paired through `uc`; one in winhost on Windows). Linux live agents: `sh crates/uc-clip-linux/live/docker.sh`. Cross-OS runner `tools/e2e/cross-os.ps1` is PENDING (no lab VMs). Run when: apps/desktop/**, crates/uc-agent/**, crates/uc-cli/**
 - Build / package: `cargo build --workspace`   Artifact: n/a (installer tool not chosen yet, ask first)
 - Known failures to tolerate: none
 - Version source: `Cargo.toml` (`workspace.package.version`)   Release: release.yml on push to main (not added yet)

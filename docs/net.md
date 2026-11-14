@@ -105,9 +105,12 @@ firewall, guest network), `NoPath(NotFound)` if never seen here. Only `VpnBlocks
 
 ## Left for M3 and M7
 
-- Admission: `Net::set_members` decides who may open a sync link. The protocol 5.9 probation
-  path (an unknown key that may be a newly added member: steps 1 to 4 only, one at a time, 256
-  changes, 64 KiB, 10 s) is not in M2. M7 adds it as an admission hook.
+- Admission: `Net::set_members` decides who may open a sync link. **Done in M7:** the protocol
+  5.9 probation path. An unknown key gets one probation link at a time for at most 10 s, with
+  no addresses; the agent runs membership sync on it and calls `Net::end_probation` or
+  `set_members`. `NetConfig::probation` turns it off; `Net::set_removed` refuses keys outright.
+  M7 also added `NetConfig::accept_incoming` (outbound-only mode), `Net::dial_pair_any` and
+  the `_uclip-pair._udp` mDNS service. See `docs/agent.md`.
 - `Net::ready(peer)` after membership sync passed: only then does a device send addresses.
 - Pairing: `uclip-pair/1` connections come out as `NetEvent::Pairing`, LAN rule applied;
   `Net::dial_pair` dials one. Both sides get the same TLS exporter (tested).

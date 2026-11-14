@@ -98,7 +98,8 @@ async fn three_engines_converge_over_quic() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unknown_key_gets_no_link() {
     let lan = FakeLan::new();
-    let mut a = Node::start(1, &ip(1), 0, &lan);
+    let ifaces = std::sync::Arc::new(std::sync::Mutex::new(vec![lo(&ip(1), 8)]));
+    let mut a = Node::start_cfg(1, 0, &lan, ifaces, |c| c.probation = false);
     let mut x = Node::start(9, &ip(9), 0, &lan);
     a.join(&[1]); // A knows nobody.
     x.join(&[1, 9]); // X wants A.
@@ -446,4 +447,58 @@ async fn pairing_connection_is_handed_out_with_matching_exporter() {
         .export_keying_material(&mut y, b"uclip-pair-v1", b"")
         .unwrap();
     assert_eq!(x, y, "both sides see the same TLS exporter (protocol 4.5)");
+}
+
+/// Protocol 5.9 admission hook: an unknown key gets one probation link that carries no
+/// addresses, is never dialed back, ends when the agent says so or after 10 s, and becomes a
+/// normal link when membership sync makes the key a member. A removed key gets nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unknown_key_gets_a_probation_link_only() {
+    let lan = FakeLan::new();
+    let mut a = Node::start(1, &ip(1), 0, &lan);
+    let mut x = Node::start(9, &ip(9), 0, &lan);
+    a.join(&[1]); // A knows nobody.
+    x.join(&[1, 9]); // X wants A (it was added while A was away).
+    x.net.add_addr(id(1), addr(&a));
+    let up = until(&mut [&mut a, &mut x], Duration::from_secs(5), |n| {
+        n[0].links.contains_key(&id(9))
+    })
+    .await;
+    assert!(up.is_some(), "A gives X a probation link");
+    // No address went to the probation peer, and A has no path state for it.
+    let st = a.net.status().await.unwrap();
+    assert!(!st.paths.contains_key(&id(9)));
+    assert!(
+        !x.frames.iter().any(|(_, f)| matches!(
+            uc_core::msg::decode(f),
+            Ok(Some(uc_core::Message::AddrUpdate { .. }))
+        )),
+        "no address on a probation link"
+    );
+    // The agent decides: not a member. The link closes.
+    a.net.end_probation(id(9));
+    let gone = until(&mut [&mut a, &mut x], Duration::from_secs(5), |n| {
+        !n[0].links.contains_key(&id(9))
+    })
+    .await;
+    assert!(gone.is_some(), "end_probation closes the link");
+
+    // A removed key gets no link at all.
+    a.net.set_removed(vec![id(9)]);
+    let ups = a.ups;
+    settle(&mut [&mut a, &mut x], Duration::from_secs(2)).await;
+    assert_eq!(a.ups, ups, "a removed key never gets a probation link");
+
+    // Not removed any more (a new test group): probation, then membership makes it normal.
+    a.net.set_removed(vec![]);
+    let up = until(&mut [&mut a, &mut x], Duration::from_secs(5), |n| {
+        n[0].links.contains_key(&id(9))
+    })
+    .await;
+    assert!(up.is_some());
+    a.join(&[1, 9]);
+    settle(&mut [&mut a, &mut x], Duration::from_millis(500)).await;
+    let st = a.net.status().await.unwrap();
+    assert!(st.paths.contains_key(&id(9)), "a member now");
+    assert!(a.links.contains_key(&id(9)), "the same link stays up");
 }

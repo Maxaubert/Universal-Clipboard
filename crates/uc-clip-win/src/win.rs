@@ -363,6 +363,13 @@ impl WinClipboard {
         &self.changes
     }
 
+    /// Take the change channel out, so another thread can wait on it (the agent forwards it
+    /// into its event loop). After this, [`WinClipboard::changes`] never gets a value.
+    pub fn take_changes(&mut self) -> Receiver<u64> {
+        let (_tx, dead) = mpsc::channel();
+        std::mem::replace(&mut self.changes, dead)
+    }
+
     /// The current clipboard sequence number. Reads no content.
     pub fn sequence_number() -> u64 {
         // SAFETY: no preconditions.

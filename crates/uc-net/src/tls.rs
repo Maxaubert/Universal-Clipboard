@@ -168,9 +168,10 @@ impl rustls::server::ResolvesServerCert for RawKeyResolver {
     }
 }
 
-/// Client side: the server must show exactly the expected key.
+/// Client side: the server must show exactly the expected key (`None`: any well-formed key,
+/// for code-mode pairing, where the PAKE proves who the inviter is).
 #[derive(Debug)]
-struct ExpectKey(DeviceId);
+struct ExpectKey(Option<DeviceId>);
 
 impl ServerCertVerifier for ExpectKey {
     fn verify_server_cert(
@@ -181,7 +182,12 @@ impl ServerCertVerifier for ExpectKey {
         _ocsp: &[u8],
         _now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
-        if !intermediates.is_empty() || key_from_spki(end_entity.as_ref()) != Some(self.0) {
+        let got = key_from_spki(end_entity.as_ref());
+        let ok = match self.0 {
+            Some(want) => got == Some(want),
+            None => got.is_some(),
+        };
+        if !intermediates.is_empty() || !ok {
             return Err(rustls::Error::InvalidCertificate(
                 CertificateError::UnknownIssuer,
             ));
@@ -325,6 +331,21 @@ pub fn server_crypto(key: &SigningKey, alpns: &[Vec<u8>]) -> Result<QuicServerCo
 pub fn client_crypto(
     key: &SigningKey,
     expect: DeviceId,
+    alpn: &[u8],
+) -> Result<QuicClientConfig, TlsError> {
+    client_crypto_opt(key, Some(expect), alpn)
+}
+
+/// QUIC client crypto that accepts any well-formed raw server key. Only for code-mode pairing
+/// (`uclip-pair/1`): the joiner does not know the inviter's key yet, and the PAKE with its
+/// transcript (protocol 4.5) binds the key that the TLS layer saw.
+pub fn client_crypto_any(key: &SigningKey, alpn: &[u8]) -> Result<QuicClientConfig, TlsError> {
+    client_crypto_opt(key, None, alpn)
+}
+
+fn client_crypto_opt(
+    key: &SigningKey,
+    expect: Option<DeviceId>,
     alpn: &[u8],
 ) -> Result<QuicClientConfig, TlsError> {
     let mut c = rustls::ClientConfig::builder_with_provider(provider())

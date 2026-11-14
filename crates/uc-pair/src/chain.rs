@@ -648,6 +648,24 @@ impl Graph {
         h
     }
 
+    /// Changes this graph holds that a peer with these heads lacks, in canonical order (5.9
+    /// step 4). A head this graph does not know adds nothing, so the peer may get a few changes
+    /// twice; `insert` drops doubles.
+    pub fn missing_for(&self, peer_heads: &[ChangeId]) -> Vec<&Change> {
+        let mut known = Bits::with_len(self.nodes.len());
+        for h in peer_heads {
+            if let Some(&i) = self.index.get(h) {
+                known.set(i);
+                known.union(&self.nodes[i].past);
+            }
+        }
+        self.order
+            .iter()
+            .filter(|&&i| !known.has(i))
+            .map(|&i| &self.nodes[i].change)
+            .collect()
+    }
+
     /// Changes of this graph that `known` does not hold, in canonical order (5.9 step 4).
     pub fn missing_from(&self, known: &dyn Fn(&ChangeId) -> bool) -> Vec<&Change> {
         self.canonical().filter(|c| !known(&c.id)).collect()

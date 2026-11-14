@@ -50,5 +50,5 @@ jobs:
         with:
           toolchain: 1.99.0
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb sway wl-clipboard xclip
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb sway wl-clipboard xclip libdbus-1-dev pkg-config
       - run: sh crates/uc-clip-linux/live/run.sh

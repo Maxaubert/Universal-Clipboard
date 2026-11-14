@@ -29,3 +29,5 @@ echo "Xvfb on :99, sway on $WL ($(sway --version))"
 
 export DISPLAY=:99 WAYLAND_DISPLAY="$WL" UCLIP_LIVE_X11=:99 UCLIP_LIVE_WAYLAND="$WL"
 cargo test --locked -p uc-clip-linux --test live -- --nocapture "$@"
+# The agent on the real Linux backends: one agent on X11, one on Wayland (M7).
+cargo test --locked -p uc-cli --test linux_live -- --nocapture
