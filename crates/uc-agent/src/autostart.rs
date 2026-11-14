@@ -3,12 +3,14 @@
 //! | OS | Real app | Test profiles |
 //! |---|---|---|
 //! | Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `UniversalClipboard` | a sandbox key `HKCU\Software\UniversalClipboard-test\<profile>\Run`, which Windows never reads |
-//! | macOS | `~/Library/LaunchAgents/io.github.maxaubert.uclip.agent.plist` (`KeepAlive` on crash). The app bundle build (M9) moves this to `SMAppService.agent`. | the same plist in `<state>/autostart/LaunchAgents`, which launchd never reads |
+//! | macOS | App bundle (M9): `SMAppService.agent(plistName:)` with the plist in `Contents/Library/LaunchAgents`. A bare binary (developer builds): `~/Library/LaunchAgents/io.github.maxaubert.uclip.agent.plist`. Both `KeepAlive` on crash. | the same plist in `<state>/autostart/LaunchAgents`, which launchd never reads |
 //! | Linux | XDG autostart `~/.config/autostart/io.github.maxaubert.uclip.desktop`, `Exec=uc-agent --supervise` | the same file in `<state>/autostart` |
 //!
 //! So a test can register and unregister freely: a test profile never touches the real
-//! login items of the machine. The Microsoft Store build (spike S8) uses a startup task in
-//! the package instead; that is set up in M9.
+//! login items of the machine. The Microsoft Store build (spike S8) has a startup task in its
+//! package. Windows turns it on when the app is opened the first time, and the user turns it
+//! off in Task Manager > Startup apps, so this module only reports it there (see
+//! [`Autostart::managed_by_windows`]).
 
 use std::path::{Path, PathBuf};
 
@@ -115,8 +117,36 @@ impl Autostart {
         }
     }
 
+    /// The Store build: start at login is the startup task of the package, not ours.
+    pub fn managed_by_windows(&self) -> bool {
+        #[cfg(windows)]
+        {
+            !self.sandboxed() && crate::win::is_packaged()
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+
+    /// macOS app bundle build: use `SMAppService` (not in test profiles).
+    #[cfg(target_os = "macos")]
+    fn in_bundle(&self) -> bool {
+        !self.sandboxed()
+            && crate::update::install_dir()
+                .is_some_and(|d| d.extension().is_some_and(|e| e == "app"))
+    }
+
     /// Turn start at login on.
     pub fn enable(&self) -> std::io::Result<()> {
+        if self.managed_by_windows() {
+            // The startup task of the package is on after the first launch.
+            return Ok(());
+        }
+        #[cfg(target_os = "macos")]
+        if self.in_bundle() {
+            return sm::register();
+        }
         #[cfg(windows)]
         {
             let mut line = format!("\"{}\"", self.exe.display());
@@ -141,6 +171,15 @@ impl Autostart {
 
     /// Turn start at login off.
     pub fn disable(&self) -> std::io::Result<()> {
+        if self.managed_by_windows() {
+            return Err(std::io::Error::other(
+                "Windows manages this: turn it off in Task Manager > Startup apps",
+            ));
+        }
+        #[cfg(target_os = "macos")]
+        if self.in_bundle() {
+            return sm::unregister();
+        }
         #[cfg(windows)]
         {
             crate::win::reg_delete(&self.win_key(), &self.win_value())
@@ -160,6 +199,13 @@ impl Autostart {
 
     /// Is start at login on?
     pub fn is_enabled(&self) -> bool {
+        if self.managed_by_windows() {
+            return true;
+        }
+        #[cfg(target_os = "macos")]
+        if self.in_bundle() {
+            return sm::enabled();
+        }
         #[cfg(windows)]
         {
             crate::win::reg_exists(&self.win_key(), &self.win_value())
@@ -190,6 +236,46 @@ impl Autostart {
         {
             let _ = std::fs::remove_dir_all(self.state_dir.join("autostart"));
         }
+    }
+}
+
+/// `SMAppService` for the plist of the agent inside the app bundle (macOS 13 and newer).
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+mod sm {
+    use objc2_foundation::NSString;
+    use objc2_service_management::{SMAppService, SMAppServiceStatus};
+
+    fn service() -> objc2::rc::Retained<SMAppService> {
+        let name = NSString::from_str(&format!("{}.plist", super::MAC_LABEL));
+        // SAFETY: a class method that takes a plist name; no other preconditions.
+        unsafe { SMAppService::agentServiceWithPlistName(&name) }
+    }
+
+    fn err(e: objc2::rc::Retained<objc2_foundation::NSError>) -> std::io::Error {
+        std::io::Error::other(e.localizedDescription().to_string())
+    }
+
+    pub fn register() -> std::io::Result<()> {
+        // SAFETY: plain method call on a valid service.
+        unsafe { service().registerAndReturnError() }.map_err(err)
+    }
+
+    pub fn unregister() -> std::io::Result<()> {
+        let s = service();
+        // SAFETY: plain method calls on a valid service.
+        let st = unsafe { s.status() };
+        if st == SMAppServiceStatus::NotRegistered {
+            return Ok(());
+        }
+        // SAFETY: as above.
+        unsafe { s.unregisterAndReturnError() }.map_err(err)
+    }
+
+    pub fn enabled() -> bool {
+        // SAFETY: plain method call on a valid service.
+        let st = unsafe { service().status() };
+        st == SMAppServiceStatus::Enabled
     }
 }
 

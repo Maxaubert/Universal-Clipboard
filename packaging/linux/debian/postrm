@@ -1,0 +1,10 @@
+#!/bin/sh
+# Plan 8.5: a package cannot safely touch home folders. Say what stays and how to clean up.
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+  echo "Universal Clipboard is removed. Each user keeps a start-at-login entry, a settings"
+  echo "folder and a keyring entry. Next time, run \"uc leave\" before you remove the app."
+  echo "To clean up by hand: rm ~/.config/autostart/io.github.maxaubert.uclip.desktop and"
+  echo "rm -r ~/.local/share/uclip. The background service stops by itself."
+fi
+exit 0

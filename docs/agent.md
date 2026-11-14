@@ -170,6 +170,6 @@ Two release agents, paired and connected on loopback, measured for 120 s after 1
   `win-b`, `mac-b` and the Linux VMs wait for the same.
 - **Two users on one computer:** the design gives each user an own pipe (SID in the name),
   socket, state folder and port, but it was not run with a second user account.
-- Signed-server check on the Windows pipe, `SMAppService`, the Store startup task and the
-  firewall rule: M9.
+- `SMAppService`, the Store startup task and the firewall rule helper: done in M9
+  (`docs/install.md`). The signed-server check on the Windows pipe still needs code signing.
 - The Opus security review with a fresh context covers M3 and M7 together (plan M10).
