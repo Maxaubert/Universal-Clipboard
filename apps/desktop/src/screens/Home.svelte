@@ -242,7 +242,7 @@
     </button>
   </div>
   {#if error}<div class="err" role="alert">{error}</div>{/if}
-  <div bind:this={grid} data-m="tiles" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; overflow: auto; min-height: 0; flex: 0 1 auto;">
+  <div bind:this={grid} data-m="tiles" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; overflow: auto; min-height: 0; flex: 0 1 auto;">
     {#each others as d (d.id)}
       {@const t = tileText(d)}
       {@const asleep = d.state !== 'Connected' && d.state !== 'Blocked by a VPN or firewall'}
@@ -306,8 +306,9 @@
 
 <style>
   /* Rolling text: old and new copies sit in one grid cell; .clip hides them outside the line. */
-  .stack { display: inline-grid; min-width: 0; }
-  .stack > :global(*) { grid-area: 1 / 1; white-space: nowrap; }
+  /* Long names never push the text out of its box: the line ends in an ellipsis instead. */
+  .stack { display: inline-grid; grid-template-columns: minmax(0, max-content); min-width: 0; max-width: 100%; }
+  .stack > :global(*) { grid-area: 1 / 1; white-space: nowrap; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .stack.clip { overflow: hidden; padding: 2px 0; margin: -2px 0; }
   .stack.end { justify-items: end; }
   .tile .stack { justify-items: center; }

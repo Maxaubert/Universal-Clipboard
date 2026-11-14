@@ -114,8 +114,11 @@
     const active = i === digits.length && !dead && !clearing;
     const border = dead ? '1px solid #D9D6D1' : bad && i < redTo ? '1px solid #B42318' : active ? '2px solid #1D1C1A' : '1px solid #BDB8B1';
     const dim = dead ? 'background: rgba(255, 255, 255, 0); color: #6E6A64;' : 'color: #1D1C1A;';
-    return `${box} border: ${border}; ${dim} transition-duration: ${bad && i < redTo ? 220 : 400}ms, 700ms, 700ms; transition-delay: 0ms, ${dead ? i * 70 : 0}ms, ${dead ? i * 70 : 0}ms;`;
+    return `${box} border: ${border}; ${dim} transition-duration: ${bad && i < redTo ? 220 : 400}ms, 700ms, 700ms; transition-delay: 0ms, ${wave(i)}ms, ${wave(i)}ms;`;
   }
+
+  /** E1 dead code: each box greys 70 ms after the one before it; reduced motion greys them together. */
+  const wave = (i: number) => (dead && !reduced() ? i * 70 : 0);
 
   // E1: a typed digit settles in (scale 0.86 to 1).
   function digitIn(node: Element) {

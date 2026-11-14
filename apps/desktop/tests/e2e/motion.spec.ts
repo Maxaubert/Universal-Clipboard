@@ -158,3 +158,26 @@ for (const mode of ['full', 'reduced'] as const) {
     });
   });
 }
+
+test('long names: the last copy and the tiles stay inside the window (H3)', async ({ page }) => {
+  await open(page, 'h3');
+  await settled(page);
+  await page.evaluate(() => {
+    const m = window.__ucMock!;
+    m.world.devices.push({ id: 'long', name: "Kristoffer's MacBook Pro 16-inch", os: 'macOS', this: false, state: 'Connected' });
+    m.emit('devices');
+    m.copy('received', 'Image', "Kristoffer's MacBook Pro 16-inch");
+  });
+  await expect(page.getByTestId('last-copy')).toContainText('Kristoffer');
+  await settled(page);
+  const box = await page.evaluate(() => {
+    const r = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+    const fact = r('[data-testid="last-copy"] > span');
+    const name = r('.here-t');
+    const grid = r('[data-m="tiles"]');
+    const tiles = Array.from(document.querySelectorAll('[data-m="tiles"] > *')).map((t) => t.getBoundingClientRect().right);
+    return { factLeft: fact.left, nameRight: name.right, gridRight: grid.right, tileRight: Math.max(...tiles) };
+  });
+  expect(box.factLeft).toBeGreaterThanOrEqual(box.nameRight);
+  expect(box.tileRight).toBeLessThanOrEqual(box.gridRight + 0.5);
+});
