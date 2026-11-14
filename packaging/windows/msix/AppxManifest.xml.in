@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Universal Clipboard MSIX (Microsoft Store build), from spike S8 (docs/spikes/s8-msix.md).
+  build.ps1 fills @VERSION@ (4 parts), @ARCH@, @PUBLISHER@, @PUBLISHER_NAME@ and
+  @SETTINGS_APP@ (the window, only when it is built).
+
+  - Agent: no app list entry, started at sign-in by the startup task (enabled when the app is
+    first opened, S8).
+  - Cli: the "uc" and "uclip" commands (app execution aliases). Windows puts the alias folder
+    at the end of the user's PATH, so a "uc" that exists already keeps working; "uclip" always
+    works (plan 3.2 name rule, as close as MSIX allows).
+  - Firewall: inbound UDP for the agent, Private profile only (plan 4.1). The manifest cannot
+    limit remote addresses; the agent closes any connection from outside the LAN before the
+    handshake (protocol 4.8), as in every build.
+-->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  IgnorableNamespaces="uap uap3 uap5 rescap desktop desktop2 desktop4">
+  <Identity Name="Maxaubert.UniversalClipboard" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="@ARCH@" />
+  <Properties>
+    <DisplayName>Universal Clipboard</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_NAME@</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Copy on one device, paste on another. Local network only.</Description>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources><Resource Language="en-us" /></Resources>
+  <Applications>
+@SETTINGS_APP@
+    <Application Id="Agent" Executable="uc-agent.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Universal Clipboard background service" Description="Keeps your clipboard in sync" BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" AppListEntry="none" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="uc-agent.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="UcAgentStartup" Enabled="true" DisplayName="Universal Clipboard" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Cli" Executable="uc.exe" EntryPoint="Windows.FullTrustApplication" desktop4:Subsystem="console" desktop4:SupportsMultipleInstances="true">
+      <uap:VisualElements DisplayName="Universal Clipboard command line" Description="The uc command" BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" AppListEntry="none" />
+      <Extensions>
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="uc.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias desktop4:Subsystem="console">
+            <uap5:ExecutionAlias Alias="uc.exe" />
+            <uap5:ExecutionAlias Alias="uclip.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Extensions>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="uc-agent.exe">
+        <desktop2:Rule Direction="in" IPProtocol="UDP" Profile="private" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <Capability Name="privateNetworkClientServer" />
+  </Capabilities>
+</Package>

@@ -1,0 +1,35 @@
+--------- beginning of main
+--------- beginning of system
+11-13 23:40:49.902 W/ActivityManager( 1957): Unable to start service Intent { act=com.google.android.gms.auth.key.retrieval.service.START pkg=com.google.android.gms } U=0: not found
+11-13 23:40:49.902 W/ActivityManager( 1957): Unbind failed: could not find connection for android.os.BinderProxy@85a38ca
+11-13 23:40:51.534 W/ActivityManager( 1957): Unable to start service Intent { act=android.service.appprediction.AppPredictionService cmp=com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiPredictionService } U=0: not found
+11-13 23:40:53.267 I/S7      ( 6808): NATIVE jni add(40,2)=42 where=activity
+11-13 23:40:53.410 I/S7      ( 6808): NATIVE uniffi greet=hello android from Rust info=uc-s7 0.1.0 arch=x86_64 os=android where=activity
+11-13 23:40:53.447 I/S7      ( 6808): FGS started type=connectedDevice sdk=29
+11-13 23:40:53.879 I/S7      ( 6808): READ where=main-focus sdk=29 hasPrimaryClip=true clip=present text=
+11-13 23:40:57.211 W/ActivityManager( 1957): Unable to start service Intent { act=android.service.appprediction.AppPredictionService cmp=com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiPredictionService } U=0: not found
+11-13 23:41:00.193 I/S7      ( 6808): WRITE ok where=service sdk=29 flags=[] text=bg-plain-29
+11-13 23:41:01.597 I/S7      ( 6808): WRITE ok where=service sdk=29 flags=[overlay] text=bg-overlay-29
+11-13 23:41:07.652 I/S7      ( 6808): WRITE ok where=service sdk=29 flags=[overlay, remote] text=bg-remote-29
+11-13 23:41:13.204 I/S7      ( 6808): WRITE ok where=service sdk=29 flags=[overlay, sensitive] text=bg-sensitive-29
+11-13 23:41:21.831 I/S7      ( 6808): WRITE ok where=service sdk=29 flags=[] text=bg-screenoff-29
+11-13 23:41:24.169 W/ActivityManager( 1957): Unable to start service Intent { act=android.service.appprediction.AppPredictionService cmp=com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiPredictionService } U=0: not found
+11-13 23:41:25.656 I/S7      ( 6808): WRITE ok where=service sdk=29 flags=[] text=bg-doze-29
+11-13 23:41:28.688 W/ActivityManager( 1957): Unable to start service Intent { act=android.service.appprediction.AppPredictionService cmp=com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiPredictionService } U=0: not found
+11-13 23:41:29.827 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:41:29.828 I/S7      ( 6808): READ where=service sdk=29 hasPrimaryClip=false clip=null text=null
+11-13 23:41:30.949 I/S7      ( 6808): NATIVE jni add(40,2)=42 where=service
+11-13 23:41:30.953 I/S7      ( 6808): NATIVE uniffi greet=hello android from Rust info=uc-s7 0.1.0 arch=x86_64 os=android where=service
+11-13 23:41:29.828 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:41:34.160 I/S7      ( 6808): TILE onClick sdk=29
+11-13 23:41:34.210 I/S7      ( 6808): FOCUS onCreate from=tile
+11-13 23:41:34.212 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:41:34.213 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:41:34.213 I/S7      ( 6808): READ where=focus-onCreate sdk=29 hasPrimaryClip=false clip=null text=null
+11-13 23:41:34.231 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:41:34.231 I/S7      ( 6808): READ where=focus-onResume sdk=29 hasPrimaryClip=false clip=null text=null
+11-13 23:41:34.402 I/S7      ( 6808): READ where=focus-windowFocus sdk=29 hasPrimaryClip=true clip=present text=bg-doze-29
+11-13 23:41:34.403 I/S7      ( 6808): FOCUS done in 193 ms
+11-13 23:41:34.231 E/ClipboardService( 1957): Denying clipboard access to dev.uc.s7, application is not in focus neither is a system service for user 0
+11-13 23:41:34.558 W/ActivityManager( 1957): Unable to start service Intent { act=android.service.appprediction.AppPredictionService cmp=com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiPredictionService } U=0: not found
+11-13 23:41:37.917 I/S7      ( 6808): TAP notification posted

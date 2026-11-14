@@ -1,0 +1,36 @@
+[package]
+name = "uc-net"
+description = "Universal Clipboard: LAN-only QUIC transport, interface detection, LAN discovery."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"] }
+hmac = "0.12"
+mdns-sd = "0.21.7"
+netdev = "0.47.0"
+postcard = { version = "1.1.3", default-features = false, features = ["alloc"] }
+quinn = { version = "0.11.12", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.10"
+socket2 = { version = "0.6.5", features = ["all"] }
+tokio = { version = "1.54.1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
+tracing = "0.1.44"
+uc-core = { version = "0.0.1", path = "../uc-core" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Networking_WinSock"] }
+
+[dev-dependencies]
+proptest = "1.12.0"
+serde_json = "1.0.154"
+uc-clip = { version = "0.0.1", path = "../uc-clip" }
+uc-testkit = { version = "0.0.1", path = "../uc-testkit" }

@@ -1,0 +1,81 @@
+# Release (plan 8.4): on a tag vX.Y.Z, build every package (package.yml), then wait for Max's
+# approval in the GitHub environment "release", sign latest.json with the updater key and
+# make a DRAFT GitHub release. Max publishes the draft by hand.
+#
+# Unsigned for now: no Windows code signing, no Apple Developer ID or notarization (see
+# docs/install.md). Only the update manifest is signed, and only when the environment has the
+# secret UCLIP_UPDATER_KEY; without it the release has no latest.json, so no installed app
+# updates to it.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: The tag must match Cargo.toml
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME#v}"
+          cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          [ "$tag" = "$cargo" ] || { echo "tag $tag != Cargo.toml $cargo"; exit 1; }
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: version
+    uses: ./.github/workflows/package.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  publish:
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    # Required reviewer (Max) and tags on the default branch only: set in the repo settings.
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
+      - name: Sign latest.json (10% rollout)
+        env:
+          UCLIP_UPDATER_KEY: ${{ secrets.UCLIP_UPDATER_KEY }}
+        run: |
+          set -eu
+          V=${{ needs.version.outputs.version }}
+          rm -f dist/uc-release.exe
+          if [ -z "${UCLIP_UPDATER_KEY:-}" ]; then
+            echo "::warning::No UCLIP_UPDATER_KEY in the release environment: no latest.json, so no auto-update to this release."
+            exit 0
+          fi
+          cargo build --release --locked -p uc-update --bin uc-release
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/v$V"
+          ./target/release/uc-release manifest --version "$V" --rollout 10 --base-url "$BASE" --out dist/latest.json \
+            "windows-x86_64:nsis:dist/UniversalClipboard-$V-windows-x64-setup.exe" \
+            "macos-aarch64:tar:dist/UniversalClipboard-$V-macos-aarch64.app.tar.gz"
+          ./target/release/uc-release verify dist/latest.json dist
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          V=${{ needs.version.outputs.version }}
+          ls -la dist
+          gh release create "v$V" dist/* --draft --verify-tag --title "Universal Clipboard $V" \
+            --notes "Unsigned builds. Windows shows a SmartScreen warning; macOS needs right-click > Open until notarization is set up. See docs/install.md."

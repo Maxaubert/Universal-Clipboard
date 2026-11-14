@@ -1,0 +1,31 @@
+[package]
+name = "uc-clip-win"
+description = "Universal Clipboard: Windows clipboard backend."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+png = "0.18.1"
+uc-clip = { version = "0.0.1", path = "../uc-clip" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_System_DataExchange",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+proptest = "1.12.0"
+uc-core = { version = "0.0.1", path = "../uc-core" }
+
+[target.'cfg(windows)'.dev-dependencies]
+uc-winhost = { version = "0.0.1", path = "../../tools/winhost" }

@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/uc-core",
+  "crates/uc-net",
+  "crates/uc-pair",
+  "crates/uc-keys",
+  "crates/uc-clip",
+  "crates/uc-clip-win",
+  "crates/uc-clip-mac",
+  "crates/uc-clip-linux",
+  "crates/uc-update",
+  "crates/uc-agent",
+  "crates/uc-cli",
+  "crates/uc-mobile",
+  "crates/uc-testkit",
+  "tools/winhost",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Maxaubert/Universal-Clipboard"
+rust-version = "1.99"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

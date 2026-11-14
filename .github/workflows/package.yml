@@ -1,0 +1,194 @@
+# Build the installers on all three OS, unsigned, and test install and uninstall on the
+# throwaway runners (plan 8.1, 8.5; M9). Used by ci.yml (every PR) and release.yml (tags).
+# Nothing here signs with a real key; the release job in release.yml signs latest.json.
+name: package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to stamp on the packages (a.b.c). Empty: the Cargo.toml version."
+        type: string
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: package
+          workspaces: |
+            .
+            apps/desktop/src-tauri
+      - name: Version
+        id: v
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}"
+          if (-not $v) { $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value }
+          "version=$v" >> $env:GITHUB_OUTPUT
+      - run: cargo build --release --locked -p uc-agent -p uc-cli -p uc-update
+      - name: Desktop window
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npx tauri build --no-bundle
+      - name: Put the window next to the agent
+        shell: pwsh
+        run: Copy-Item apps/desktop/src-tauri/target/release/universal-clipboard.exe "target/release/Universal Clipboard.exe"
+      - name: NSIS and MSIX
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) { choco install nsis -y --no-progress }
+          pwsh packaging/windows/build.ps1 -Version ${{ steps.v.outputs.version }} -Bin target/release -Out dist
+          Copy-Item target/release/uc-release.exe dist/
+      - name: Firewall helper unit test (elevated runner)
+        env:
+          UCLIP_TEST_FIREWALL: "1"
+        run: cargo test --release --locked -p uc-agent firewall
+      - name: Install and uninstall test
+        shell: pwsh
+        run: |
+          pwsh packaging/windows/test-install.ps1 `
+            -Setup dist/UniversalClipboard-${{ steps.v.outputs.version }}-windows-x64-setup.exe `
+            -Msix dist/UniversalClipboard-${{ steps.v.outputs.version }}-windows-x64.msix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.exe
+            dist/*.msix
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: package
+          workspaces: |
+            .
+            apps/desktop/src-tauri
+      - name: Version
+        id: v
+        run: |
+          v="${{ inputs.version }}"
+          [ -n "$v" ] || v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - run: cargo build --release --locked -p uc-agent -p uc-cli
+      - name: Desktop window
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npx tauri build --no-bundle
+      - run: cp apps/desktop/src-tauri/target/release/universal-clipboard target/release/
+      - name: App bundle, DMG, update archive (ad-hoc signed)
+        run: sh packaging/macos/build-app.sh ${{ steps.v.outputs.version }} target/release dist
+      - name: Check the DMG and the bundle
+        run: |
+          set -eu
+          DMG=dist/UniversalClipboard-${{ steps.v.outputs.version }}-macos-aarch64.dmg
+          hdiutil verify "$DMG"
+          MNT=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG"
+          APP="$MNT/Universal Clipboard.app"
+          codesign --verify --deep --strict "$APP"
+          test -x "$APP/Contents/MacOS/uc-agent"
+          test -x "$APP/Contents/MacOS/uc"
+          test -x "$APP/Contents/MacOS/universal-clipboard"
+          plutil -extract CFBundleExecutable raw "$APP/Contents/Info.plist" | grep -qx universal-clipboard
+          test -f "$APP/Contents/Library/LaunchAgents/io.github.maxaubert.uclip.agent.plist"
+          test -L "$MNT/Applications"
+          "$APP/Contents/MacOS/uc" --version
+          "$APP/Contents/MacOS/uc-agent" --version
+          plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist" | grep -qx io.github.maxaubert.uclip
+          hdiutil detach "$MNT"
+      - name: Install hook in a test profile (uc link, uninstall hook)
+        run: |
+          set -eu
+          APP="$PWD/dist/Universal Clipboard.app"
+          export UCLIP_PROFILE=citest UCLIP_STATE_DIR="$RUNNER_TEMP/uc-state" UCLIP_TEST_BIN_DIR="$RUNNER_TEMP/bin" UCLIP_TEST_KEYSTORE=file
+          "$APP/Contents/MacOS/uc-agent" --install-hook
+          test -L "$RUNNER_TEMP/bin/uc"
+          "$RUNNER_TEMP/bin/uc" --version
+          "$APP/Contents/MacOS/uc-agent" --uninstall-hook --dir "$APP/Contents/MacOS"
+          test ! -e "$RUNNER_TEMP/bin/uc"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            dist/*.dmg
+            dist/*.app.tar.gz
+
+  linux:
+    # 22.04: glibc 2.35, the plan minimum, so the .deb runs on 22.04 and newer and Debian 12.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: package
+          workspaces: |
+            .
+            apps/desktop/src-tauri
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+      - name: Version
+        id: v
+        run: |
+          v="${{ inputs.version }}"
+          [ -n "$v" ] || v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      # apt updates this build, so no self-update.
+      - run: cargo build --release --locked --no-default-features -p uc-agent -p uc-cli
+      - name: Window build deps (WebKitGTK 4.1, GTK 3)
+        run: |
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libgtk-3-dev librsvg2-dev libssl-dev
+      - name: Desktop window
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npx tauri build --no-bundle
+      - run: cp apps/desktop/src-tauri/target/release/universal-clipboard target/release/
+      - run: sh packaging/linux/build-deb.sh ${{ steps.v.outputs.version }} target/release dist
+      - name: Install and uninstall test (containers)
+        run: |
+          set -eu
+          DEB=dist/universal-clipboard_${{ steps.v.outputs.version }}_amd64.deb
+          for img in ubuntu:22.04 ubuntu:24.04 debian:12; do
+            echo "== $img"
+            docker run --rm -v "$PWD:/src" -w /src "$img" sh packaging/linux/test-deb.sh "$DEB"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.deb

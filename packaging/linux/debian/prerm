@@ -1,0 +1,11 @@
+#!/bin/sh
+# Remove the CLI link that postinst made (only our own link).
+set -e
+LIB=/usr/lib/universal-clipboard
+for n in uc uclip; do
+  if [ -L "/usr/bin/$n" ] && [ "$(readlink "/usr/bin/$n")" = "$LIB/uc" ]; then
+    rm -f "/usr/bin/$n"
+  fi
+done
+rm -f "$LIB/cli-name"
+exit 0

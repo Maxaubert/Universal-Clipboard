@@ -1,0 +1,72 @@
+[package]
+name = "uc-agent"
+description = "Universal Clipboard: the headless background program and its IPC server."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "uc_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "uc-agent"
+path = "src/main.rs"
+
+[features]
+default = ["self-update"]
+# The agent updates itself (Windows exe and macOS dmg builds). The .deb is built without it.
+self-update = []
+
+[dependencies]
+data-encoding = "2"
+ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"] }
+quinn = { version = "0.11.12", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros", "io-util", "signal"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+uc-clip = { version = "0.0.1", path = "../uc-clip" }
+uc-clip-linux = { version = "0.0.1", path = "../uc-clip-linux" }
+uc-core = { version = "0.0.1", path = "../uc-core" }
+uc-keys = { version = "0.0.1", path = "../uc-keys" }
+uc-net = { version = "0.0.1", path = "../uc-net" }
+uc-pair = { version = "0.0.1", path = "../uc-pair" }
+uc-update = { version = "0.0.1", path = "../uc-update" }
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[target.'cfg(windows)'.dependencies]
+uc-clip-win = { version = "0.0.1", path = "../uc-clip-win" }
+uc-winhost = { version = "0.0.1", path = "../../tools/winhost" }
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Pipes",
+  "Win32_System_Power",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_System_Console",
+  "Win32_Storage_Packaging_Appx",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+uc-clip-mac = { version = "0.0.1", path = "../uc-clip-mac" }
+objc2 = "0.6.5"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSError"] }
+objc2-service-management = { version = "0.3.2", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
