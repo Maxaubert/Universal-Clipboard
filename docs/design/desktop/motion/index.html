@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion mockups</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Page-local (index.html). kit.css stays untouched. */
+  .ix { max-width: 880px; margin: 0 auto; box-sizing: border-box; padding: 56px 32px 72px; }
+  .ix h1 { font-size: 34px; line-height: 40px; letter-spacing: -0.02em; }
+  .ix .lead { margin-top: 10px; font-size: 16px; line-height: 24px; color: var(--ink-2); max-width: 62ch; }
+  .ix .meta { margin-top: 6px; font-size: 13.5px; color: var(--ink-3); }
+  .groups { list-style: none; margin: 36px 0 0; padding: 0; display: grid; gap: 12px; }
+  .grp {
+    display: grid; grid-template-columns: 56px 1fr auto; gap: 4px 18px; align-items: center;
+    background: var(--white); border: 1px solid var(--line); border-radius: var(--r-tile);
+    padding: 18px 20px; color: var(--ink); text-decoration: none;
+    transition: border-color var(--t-base) var(--ease-out), transform var(--t-base) var(--ease-out);
+  }
+  .grp:hover { border-color: var(--line-2); transform: translateY(-1px); }
+  .grp:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .grp .ic {
+    grid-row: 1 / 3; width: 56px; height: 56px; border-radius: var(--r); background: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .grp .ic svg { display: block; }
+  .grp .nm { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .grp .ds { grid-column: 2; font-size: 14px; line-height: 20px; color: var(--ink-3); }
+  .grp .ct {
+    grid-row: 1 / 3; grid-column: 3; font-size: 13.5px; font-weight: 600; color: var(--ink-2);
+    border: 1px solid var(--line-2); border-radius: 999px; padding: 5px 12px; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .grp .ids { font-weight: 700; color: var(--ink); margin-right: 6px; }
+  .how {
+    margin-top: 36px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-tile);
+    padding: 22px 24px;
+  }
+  .how h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .how ol { margin: 12px 0 0; padding-left: 20px; font-size: 15px; line-height: 24px; color: var(--ink-2); }
+  .how li + li { margin-top: 4px; }
+  .how code {
+    font-family: var(--font); font-weight: 700; color: var(--ink); background: var(--white);
+    border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px;
+  }
+  .foot { margin-top: 28px; font-size: 13.5px; line-height: 20px; color: var(--ink-3); }
+  .foot a { color: var(--ink); text-underline-offset: 3px; }
+
+  /* A calm entrance: rows rise a little, one after another. */
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .groups li { animation: rise 520ms var(--ease-out) both; }
+  .groups li:nth-child(2) { animation-delay: 60ms; }
+  .groups li:nth-child(3) { animation-delay: 120ms; }
+  .groups li:nth-child(4) { animation-delay: 180ms; }
+  .groups li:nth-child(5) { animation-delay: 240ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .groups li { animation: none; }
+    .grp, .grp:hover { transition: none; transform: none; }
+  }
+  @media (max-width: 720px) {
+    .ix { padding: 32px 16px 48px; }
+    .ix h1 { font-size: 26px; line-height: 32px; }
+    .grp { grid-template-columns: 44px 1fr; padding: 16px; gap: 4px 14px; }
+    .grp .ic { width: 44px; height: 44px; }
+    .grp .ct { grid-row: auto; grid-column: 2; justify-self: start; margin-top: 6px; }
+    .how { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body class="gallery">
+<main class="ix">
+  <h1>Motion mockups</h1>
+  <p class="lead">New motion for Universal Clipboard. Each page shows one moment of the app, with several options side by side. Every option plays on its own and loops. The look stays the same as the app.</p>
+  <p class="meta">Made 2026-11-14. 38 options in 5 groups.</p>
+
+  <ul class="groups">
+    <li><a class="grp" href="setup.html">
+      <span class="ic"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="14" r="2.5" fill="#1D1C1A"/><circle cx="14" cy="14" r="2.5" fill="#1D1C1A"/><path d="M19 14h6"/><path d="M7.5 14h4M16.5 14h1"/></svg></span>
+      <span class="nm">Setup flow</span>
+      <span class="ds">The whole first run, from Welcome to Connected, with the moves between screens.</span>
+      <span class="ct"><span class="ids">S1 to S7</span>7 options</span>
+    </a></li>
+    <li><a class="grp" href="paired.html">
+      <span class="ic"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#1E7A46" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="14" cy="14" r="10"/><path d="M9.5 14.5l3 3 6-6"/></svg></span>
+      <span class="nm">Paired</span>
+      <span class="ds">The moment two devices meet. Every option ends on the real Connected screen.</span>
+      <span class="ct"><span class="ids">P1 to P8</span>8 options</span>
+    </a></li>
+    <li><a class="grp" href="errors.html">
+      <span class="ic"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#B42318" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="14" cy="14" r="10"/><path d="M14 8.5v7"/><circle cx="14" cy="19.5" r="0.6" fill="#B42318"/></svg></span>
+      <span class="nm">Errors</span>
+      <span class="ds">Wrong code, old code, too many tries, no network and a device that cannot be found.</span>
+      <span class="ct"><span class="ids">E1 to E8</span>8 options</span>
+    </a></li>
+    <li><a class="grp" href="home.html">
+      <span class="ic"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="22" height="8" rx="2.5" fill="#1D1C1A"/><rect x="3" y="15" width="9.5" height="9" rx="2.5"/><rect x="15.5" y="15" width="9.5" height="9" rx="2.5"/></svg></span>
+      <span class="nm">Home: this PC</span>
+      <span class="ds">Ways to show this PC apart from the other devices, so it no longer looks like one more tile.</span>
+      <span class="ct"><span class="ids">H1 to H8</span>8 options</span>
+    </a></li>
+    <li><a class="grp" href="activity.html">
+      <span class="ic"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 23V7"/><path d="M8 12l6-6 6 6"/></svg></span>
+      <span class="nm">Sync activity</span>
+      <span class="ds">A copy is sent or arrives, Pause and Resume, a device needs help, and a code renews.</span>
+      <span class="ct"><span class="ids">A1 to A7</span>7 options</span>
+    </a></li>
+  </ul>
+
+  <section class="how" aria-labelledby="how-h">
+    <h2 id="how-h">How to choose</h2>
+    <ol>
+      <li>Open a page. Watch each option play, or press Replay.</li>
+      <li>Press Reduced motion at the top to see the calm version of each option.</li>
+      <li>Reply with the ids you like, for example <code>P3, E5, S2, H4, A1</code>.</li>
+      <li>Mixing is fine. You can pick more than one per page, or say which part of an option you like.</li>
+    </ol>
+  </section>
+
+  <p class="foot">The shared pieces (screens, colours, timing) are on the <a href="kit.html">motion kit</a> page. Open any page straight from the folder in a browser. It works offline.</p>
+</main>
+</body>
+</html>

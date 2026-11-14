@@ -39,7 +39,19 @@ describe('Home', () => {
   it('greys the tiles when paused', async () => {
     await open('paused');
     expect(await screen.findByTestId('subtitle')).toHaveTextContent('Copies stay on this PC');
-    expect(document.querySelectorAll('[data-device] svg[fill="#B3AEA7"]').length).toBe(6);
+    // H3: the five other devices are tiles; this PC is the dark bar and keeps its white logo.
+    expect(document.querySelectorAll('[data-device] svg[fill="#B3AEA7"]').length).toBe(5);
+  });
+  it('docks this device as a bar with the last copy as facts (H3)', async () => {
+    const m = await open('home');
+    const bar = await screen.findByRole('button', { name: /Max's PC/ });
+    expect(bar).toHaveTextContent('This PC');
+    expect(screen.getByTestId('last-copy')).toHaveTextContent('Text, from Mac mini, just now');
+    expect(document.querySelectorAll('.tile[data-device]').length).toBe(5);
+    m.copy('sent', 'Image');
+    await waitFor(() => expect(screen.getByTestId('last-copy')).toHaveTextContent('Image, sent, just now'));
+    // A3: the line under the headline shows the copy for a moment.
+    await waitFor(() => expect(screen.getByTestId('subtitle')).toHaveTextContent('Image, sent, just now'));
   });
 });
 

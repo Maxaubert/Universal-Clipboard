@@ -41,6 +41,7 @@
     >
       {#each Array.from({ length: STEPS }, (_, k) => k + 1) as i}
         <span
+          class="stepdot"
           style={`display: block; height: 6px; border-radius: 3px; width: ${i === step ? 22 : 8}px; background: ${i <= step ? '#1D1C1A' : '#BDB8B1'};`}
         ></span>
       {/each}

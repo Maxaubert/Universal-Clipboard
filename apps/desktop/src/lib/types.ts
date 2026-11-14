@@ -21,6 +21,18 @@ export interface Status {
   paused: boolean;
   this_device: string;
   version: string;
+  /** The last copies, newest first: facts only, never content (agent `status`). */
+  activity?: Activity[];
+}
+
+/** One copy that moved, as facts: "Text", "received", "Mac mini", when. Also the data of the
+ * agent's `activity` event. */
+export interface Activity {
+  kind: string;
+  direction: 'sent' | 'received' | 'not sent' | string;
+  device: string | null;
+  time_ms: number;
+  note: string | null;
 }
 
 export type DeviceState =

@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home: this device</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Page-local styles for home.html. kit.css is frozen. */
+  :root { --tint: #EEEBE7; --asleep: 0.45; }
+
+  /* Shared bits: status switch (Connected / Asleep stacked in one cell), rolling text, rows. */
+  .sw { display: inline-grid; justify-items: start; align-items: center; }
+  .sw > span { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .sw[data-s='on'] .s-off, .sw[data-s='off'] .s-on { opacity: 0; }
+  .tile .sw { justify-items: center; }
+  .dw { position: relative; display: inline-flex; }
+  .halo {
+    position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--green); box-sizing: border-box;
+    opacity: 0; pointer-events: none;
+  }
+  .dev .g { transition: none; }
+  .dev.asleep .g { opacity: var(--asleep); }
+  .roll { display: inline-grid; min-width: 0; }
+  .roll > span { grid-area: 1 / 1; white-space: nowrap; }
+  .roll.end { justify-items: end; }
+  .roll.wrap > span { white-space: normal; }
+  .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-4); flex: none; }
+  .tag {
+    font-size: 12.5px; font-weight: 600; line-height: 1; color: var(--ink-2); padding: 5px 7px 5px;
+    border-radius: 6px; background: var(--paper); border: 1px solid var(--line);
+  }
+  .np-name { display: flex; align-items: center; gap: 10px; }
+
+  .rows { display: flex; flex-direction: column; gap: 8px; }
+  .row {
+    height: 60px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 0 16px;
+    background: var(--white); border: 1px solid var(--line); border-radius: var(--r-tile); color: var(--ink);
+    font-family: inherit; text-align: left; width: 100%; flex: none;
+  }
+  .row .nm { flex: 1; font-size: 15px; font-weight: 600; min-width: 0; }
+  .row > .sw { font-size: 13px; color: var(--ink-3); justify-items: end; }
+  .row.add { background: transparent; border: 1.5px dashed var(--dash); }
+  .row.add .nm { font-size: 14.5px; }
+  .addg { width: 28px; display: flex; justify-content: center; }
+  .rows-head { display: flex; align-items: baseline; justify-content: space-between; font-size: 14px; color: var(--ink-3); padding: 0 2px; }
+  .rows-head > span:first-child { font-weight: 600; color: var(--ink-2); }
+  .ttl { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0 4px; }
+  .ttl-t { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+
+  /* H1 Nameplate */
+  .np .hdr-text { flex: 1 1 0; min-width: 0; }
+  .np { flex-wrap: wrap; gap: 8px 8px; padding: 16px 14px 14px 16px; }
+  .np-g {
+    margin-right: 4px; width: 56px; height: 56px; border-radius: var(--r); background: var(--paper); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box;
+  }
+  .wsq rect { transform-box: fill-box; transform-origin: center; }
+  .np-foot {
+    flex-basis: 100%; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line);
+    margin-top: 6px; padding-top: 12px; font-size: 13.5px; color: var(--ink-3);
+  }
+  .np-foot b, .hero-foot b, .map-fact b, .root-f b { font-weight: 600; color: var(--ink-2); }
+  .lst { margin: 4px 0 -4px 2px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+
+  /* H2 Hero screen */
+  .hero { background: var(--white); border: 1px solid var(--line); border-radius: var(--r-tile); padding: 18px 14px 14px 18px; }
+  .hero-top { display: flex; align-items: center; gap: 18px; }
+  .mon { display: block; flex: none; overflow: visible; }
+  .mon-scr { stroke-dasharray: 1 1; }
+  .mon-logo rect { transform-box: fill-box; transform-origin: center; }
+  .sheet { opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .hero-text { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .hero-text .h-m { font-size: 28px; }
+  .hero-text .hdr-sub { margin-top: 4px; }
+  .hero-btns { display: flex; flex-direction: column; gap: 8px; align-self: flex-start; }
+  .hero-foot {
+    display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); margin: 14px 0 0 0;
+    padding-top: 12px; font-size: 13.5px; color: var(--ink-3);
+  }
+
+  /* H3 You are here */
+  .here {
+    margin-top: auto; position: relative; height: 76px; box-sizing: border-box; border-radius: var(--r-tile);
+    background: var(--ink); color: var(--white); display: flex; align-items: center; gap: 14px; padding: 0 18px 0 16px;
+    box-shadow: 0 1px 2px rgba(40,35,30,0.10), 0 8px 20px rgba(40,35,30,0.16); overflow: hidden;
+  }
+  .here-line {
+    position: absolute; left: 0; right: 0; top: 0; height: 2px; background: rgba(255,255,255,0.75);
+    opacity: 0; transform-origin: left center;
+  }
+  .here-g {
+    position: relative; width: 44px; height: 44px; border-radius: var(--r); background: rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .here-ring { position: absolute; inset: -4px; border-radius: 13px; border: 1.5px solid rgba(255,255,255,0.6); opacity: 0; }
+  .here-t { display: flex; flex-direction: column; gap: 3px; flex: none; }
+  .here-t b { font-size: 16px; font-weight: 700; letter-spacing: 0.01em; }
+  .here-t span { font-size: 13px; color: #CFCBC5; }
+  .here-f { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 13px; color: #E9E6E1; text-align: right; }
+  .here-l { color: #B3AEA7; font-size: 12.5px; }
+
+  /* H4 Side by side */
+  .me {
+    width: 158px; flex: none; box-sizing: border-box; border-radius: var(--r-tile); background: var(--tint);
+    padding: 18px 14px 14px; display: flex; flex-direction: column; gap: 10px; position: relative; align-self: flex-start;
+  }
+  .me-g {
+    position: relative; width: 60px; height: 60px; border-radius: var(--r-tile); background: var(--white);
+    border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  }
+  .me-ring { position: absolute; inset: -5px; border-radius: 15px; border: 2px solid var(--green); opacity: 0; }
+  .me-id { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .me-last { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; line-height: 1.4; color: var(--ink-2); }
+  .me-last .lbl { font-size: 12.5px; color: var(--ink-3); font-weight: 600; }
+  .me-btns { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .others { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+  .others .rows-head { font-size: 13px; }
+  .row2 { height: 66px; gap: 12px; padding: 0 14px; }
+  .r2t { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+  .row2 .nm { font-size: 14.5px; flex: none; }
+  .r2t .sw { font-size: 12.5px; color: var(--ink-3); }
+  .row2.add .addg { width: 26px; }
+  .fly { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--green); opacity: 0; pointer-events: none; z-index: 2; }
+
+  /* H5 Name chip */
+  .chip {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box;
+    padding: 0 12px 0 10px; border-radius: 8px; background: var(--white); border: 1px solid var(--line);
+    font-size: 13.5px; color: var(--ink-3); max-width: 100%;
+  }
+  .chip b { color: var(--ink); font-weight: 700; font-size: 14px; }
+  .chip-m { color: var(--ink-2); }
+  .chip-g { position: relative; width: 18px; height: 18px; overflow: hidden; flex: none; }
+  .chip-g > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .cg-b { opacity: 0; }
+  .chip-vr { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
+  #h5 .tiles { margin-top: 4px; }
+
+  /* H6 Constellation */
+  .map { position: relative; width: 420px; height: 420px; flex: none; }
+  .map-svg { position: absolute; inset: 0; overflow: visible; }
+  .ln-on { stroke-dasharray: 1 1; }
+  .ln[data-s='on'] .ln-off, .ln[data-s='off'] .ln-on { opacity: 0; }
+  .ctr-ring, .mdot, .tdot { opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .ctr { position: absolute; width: 100px; display: flex; flex-direction: column; align-items: center; }
+  .ctr-c {
+    width: 100px; height: 100px; border-radius: 50%; background: var(--white); border: 2px solid var(--ink);
+    display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(40,35,30,0.06), 0 8px 22px rgba(40,35,30,0.10);
+  }
+  .ctr-n { margin-top: 10px; font-size: 17px; font-weight: 700; line-height: 1.2; }
+  .ctr-s { font-size: 13px; color: var(--ink-3); line-height: 1.4; }
+  .sat {
+    position: absolute; width: 140px; display: flex; flex-direction: column; align-items: center; gap: 0;
+    background: none; border: 0; padding: 0; color: var(--ink); font-family: inherit;
+  }
+  .sat-c {
+    width: 60px; height: 60px; border-radius: 50%; background: var(--white); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  }
+  .sat.up .sat-n { margin-top: 0; }
+  .sat.up .sat-s { margin-bottom: 8px; }
+  .sat.add .sat-c { background: transparent; border: 1.5px dashed var(--dash); }
+  .sat-n { margin-top: 8px; font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+  .sat-s { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+  .map-fact { margin-top: auto; display: flex; justify-content: center; gap: 8px; font-size: 13.5px; color: var(--ink-3); }
+
+  /* H7 Home base */
+  .base {
+    position: relative; margin-top: 18px; height: 78px; box-sizing: border-box; border-radius: var(--r-tile);
+    background: var(--tint); display: flex; align-items: center; gap: 14px; padding: 0 16px 0 14px; overflow: hidden;
+  }
+  .wash { position: absolute; inset: 0; background: rgba(30, 122, 70, 0.12); opacity: 0; pointer-events: none; }
+  .base-g {
+    position: relative; width: 48px; height: 48px; border-radius: 50%; background: var(--white); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none;
+  }
+  .base-t { position: relative; display: flex; flex-direction: column; gap: 3px; flex: none; }
+  .base-t b { font-size: 16px; font-weight: 700; }
+  .base-t span { font-size: 13px; color: var(--ink-3); }
+  .base-f { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 13px; color: var(--ink-2); }
+  .base-l { font-size: 12.5px; color: var(--ink-3); font-weight: 600; }
+  .hair { height: 1px; background: var(--line); margin: 18px 4px; transform-origin: left center; }
+
+  /* H8 Roots */
+  .tree { position: relative; height: 460px; }
+  .tree-svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  .trunk { stroke-dasharray: 1 1; }
+  .root { position: absolute; left: 0; right: 0; top: 0; height: 64px; display: flex; align-items: center; gap: 12px; padding-left: 14px; }
+  .root-g {
+    position: relative; width: 48px; height: 48px; border-radius: var(--r-tile); background: var(--white);
+    border: 1.5px solid var(--ink); display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none;
+  }
+  .root-ring { position: absolute; inset: -6px; border-radius: 16px; border: 2px solid var(--green); opacity: 0; }
+  .root-t { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .root-f { position: absolute; left: 76px; top: 76px; display: flex; gap: 8px; font-size: 13.5px; color: var(--ink-3); }
+  .row.t8 { position: absolute; left: 76px; width: 342px; height: 58px; }
+
+  /* Reduced motion: the halo and travelling dots never show; state comes from text, color and fades. */
+  html.reduce .halo, html.reduce .mdot, html.reduce .tdot, html.reduce .fly { display: none; }
+
+</style>
+</head>
+<body class="gallery">
+<!-- Generated 2026-11-14 by gen-home.cjs. Home panel (L07): where and how THIS device shows. -->
+<header class="gal-head">
+  <div class="gal-titles">
+    <h1>Home: where this PC lives</h1>
+    <p class="gal-note">Eight ways to set this PC apart from the other devices. Each loop shows the list arriving, lin-kde coming online, a copy landing from Max's Mac Mini, and Max's iPhone going to sleep.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="h1" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr" style="padding: 44px 20px 22px 20px; gap: 16px;">
+          <div class="hdr np">
+            <div class="np-g"><svg class="g wsq" width="30" height="30" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect></svg></div>
+            <div class="hdr-text">
+              <div class="np-name"><h1 class="h-m">MAX</h1><span class="tag">This PC</span></div>
+              <div class="hdr-sub"><span class="dot green"></span><span>Working</span><span class="sep"></span><span class="roll" data-roll="cnt"><span>2 devices connected</span></span></div>
+            </div>
+            <button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+            <div class="np-foot"><b>Last copy</b><span class="roll " data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span></div>
+          </div>
+          <h2 class="lst">Other devices</h2>
+          <div class="tiles"><button type="button" class="tile dev" data-d="mac"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Max's Mac Mini</span><span class="tile-state"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile dev asleep" data-d="iph"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Max's iPhone</span><span class="tile-state"><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile dev" data-d="lin"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">lin-kde</span><span class="tile-state"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H1</b> Nameplate</div><p class="opt-desc">The header becomes this PC: its logo builds from four tiles, and a copy that lands tints them green in turn while the last copy line rolls over.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h2" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr" style="padding: 44px 20px 22px 20px; gap: 14px;">
+          <div class="hero">
+            <div class="hero-top">
+              <svg class="mon" width="132" height="104" viewBox="0 0 132 104" fill="none" aria-hidden="true">
+                <defs><clipPath id="h2clip"><rect x="3" y="3" width="126" height="76" rx="7"></rect></clipPath></defs>
+                <path class="mon-scr" d="M10 2H122Q130 2 130 10V72Q130 80 122 80H10Q2 80 2 72V10Q2 2 10 2Z" pathLength="1" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></path>
+                <path class="mon-st" d="M66 80v12M48 94h36" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g transform="translate(48 23) scale(1.5)"><g class="mon-logo" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></g>
+                <g clip-path="url(#h2clip)"><g transform="translate(96 44)"><g class="sheet"><path d="M0 0h13l7 7v20H0z" fill="#FFFFFF" stroke="#1E7A46" stroke-width="1.75" stroke-linejoin="round"></path><path d="M13 0v7h7" stroke="#1E7A46" stroke-width="1.75" stroke-linejoin="round"></path></g></g></g>
+              </svg>
+              <div class="hero-text">
+                <h1 class="h-m">MAX</h1>
+                <span class="small">This PC</span>
+                <span class="hdr-sub"><span class="dot green"></span>Working</span>
+              </div>
+              <div class="hero-btns"><button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button><button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button></div>
+            </div>
+            <div class="hero-foot"><b>Last copy</b><span class="roll " data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span></div>
+          </div>
+          <div class="rows-head"><span>Other devices</span><span class="roll" data-roll="cnt"><span>2 devices connected</span></span></div>
+          <div class="rows"><button type="button" class="row dev" data-d="mac"><svg class="g" width="28" height="28" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="nm">Max's Mac Mini</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row dev asleep" data-d="iph"><svg class="g" width="28" height="28" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="nm">Max's iPhone</span><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row dev" data-d="lin"><svg class="g" width="28" height="28" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="nm">lin-kde</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row add "><span class="addg"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span><span class="nm">Add a device</span></button></div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H2</b> Hero screen</div><p class="opt-desc">This PC gets a drawn monitor above the list. A copy slides onto its screen, the screen edge glows green, then the copy settles into the last copy line.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h3" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr" style="padding: 44px 20px 20px 20px; gap: 16px;">
+          <div class="hdr">
+            <div class="hdr-text">
+              <h1 class="h-m">Working</h1>
+              <div class="hdr-sub"><span class="dot green"></span><span class="roll" data-roll="cnt"><span>2 devices connected</span></span></div>
+            </div>
+            <button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="tiles"><button type="button" class="tile dev" data-d="mac"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Max's Mac Mini</span><span class="tile-state"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile dev asleep" data-d="iph"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Max's iPhone</span><span class="tile-state"><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile dev" data-d="lin"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">lin-kde</span><span class="tile-state"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+          <div class="here">
+            <span class="here-line"></span>
+            <span class="here-g"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#FFFFFF" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><span class="here-ring"></span></span>
+            <span class="here-t"><b>MAX</b><span>This PC</span></span>
+            <span class="here-f"><span class="here-l">Last copy</span><span class="roll end" data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H3</b> You are here</div><p class="opt-desc">This PC leaves the grid and docks as a dark bar at the bottom. It rises in last, and a copy that lands draws a light line across it and rings its logo once.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h4" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr sp" style="padding: 44px 20px 22px 20px; flex-direction: row; gap: 12px; position: relative;">
+          <aside class="me">
+            <span class="me-g"><svg class="g" width="34" height="34" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><span class="me-ring"></span></span>
+            <div class="me-id"><h1 class="h-m">MAX</h1><span class="small">This PC</span></div>
+            <span class="hdr-sub"><span class="dot green"></span>Working</span>
+            <div class="me-last"><span class="lbl">Last copy</span><span class="roll wrap" data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span></div>
+            <div class="me-btns"><button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button><button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button></div>
+          </aside>
+          <section class="others">
+            <div class="rows-head"><span>Devices</span><span class="roll" data-roll="cnt" data-fmt="short"><span>2 connected</span></span></div>
+            <div class="rows"><button type="button" class="row row2 dev" data-d="mac"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="r2t"><span class="nm">Max's Mac Mini</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></button><button type="button" class="row row2 dev asleep" data-d="iph"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="r2t"><span class="nm">Max's iPhone</span><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></button><button type="button" class="row row2 dev" data-d="lin"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="r2t"><span class="nm">lin-kde</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></button><button type="button" class="row add row2"><span class="addg"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span><span class="nm">Add a device</span></button></div>
+          </section>
+          <span class="fly" aria-hidden="true"></span>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H4</b> Side by side</div><p class="opt-desc">This PC owns a tinted column on the left, the others list on the right. A copy travels across as a green dot from the device that sent it.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h5" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr" style="padding: 44px 20px 22px 20px; gap: 14px;">
+          <div class="ttl">
+            <div class="ttl-t"><h1 class="h-l">Working</h1><div class="hdr-sub"><span class="dot green"></span><span class="roll" data-roll="cnt"><span>2 devices connected</span></span></div></div>
+            <button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="chip">
+            <span class="chip-g"><span class="cg-a"><svg class="g" width="16" height="16" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg></span><span class="cg-b"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E7A46" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v15M5.5 12.5l6.5 6.5 6.5-6.5"></path></svg></span></span>
+            <b>MAX</b><span class="chip-m">This PC</span>
+            <span class="chip-vr"></span>
+            <span class="roll " data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span>
+          </div>
+          <div class="tiles"><button type="button" class="tile dev" data-d="mac"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Max's Mac Mini</span><span class="tile-state"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile dev asleep" data-d="iph"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Max's iPhone</span><span class="tile-state"><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile dev" data-d="lin"><svg class="g" width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="tile-text"><span class="tile-name">lin-kde</span><span class="tile-state"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></span></button><button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button></div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H5</b> Name chip</div><p class="opt-desc">A small chip under the title says which PC this is. On a copy the chip edge turns green and its logo rolls to an arrow and back; the chip unrolls on entry.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h6" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr" style="padding: 44px 20px 18px 20px; gap: 10px;">
+          <div class="ttl">
+            <div class="ttl-t"><h1 class="h-l">Working</h1><div class="hdr-sub"><span class="dot green"></span><span class="roll" data-roll="cnt"><span>2 devices connected</span></span></div></div>
+            <button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="map">
+            <svg class="map-svg" width="420" height="420" viewBox="0 0 420 420" fill="none" aria-hidden="true">
+              <g class="ln" data-d="mac" data-s="on" data-ax="102" data-ay="118.6" data-bx="166.5" data-by="170.8"><path class="ln-off" d="M102 118.6L166.5 170.8" stroke="#6E6A64" stroke-width="1.5" stroke-dasharray="3 6" stroke-linecap="round"></path><path class="ln-on" d="M102 118.6L166.5 170.8" pathLength="1" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path></g><g class="ln" data-d="iph" data-s="off" data-ax="318" data-ay="118.6" data-bx="253.5" data-by="170.8"><path class="ln-off" d="M318 118.6L253.5 170.8" stroke="#6E6A64" stroke-width="1.5" stroke-dasharray="3 6" stroke-linecap="round"></path><path class="ln-on" d="M318 118.6L253.5 170.8" pathLength="1" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path></g><g class="ln" data-d="lin" data-s="on" data-ax="319" data-ay="302.2" data-bx="252" data-by="243.1"><path class="ln-off" d="M319 302.2L252 243.1" stroke="#6E6A64" stroke-width="1.5" stroke-dasharray="3 6" stroke-linecap="round"></path><path class="ln-on" d="M319 302.2L252 243.1" pathLength="1" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path></g><path class="ln-add" d="M101 302.2L168 243.1" stroke="#8A857E" stroke-width="1.5" stroke-dasharray="2 6" stroke-linecap="round"></path>
+              <circle class="ctr-ring" cx="210" cy="206" r="50" stroke="#1E7A46" stroke-width="2"></circle>
+              <circle class="mdot" r="5" fill="#1E7A46" cx="0" cy="0"></circle>
+            </svg>
+            <div class="ctr" style="left: 160px; top: 156px;"><span class="ctr-c"><svg class="g" width="40" height="40" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg></span><span class="ctr-n">MAX</span><span class="ctr-s">This PC</span></div>
+            <button type="button" class="sat dev up" data-d="mac" style="left: 4px; bottom: 294px;"><span class="sat-n">Max's Mac Mini</span><span class="sat-s"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span><span class="sat-c"><svg class="g" width="24" height="24" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg></span></button><button type="button" class="sat dev up asleep" data-d="iph" style="left: 276px; bottom: 294px;"><span class="sat-n">Max's iPhone</span><span class="sat-s"><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span><span class="sat-c"><svg class="g" width="24" height="24" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg></span></button><button type="button" class="sat dev" data-d="lin" style="left: 276px; top: 296px;"><span class="sat-c"><svg class="g" width="24" height="24" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg></span><span class="sat-n">lin-kde</span><span class="sat-s"><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></span></button><button type="button" class="sat add" style="left: 4px; top: 296px;"><span class="sat-c"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span><span class="sat-n">Add a device</span></button>
+          </div>
+          <p class="map-fact"><b>Last copy</b><span class="roll " data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span></p>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H6</b> Constellation</div><p class="opt-desc">This PC sits in the middle with each device on a line to it. Lines draw in when a device wakes, pull back when it sleeps, and a copy rides its line to the centre.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h7" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr" style="padding: 44px 20px 22px 20px;">
+          <div class="ttl">
+            <div class="ttl-t"><h1 class="h-l">Working</h1><div class="hdr-sub"><span class="dot green"></span><span class="roll" data-roll="cnt"><span>2 devices connected</span></span></div></div>
+            <button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+            <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+          </div>
+          <div class="base">
+            <span class="wash"></span>
+            <span class="base-g"><svg class="g" width="24" height="24" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg></span>
+            <span class="base-t"><b>MAX</b><span>This PC</span></span>
+            <span class="base-f"><span class="base-l">Last copy</span><span class="roll end" data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span></span>
+          </div>
+          <div class="hair"></div>
+          <div class="rows"><button type="button" class="row dev" data-d="mac"><svg class="g" width="28" height="28" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="nm">Max's Mac Mini</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row dev asleep" data-d="iph"><svg class="g" width="28" height="28" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="nm">Max's iPhone</span><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row dev" data-d="lin"><svg class="g" width="28" height="28" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="nm">lin-kde</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row add "><span class="addg"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span><span class="nm">Add a device</span></button></div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H7</b> Home base</div><p class="opt-desc">This PC is a tinted row pinned above a hairline, apart from the list. A copy washes across it in soft green from left to right, then the last copy line rolls.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h8" data-loop="9000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body">
+        <div class="scr" style="padding: 44px 20px 22px 20px;">
+          <div class="tree">
+            <svg class="tree-svg" width="418" height="460" viewBox="0 0 418 460" fill="none" aria-hidden="true">
+              <path class="trunk" d="M38 62V353" pathLength="1" stroke="#BDB8B1" stroke-width="2" stroke-linecap="round"></path>
+              <g class="ln" data-d="mac" data-s="on" data-cy="153"><path class="ln-off" d="M38 137Q38 153 54 153H76" stroke="#6E6A64" stroke-width="1.5" stroke-dasharray="3 5" stroke-linecap="round"></path><path class="ln-on" d="M38 137Q38 153 54 153H76" pathLength="1" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path></g><g class="ln" data-d="iph" data-s="off" data-cy="225"><path class="ln-off" d="M38 209Q38 225 54 225H76" stroke="#6E6A64" stroke-width="1.5" stroke-dasharray="3 5" stroke-linecap="round"></path><path class="ln-on" d="M38 209Q38 225 54 225H76" pathLength="1" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path></g><g class="ln" data-d="lin" data-s="on" data-cy="297"><path class="ln-off" d="M38 281Q38 297 54 297H76" stroke="#6E6A64" stroke-width="1.5" stroke-dasharray="3 5" stroke-linecap="round"></path><path class="ln-on" d="M38 281Q38 297 54 297H76" pathLength="1" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path></g><path class="br-add" d="M38 353Q38 369 54 369H76" stroke="#8A857E" stroke-width="1.5" stroke-dasharray="2 5" stroke-linecap="round"></path>
+              <circle class="tdot" r="5" fill="#1E7A46" cx="76" cy="153"></circle>
+            </svg>
+            <div class="root">
+              <span class="root-g"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><span class="root-ring"></span></span>
+              <div class="root-t"><div class="np-name"><h1 class="h-m">MAX</h1><span class="tag">This PC</span></div><div class="hdr-sub"><span class="dot green"></span><span>Working</span><span class="sep"></span><span class="roll" data-roll="cnt" data-fmt="short"><span>2 connected</span></span></div></div>
+              <button type="button" class="hdrbtn" aria-label="Pause" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+              <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+            </div>
+            <p class="root-f"><b>Last copy</b><span class="roll " data-roll="fact"><span>Text, from Max's Mac Mini, just now</span></span></p>
+            <button type="button" class="row t8 dev" data-d="mac" style="top: 124px;"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="nm">Max's Mac Mini</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row t8 dev asleep" data-d="iph" style="top: 196px;"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="nm">Max's iPhone</span><span class="sw" data-s="off"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row t8 dev" data-d="lin" style="top: 268px;"><svg class="g" width="26" height="26" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg><span class="nm">lin-kde</span><span class="sw" data-s="on"><span class="s-on"><span class="dw"><span class="dot green"></span><span class="halo"></span></span>Connected</span><span class="s-off"><span class="dot ring"></span>Asleep</span></span></button><button type="button" class="row add t8" style="top: 340px;"><span class="addg"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span><span class="nm">Add a device</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>H8</b> Roots</div><p class="opt-desc">This PC is the root and every device hangs off one trunk. Branches grow green when a device wakes, and a copy climbs the trunk from its branch to the root.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+</main>
+<script src="art.js"></script>
+<script src="kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  /* One story per loop (9 s): the list arrives, lin-kde comes online (1.7 s), a copy lands from
+     Max's Mac Mini (3.5 s), Max's iPhone goes to sleep (5.7 s), then rest. The resting HTML is the
+     final state; the script sets the start state (iPhone connected, lin-kde asleep, old last copy). */
+  const E = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  const IO = 'cubic-bezier(0.65, 0, 0.35, 1)';
+  const IN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const T = { on: 1700, sync: 3500, sleep: 5700 };
+  const FACT0 = "Image, from Max's iPhone, 1 hour ago";
+  const FACT1 = "Text, from Max's Mac Mini, just now";
+  const GREEN = '#1E7A46', INK = '#1D1C1A', LINE = '#D9D6D1';
+  const ASLEEP = 0.45;
+
+  const list = (ctx, t) => (typeof t === 'string' ? ctx.$$(t) : [t].flat().filter(Boolean));
+
+  /* Entrance: rise (or fade only when reduced). o: y, x, scale, d, delay, step. */
+  function rise(ctx, target, o = {}) {
+    const els = list(ctx, target);
+    els.forEach((el, i) => {
+      if (ctx.reduced) {
+        ctx.anim(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 320, delay: Math.min(o.delay || 0, 200), easing: 'ease-out' });
+        return;
+      }
+      const tf = `translate(${o.x || 0}px, ${o.y === undefined ? 8 : o.y}px)${o.scale ? ` scale(${o.scale})` : ''}`;
+      ctx.anim(el, [{ opacity: 0, transform: tf }, { opacity: 1, transform: 'none' }],
+        { duration: o.d || 520, delay: (o.delay || 0) + i * (o.step === undefined ? 60 : o.step), easing: E });
+    });
+  }
+
+  function rollSet(host, text) {
+    if (!host) return;
+    host.textContent = '';
+    const s = document.createElement('span');
+    s.textContent = text;
+    host.appendChild(s);
+  }
+  function rollTo(ctx, host, text, o = {}) {
+    if (!host) return;
+    const kids = Array.from(host.children);
+    const old = kids[kids.length - 1];
+    kids.slice(0, -1).forEach((k) => k.remove());
+    const s = document.createElement('span');
+    s.textContent = text;
+    host.appendChild(s);
+    const dy = ctx.reduced ? 0 : (o.dy || 10);
+    const delay = o.delay || 0;
+    if (old) ctx.anim(old, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${-dy}px)` }], { duration: 240, delay, easing: IN });
+    ctx.anim(s, [{ opacity: 0, transform: `translateY(${dy}px)` }, { opacity: 1, transform: 'none' }], { duration: 520, delay: delay + (ctx.reduced ? 260 : 160), easing: E });
+  }
+  const cntText = (host, n) => (host.dataset.fmt === 'short' ? `${n} connected` : `${n} devices connected`);
+
+  function devNow(el, s) {
+    if (!el) return;
+    el.querySelector('.sw').dataset.s = s;
+    el.classList.toggle('asleep', s === 'off');
+  }
+  function devTo(ctx, el, s) {
+    if (!el) return;
+    const sw = el.querySelector('.sw');
+    const inn = sw.querySelector(s === 'on' ? '.s-on' : '.s-off');
+    const out = sw.querySelector(s === 'on' ? '.s-off' : '.s-on');
+    sw.dataset.s = s;
+    el.classList.toggle('asleep', s === 'off');
+    const dy = ctx.reduced ? 0 : 6;
+    ctx.anim(out, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${-dy}px)` }], { duration: 240, easing: IN });
+    ctx.anim(inn, [{ opacity: 0, transform: `translateY(${dy}px)` }, { opacity: 1, transform: 'none' }], { duration: 520, delay: ctx.reduced ? 260 : 180, easing: E });
+    const a = s === 'on' ? ASLEEP : 1, b = s === 'on' ? 1 : ASLEEP;
+    el.querySelectorAll('.g').forEach((g) => ctx.anim(g, [{ opacity: a }, { opacity: b }], { duration: 900, easing: IO }));
+    if (s === 'on' && !ctx.reduced) {
+      ctx.anim(inn.querySelector('.dot'), [{ transform: 'scale(0.2)' }, { transform: 'scale(1)' }], { duration: 560, delay: 220 });
+      ctx.anim(inn.querySelector('.halo'), [{ opacity: 0.6, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(3.4)' }],
+        { duration: 1400, delay: 320, easing: 'cubic-bezier(0.2, 0.6, 0.3, 1)' });
+    }
+  }
+  /* The sending device: its edge turns green for a moment. */
+  function tint(ctx, el, delay = 0) {
+    if (!el) return;
+    ctx.anim(el, [
+      { borderColor: LINE, boxShadow: '0 0 0 0 rgba(30,122,70,0)' },
+      { borderColor: GREEN, boxShadow: '0 0 0 1px rgba(30,122,70,1)', offset: 0.25 },
+      { borderColor: GREEN, boxShadow: '0 0 0 1px rgba(30,122,70,1)', offset: 0.6 },
+      { borderColor: LINE, boxShadow: '0 0 0 0 rgba(30,122,70,0)' },
+    ], { duration: 2000, delay, easing: 'ease-in-out', fill: 'none' });
+  }
+  /* A soft ring that grows once and fades (or just fades when reduced). */
+  function ring(ctx, el, delay = 0, grow = 1.25) {
+    if (!el) return;
+    if (ctx.reduced) {
+      ctx.anim(el, [{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], { duration: 1500, delay, easing: 'ease-in-out' });
+    } else {
+      ctx.anim(el, [{ opacity: 0.9, transform: 'scale(1)' }, { opacity: 0, transform: `scale(${grow})` }], { duration: 1300, delay, easing: 'cubic-bezier(0.2, 0.6, 0.3, 1)' });
+    }
+  }
+
+  /* SVG connection line: .ln[data-s] holds a dashed .ln-off and a solid .ln-on (pathLength 1). */
+  function lnNow(g, s) { if (g) g.dataset.s = s; }
+  function lnTo(ctx, g, s) {
+    if (!g) return;
+    g.dataset.s = s;
+    const on = g.querySelector('.ln-on'), off = g.querySelector('.ln-off');
+    if (ctx.reduced) {
+      ctx.anim(on, [{ opacity: s === 'on' ? 0 : 1 }, { opacity: s === 'on' ? 1 : 0 }], { duration: 700, easing: IO });
+      ctx.anim(off, [{ opacity: s === 'on' ? 1 : 0 }, { opacity: s === 'on' ? 0 : 1 }], { duration: 700, easing: IO });
+      return;
+    }
+    if (s === 'on') {
+      ctx.anim(off, [{ opacity: 1 }, { opacity: 0 }], { duration: 500, easing: IO });
+      ctx.anim(on, [{ opacity: 1, strokeDashoffset: 1 }, { opacity: 1, strokeDashoffset: 0 }], { duration: 1000, delay: 120, easing: IO });
+    } else {
+      ctx.anim(on, [{ opacity: 1, strokeDashoffset: 0 }, { opacity: 1, strokeDashoffset: 1 }], { duration: 900, easing: IO });
+      ctx.anim(off, [{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 500, easing: IO });
+    }
+  }
+
+  /* Move an element through points [x, y] (px, relative), with timing by distance. */
+  function travel(ctx, el, pts, o = {}) {
+    let total = 0;
+    const d = [0];
+    for (let i = 1; i < pts.length; i++) { total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); d.push(total); }
+    const kf = pts.map((p, i) => ({ transform: `translate(${p[0]}px, ${p[1]}px)`, offset: total ? d[i] / total : i / (pts.length - 1) }));
+    ctx.anim(el, kf, { duration: o.d || 1100, delay: o.delay || 0, easing: IO, fill: 'none' });
+    ctx.anim(el, [{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }],
+      { duration: o.d || 1100, delay: o.delay || 0, easing: 'linear', fill: 'none' });
+  }
+  /* Offset of el inside root, ignoring the gallery scale. */
+  function pos(el, root) {
+    const R = root.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const k = R.width / root.offsetWidth || 1;
+    return { x: (r.left - R.left) / k, y: (r.top - R.top) / k, w: r.width / k, h: r.height / k };
+  }
+
+  function story(ctx, h = {}) {
+    const d = (id) => ctx.$(`.dev[data-d="${id}"]`);
+    devNow(d('iph'), 'on');
+    devNow(d('lin'), 'off');
+    ctx.$$('[data-roll=fact]').forEach((x) => rollSet(x, FACT0));
+    ctx.$$('[data-roll=cnt]').forEach((x) => rollSet(x, cntText(x, 2)));
+    if (h.init) h.init();
+    ctx.after(T.on, () => {
+      devTo(ctx, d('lin'), 'on');
+      ctx.$$('[data-roll=cnt]').forEach((x) => rollTo(ctx, x, cntText(x, 3), { delay: 200 }));
+      if (h.on) h.on(d('lin'));
+    });
+    ctx.after(T.sync, () => {
+      const sender = d('mac');
+      if (h.tint !== false) tint(ctx, sender);
+      const lag = h.sync ? h.sync(sender) : 600;
+      ctx.$$('[data-roll=fact]').forEach((x) => rollTo(ctx, x, FACT1, { delay: lag }));
+    });
+    ctx.after(T.sleep, () => {
+      devTo(ctx, d('iph'), 'off');
+      ctx.$$('[data-roll=cnt]').forEach((x) => rollTo(ctx, x, cntText(x, 2), { delay: 300 }));
+      if (h.sleep) h.sleep(d('iph'));
+    });
+  }
+
+  /* H1 Nameplate: the four logo tiles build in, and tint green in turn when a copy lands. */
+  Kit.register('#h1', (ctx) => {
+    const sq = ctx.$$('.np-g rect');
+    const order = [0, 1, 2, 3]; // rects are in clockwise order in the markup
+    if (ctx.reduced) rise(ctx, '.np-g');
+    else order.forEach((k, i) => ctx.anim(sq[k], [{ opacity: 0, transform: 'scale(0.3)' }, { opacity: 1, transform: 'none' }], { duration: 560, delay: 80 + i * 90 }));
+    rise(ctx, ['.np .hdr-text', '.np .hdrbtn'].map((s) => ctx.$$(s)).flat(), { y: 6, delay: 120, step: 40 });
+    rise(ctx, '.np-foot', { y: 0, delay: 360 });
+    rise(ctx, '.lst', { y: 6, delay: 300 });
+    rise(ctx, '.tile', { y: 10, delay: 380, step: 70 });
+    story(ctx, {
+      sync() {
+        order.forEach((k, i) => ctx.anim(sq[k], [{ fill: INK }, { fill: GREEN, offset: 0.3 }, { fill: GREEN, offset: 0.6 }, { fill: INK }],
+          { duration: 1500, delay: 500 + (ctx.reduced ? 0 : i * 110), easing: 'ease-in-out', fill: 'none' }));
+        return 700;
+      },
+    });
+  });
+
+  /* H2 Hero screen: the monitor draws itself; a copy slides onto its screen. */
+  Kit.register('#h2', (ctx) => {
+    const scr = ctx.$('.mon-scr');
+    if (ctx.reduced) {
+      rise(ctx, '.mon');
+    } else {
+      ctx.anim(scr, [{ strokeDashoffset: 1, fillOpacity: 0 }, { strokeDashoffset: 0, fillOpacity: 0, offset: 0.75 }, { strokeDashoffset: 0, fillOpacity: 1 }], { duration: 900, easing: IO });
+      ctx.anim('.mon-st', [{ opacity: 0 }, { opacity: 1 }], { duration: 400, delay: 600 });
+      ctx.anim('.mon-logo rect', [{ opacity: 0, transform: 'scale(0.4)' }, { opacity: 1, transform: 'none' }], { duration: 520, delay: 650 });
+    }
+    rise(ctx, ['.hero-text', '.hero-btns'].map((s) => ctx.$(s)), { y: 6, delay: 200, step: 60 });
+    rise(ctx, '.hero-foot', { y: 0, delay: 500 });
+    rise(ctx, '.rows-head', { y: 0, delay: 360 });
+    rise(ctx, '.row', { x: -10, y: 0, delay: 420, step: 60 });
+    story(ctx, {
+      sync() {
+        const sheet = ctx.$('.sheet');
+        if (ctx.reduced) {
+          ctx.anim(sheet, [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: 1800, delay: 400, easing: 'ease-in-out' });
+        } else {
+          ctx.anim(sheet, [
+            { opacity: 0, transform: 'translateX(34px)' },
+            { opacity: 1, transform: 'none', offset: 0.35 },
+            { opacity: 1, transform: 'none', offset: 0.7 },
+            { opacity: 0, transform: 'translateY(6px) scale(0.85)' },
+          ], { duration: 1900, delay: 400, easing: IO });
+        }
+        ctx.anim(scr, [{ stroke: INK }, { stroke: GREEN, offset: 0.3 }, { stroke: GREEN, offset: 0.7 }, { stroke: INK }], { duration: 1900, delay: 400, easing: 'ease-in-out', fill: 'none' });
+        return 1300;
+      },
+    });
+  });
+
+  /* H3 You are here: the dark bar docks last; a copy runs a light line across it. */
+  Kit.register('#h3', (ctx) => {
+    rise(ctx, '.hdr', { y: 6 });
+    rise(ctx, '.tile', { y: 10, delay: 120, step: 60 });
+    rise(ctx, '.here', { y: 34, d: 760, delay: 420 });
+    story(ctx, {
+      sync() {
+        const line = ctx.$('.here-line');
+        if (ctx.reduced) ctx.anim(line, [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }], { duration: 1600, delay: 500, easing: 'ease-in-out' });
+        else ctx.anim(line, [{ opacity: 1, transform: 'scaleX(0)' }, { opacity: 1, transform: 'scaleX(1)', offset: 0.55 }, { opacity: 0, transform: 'scaleX(1)' }], { duration: 1700, delay: 500, easing: IO });
+        ring(ctx, ctx.$('.here-ring'), 1100, 1.3);
+        return 1000;
+      },
+    });
+  });
+
+  /* H4 Side by side: this PC's column wipes in; a copy flies across as a dot. */
+  Kit.register('#h4', (ctx) => {
+    const me = ctx.$('.me');
+    if (ctx.reduced) rise(ctx, me);
+    else ctx.anim(me, [{ clipPath: 'inset(0 100% 0 0 round 12px)' }, { clipPath: 'inset(0 0% 0 0 round 12px)' }], { duration: 760, easing: IO });
+    rise(ctx, ['.me-g', '.me-id', '.me > .hdr-sub', '.me-last', '.me-btns'].map((s) => ctx.$(s)), { y: 6, delay: 260, step: 50 });
+    rise(ctx, '.others .rows-head', { y: 0, delay: 300 });
+    rise(ctx, '.others .row', { x: 12, y: 0, delay: 340, step: 60 });
+    story(ctx, {
+      sync(sender) {
+        const root = ctx.$('.scr');
+        const fly = ctx.$('.fly');
+        if (!ctx.reduced) {
+          const a = pos(sender.querySelector('.g'), root), b = pos(ctx.$('.me-g'), root);
+          const p0 = [a.x + a.w / 2 - 5, a.y + a.h / 2 - 5];
+          const p1 = [b.x + b.w / 2 - 5, b.y + b.h / 2 - 5];
+          travel(ctx, fly, [p0, [p0[0] - 40, p0[1]], p1], { d: 1200, delay: 400 });
+        }
+        ring(ctx, ctx.$('.me-ring'), ctx.reduced ? 500 : 1450, 1.18);
+        return ctx.reduced ? 600 : 1500;
+      },
+    });
+  });
+
+  /* H5 Name chip: the chip unrolls; on a copy its logo rolls to an arrow and back. */
+  Kit.register('#h5', (ctx) => {
+    rise(ctx, '.ttl', { y: 6 });
+    const chip = ctx.$('.chip');
+    if (ctx.reduced) rise(ctx, chip, { delay: 100 });
+    else ctx.anim(chip, [{ clipPath: 'inset(0 100% 0 0 round 8px)' }, { clipPath: 'inset(0 0% 0 0 round 8px)' }], { duration: 820, delay: 200, easing: IO });
+    rise(ctx, '.tile', { y: 0, scale: 0.96, delay: 360, step: 60 });
+    story(ctx, {
+      sync() {
+        const a = ctx.$('.cg-a'), b = ctx.$('.cg-b');
+        tint(ctx, chip, 200);
+        if (ctx.reduced) {
+          ctx.anim(a, [{ opacity: 1 }, { opacity: 0, offset: 0.2 }, { opacity: 0, offset: 0.8 }, { opacity: 1 }], { duration: 2000, delay: 300, easing: 'ease-in-out', fill: 'none' });
+          ctx.anim(b, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], { duration: 2000, delay: 300, easing: 'ease-in-out', fill: 'none' });
+        } else {
+          ctx.anim(a, [
+            { opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(18px)', offset: 0.2 },
+            { opacity: 0, transform: 'translateY(-18px)', offset: 0.8 }, { opacity: 1, transform: 'none' },
+          ], { duration: 2000, delay: 300, easing: IO, fill: 'none' });
+          ctx.anim(b, [
+            { opacity: 0, transform: 'translateY(-18px)' }, { opacity: 1, transform: 'none', offset: 0.2 },
+            { opacity: 1, transform: 'none', offset: 0.8 }, { opacity: 0, transform: 'translateY(18px)' },
+          ], { duration: 2000, delay: 300, easing: IO, fill: 'none' });
+        }
+        return 500;
+      },
+    });
+  });
+
+  /* H6 Constellation: lines draw out from the centre; a copy rides its line in. */
+  Kit.register('#h6', (ctx) => {
+    const ln = (id) => ctx.$(`.ln[data-d="${id}"]`);
+    lnNow(ln('iph'), 'on');
+    lnNow(ln('lin'), 'off');
+    rise(ctx, '.ttl', { y: 6 });
+    if (ctx.reduced) {
+      rise(ctx, ['.ctr', '.map-svg', '.sat', '.map-fact'].map((s) => ctx.$$(s)).flat());
+    } else {
+      ctx.anim('.ctr', [{ opacity: 0, transform: 'scale(0.9)' }, { opacity: 1, transform: 'none' }], { duration: 640, delay: 80 });
+      ['mac', 'iph'].forEach((id, i) => ctx.anim(ln(id).querySelector('.ln-on'), [{ strokeDashoffset: -1 }, { strokeDashoffset: 0 }], { duration: 700, delay: 380 + i * 80, easing: IO }));
+      ctx.anim(['.ln[data-d="lin"] .ln-off', '.ln-add'].map((s) => ctx.$(s)), [{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 460 });
+      rise(ctx, '.sat', { y: 6, delay: 700, step: 70 });
+      rise(ctx, '.map-fact', { y: 0, delay: 900 });
+    }
+    story(ctx, {
+      tint: false,
+      on: () => lnTo(ctx, ln('lin'), 'on'),
+      sleep: () => lnTo(ctx, ln('iph'), 'off'),
+      sync(sender) {
+        tint(ctx, sender.querySelector('.sat-c'));
+        const g = ln('mac'), dot = ctx.$('.mdot');
+        if (!ctx.reduced) {
+          const ax = +g.dataset.ax, ay = +g.dataset.ay, bx = +g.dataset.bx, by = +g.dataset.by;
+          travel(ctx, dot, [[ax, ay], [bx, by]], { d: 1100, delay: 400 });
+        }
+        ring(ctx, ctx.$('.ctr-ring'), ctx.reduced ? 500 : 1350, 1.3);
+        return ctx.reduced ? 600 : 1400;
+      },
+    });
+  });
+
+  /* H7 Home base: the pinned row settles first; a copy washes across it. */
+  Kit.register('#h7', (ctx) => {
+    rise(ctx, '.ttl', { y: 6 });
+    rise(ctx, '.base', { y: 0, scale: 0.97, d: 620, delay: 100 });
+    if (ctx.reduced) rise(ctx, '.hair', { delay: 200 });
+    else ctx.anim('.hair', [{ transform: 'scaleX(0)' }, { transform: 'none' }], { duration: 700, delay: 320, easing: IO });
+    rise(ctx, '.rows .row', { y: 8, delay: 420, step: 60 });
+    story(ctx, {
+      sync() {
+        const w = ctx.$('.wash');
+        if (ctx.reduced) ctx.anim(w, [{ opacity: 0 }, { opacity: 1, offset: 0.35 }, { opacity: 1, offset: 0.6 }, { opacity: 0 }], { duration: 2000, delay: 400, easing: 'ease-in-out' });
+        else ctx.anim(w, [
+          { opacity: 1, clipPath: 'inset(0 100% 0 0)' },
+          { opacity: 1, clipPath: 'inset(0 0% 0 0)', offset: 0.5 },
+          { opacity: 1, clipPath: 'inset(0 0% 0 0)', offset: 0.65 },
+          { opacity: 0, clipPath: 'inset(0 0% 0 0)' },
+        ], { duration: 2100, delay: 400, easing: IO });
+        return 1150;
+      },
+    });
+  });
+
+  /* H8 Roots: the trunk grows down from this PC; a copy climbs from its branch to the root. */
+  Kit.register('#h8', (ctx) => {
+    const ln = (id) => ctx.$(`.ln[data-d="${id}"]`);
+    lnNow(ln('iph'), 'on');
+    lnNow(ln('lin'), 'off');
+    rise(ctx, '.root', { y: 6 });
+    rise(ctx, '.root-f', { y: 0, delay: 200 });
+    if (ctx.reduced) {
+      rise(ctx, ['.tree-svg', '.row.t8'].map((s) => ctx.$$(s)).flat(), { delay: 100 });
+    } else {
+      ctx.anim('.trunk', [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 900, delay: 200, easing: IO });
+      ['mac', 'iph'].forEach((id, i) => ctx.anim(ln(id).querySelector('.ln-on'), [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 420, delay: 420 + i * 180, easing: E }));
+      ['.ln[data-d="lin"] .ln-off', '.br-add'].forEach((s, i) => ctx.anim(s, [{ opacity: 0 }, { opacity: 1 }], { duration: 420, delay: 780 + i * 180 }));
+      rise(ctx, '.row.t8', { x: -10, y: 0, delay: 460, step: 180 });
+    }
+    story(ctx, {
+      on: () => lnTo(ctx, ln('lin'), 'on'),
+      sleep: () => lnTo(ctx, ln('iph'), 'off'),
+      sync() {
+        const dot = ctx.$('.tdot');
+        if (!ctx.reduced) {
+          const cy = +ln('mac').dataset.cy;
+          // Dot starts at (76, cy): go left along the branch, round the bend, up the trunk to the root.
+          travel(ctx, dot, [[0, 0], [-22, 0], [-34, -5], [-38, -16], [-38, 62 - cy]], { d: 1100, delay: 400 });
+        }
+        ring(ctx, ctx.$('.root-ring'), ctx.reduced ? 500 : 1400, 1.15);
+        return ctx.reduced ? 600 : 1450;
+      },
+    });
+  });
+})();
+
+</script>
+</body>
+</html>

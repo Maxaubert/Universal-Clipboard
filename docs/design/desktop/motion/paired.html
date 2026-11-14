@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paired moments</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Page-local (paired.html). kit.css stays untouched. */
+  .opt .mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; }
+  .opt .art { position: relative; }
+  .opt .cart, .opt .bart { display: block; overflow: visible; }
+  .opt .ctext { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .opt .cbtns { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  /* Strokes drawn with pathLength = 1. At rest they are whole. */
+  .opt .dr, .opt .ln, .opt .ok-ring, .opt .ok-tick, .opt .b-ring, .opt .b-tick { stroke-dasharray: 1 1; }
+  .opt .pc, .opt .mac, .opt .ok, .opt .lg, .opt .rip circle { transform-box: fill-box; transform-origin: center; }
+  .opt .rip circle { opacity: 0; }
+
+  /* P2: the code box that becomes the check. Placed by script over the check. */
+  .p2-box {
+    position: absolute; left: 0; top: 0; width: 296px; height: 96px; box-sizing: border-box; z-index: 2;
+    background: var(--ink); border-radius: var(--r-box); display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+  }
+  .p2-box .code { display: flex; }
+  .p2-box .code span { display: inline-block; }
+  .p2-box .code .gap { width: 0.4em; }
+
+  /* P4: docked tiles with a seal in the seam. */
+  .p4-art { position: relative; display: flex; gap: 28px; height: 165px; align-items: center; }
+  .ptile {
+    width: 136px; height: 136px; box-sizing: border-box; background: var(--white); border: 1px solid var(--line);
+    border-radius: var(--r-tile); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    box-shadow: 0 1px 2px rgba(40,35,30,0.05), 0 6px 16px rgba(40,35,30,0.06);
+  }
+  .pdot { position: relative; width: 8px; height: 8px; display: inline-block; }
+  .pdot .dot { position: absolute; inset: 0; }
+  .p4-badge { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; }
+  .p4-badge svg { display: block; }
+
+  /* P5: the QR card. Placed by script over the art. */
+  .p5-qr {
+    position: absolute; left: 0; top: 0; width: 160px; height: 160px; overflow: hidden; transform: translate(-50%, -50%); box-sizing: border-box; z-index: 2;
+    background: var(--white); border: 2px solid var(--ink); border-radius: var(--r-tile);
+    display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none;
+  }
+  .p5-qrsvg { display: block; }
+
+  /* P6: two tiles and a rolling count. */
+  .p6-art { height: 165px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+  .p6-row { display: flex; gap: 14px; }
+  .p6-tile {
+    width: 112px; height: 104px; box-sizing: border-box; background: var(--white); border: 1px solid var(--line);
+    border-radius: var(--r-tile); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  }
+  .p6-count {
+    display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; box-sizing: border-box;
+    border-radius: 17px; background: var(--white); border: 1px solid var(--line); font-size: 14px; color: var(--ink-2);
+  }
+  .roll { display: block; height: 20px; overflow: hidden; }
+  .roll-in { display: flex; flex-direction: column; transform: translateY(-20px); }
+  .roll-in span { display: block; height: 20px; line-height: 20px; white-space: nowrap; }
+  .roll-in span:first-child { visibility: hidden; }
+  .roll-in.go span:first-child { visibility: visible; }
+
+  /* P7: clipboard shapes rise from the check. At rest they are gone. */
+  .p7-wrap { position: relative; }
+  .cfs { position: absolute; left: 189px; top: 64px; width: 0; height: 0; }
+  .cf { position: absolute; left: -11px; top: -13px; opacity: 0; color: var(--ink-4); }
+  .cf-1, .cf-4, .cf-8 { color: var(--green); }
+  .cf-2, .cf-6 { color: var(--line-2); }
+
+  /* P8: the arms swing about their feet. */
+  .bart .arc { transform-box: view-box; }
+  .bart .arc-l { transform-origin: 68px 70px; }
+  .bart .arc-r { transform-origin: 274px 98px; }
+</style>
+</head>
+<body class="gallery">
+<!-- Generated 2026-11-14 by gen-paired.cjs. Connected screen (L06), 8 motion options. -->
+<header class="gal-head">
+  <div class="gal-titles">
+    <h1>Paired: the moment two devices meet</h1>
+    <p class="gal-note">Eight ways to show the Connected screen. Each one ends on the real screen: the Mac mini name, one short sentence and the Go to my devices button. Try Reduced motion too.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="p1" data-loop="6000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><svg class="cart" width="374" height="165" viewBox="0 0 340 150" fill="none" aria-hidden="true">
+              
+              <path class="ln ln-l" pathLength="1" d="M124 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <path class="ln ln-r" pathLength="1" d="M220 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <g class="pc">
+                <rect class="pc-body dr" pathLength="1" x="12" y="22" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="pc-neck dr" pathLength="1" d="M68 96v10" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <path class="pc-foot dr" pathLength="1" d="M52 108h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="pc-logo lg"><g transform="translate(53 44) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></g>
+              </g>
+              <g class="mac">
+                <rect class="mac-body dr" pathLength="1" x="220" y="38" width="108" height="44" rx="9" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="mac-foot dr" pathLength="1" d="M234 86h80" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="mac-logo lg"><g transform="translate(263 48.5) scale(0.92)" fill="#1D1C1A"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></g></g>
+              </g>
+              <g class="ok">
+                <circle class="ok-ring" pathLength="1" cx="172" cy="58" r="18" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5" transform="rotate(180 172 58)"></circle>
+                <path class="ok-tick" pathLength="1" d="M164 58.5l5.5 5.5 11-11" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              </g>
+              
+            </svg></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P1</b> Drawn together</div><p class="opt-desc">Both devices draw themselves in one pen line. Two green lines reach for the middle, meet, and close into the check.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p2" data-loop="7000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><svg class="cart" width="374" height="165" viewBox="0 0 340 150" fill="none" aria-hidden="true">
+              
+              <path class="ln ln-l" pathLength="1" d="M124 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <path class="ln ln-r" pathLength="1" d="M220 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <g class="pc">
+                <rect class="pc-body dr" pathLength="1" x="12" y="22" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="pc-neck dr" pathLength="1" d="M68 96v10" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <path class="pc-foot dr" pathLength="1" d="M52 108h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="pc-logo lg"><g transform="translate(53 44) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></g>
+              </g>
+              <g class="mac">
+                <rect class="mac-body dr" pathLength="1" x="220" y="38" width="108" height="44" rx="9" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="mac-foot dr" pathLength="1" d="M234 86h80" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="mac-logo lg"><g transform="translate(263 48.5) scale(0.92)" fill="#1D1C1A"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></g></g>
+              </g>
+              <g class="ok">
+                <circle class="ok-ring" pathLength="1" cx="172" cy="58" r="18" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5" transform="rotate(180 172 58)"></circle>
+                <path class="ok-tick" pathLength="1" d="M164 58.5l5.5 5.5 11-11" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              </g>
+              
+            </svg></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+        <div class="p2-box" aria-hidden="true"><p class="code"><span>4</span><span>1</span><span>8</span><span class="gap"></span><span>2</span><span>0</span><span>7</span></p></div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P2</b> Code to check</div><p class="opt-desc">The 6 digits from the last screen gather to the middle. The dark code box folds into a small round seal, which turns into the green check. The devices then step in beside it.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p3" data-loop="6500">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><svg class="cart" width="374" height="165" viewBox="0 0 340 150" fill="none" aria-hidden="true">
+              <defs><linearGradient id="p3fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"></stop><stop offset="0.72" stop-color="#fff"></stop><stop offset="0.95" stop-color="#000"></stop></linearGradient><mask id="p3mask" maskUnits="userSpaceOnUse" x="-200" y="-200" width="740" height="350"><rect x="-200" y="-200" width="740" height="350" fill="url(#p3fade)"></rect></mask></defs><g class="rip" mask="url(#p3mask)"><circle cx="274" cy="60" r="60" stroke="#1E7A46" stroke-width="2" vector-effect="non-scaling-stroke"></circle><circle cx="274" cy="60" r="60" stroke="#1E7A46" stroke-width="2" vector-effect="non-scaling-stroke"></circle><circle cx="274" cy="60" r="60" stroke="#1E7A46" stroke-width="2" vector-effect="non-scaling-stroke"></circle></g>
+              <path class="ln ln-l" pathLength="1" d="M124 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <path class="ln ln-r" pathLength="1" d="M220 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <g class="pc">
+                <rect class="pc-body dr" pathLength="1" x="12" y="22" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="pc-neck dr" pathLength="1" d="M68 96v10" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <path class="pc-foot dr" pathLength="1" d="M52 108h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="pc-logo lg"><g transform="translate(53 44) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></g>
+              </g>
+              <g class="mac">
+                <rect class="mac-body dr" pathLength="1" x="220" y="38" width="108" height="44" rx="9" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="mac-foot dr" pathLength="1" d="M234 86h80" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="mac-logo lg"><g transform="translate(263 48.5) scale(0.92)" fill="#1D1C1A"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></g></g>
+              </g>
+              <g class="ok">
+                <circle class="ok-ring" pathLength="1" cx="172" cy="58" r="18" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5" transform="rotate(180 172 58)"></circle>
+                <path class="ok-tick" pathLength="1" d="M164 58.5l5.5 5.5 11-11" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              </g>
+              
+            </svg></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P3</b> Found you</div><p class="opt-desc">The Mac mini appears and sends out three slow, soft rings. When they reach this PC, a line runs back to the Mac and the check settles in.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p4" data-loop="6000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><div class="p4-art"><div class="ptile ptile-a"><svg width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><span class="tile-text"><span class="tile-name">Max's PC</span><span class="tile-state">This PC</span></span></div><div class="ptile ptile-b"><svg width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-text"><span class="tile-name">Mac mini</span><span class="tile-state"><span class="pdot"><span class="dot ring"></span><span class="dot green"></span></span>Connected</span></span></div><div class="p4-badge"><svg width="44" height="44" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle class="b-ring" pathLength="1" cx="20" cy="20" r="17" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5" transform="rotate(-90 20 20)"></circle><path class="b-tick" pathLength="1" d="M13 20.5l5 5 9.5-10" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></div></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P4</b> Dock</div><p class="opt-desc">Two device tiles glide in from the sides and dock. A check seal presses into the seam, and the Mac mini dot turns green.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p5" data-loop="7500">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><svg class="cart" width="374" height="165" viewBox="0 0 340 150" fill="none" aria-hidden="true">
+              
+              <path class="ln ln-l" pathLength="1" d="M124 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <path class="ln ln-r" pathLength="1" d="M220 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <g class="pc">
+                <rect class="pc-body dr" pathLength="1" x="12" y="22" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="pc-neck dr" pathLength="1" d="M68 96v10" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <path class="pc-foot dr" pathLength="1" d="M52 108h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="pc-logo lg"><g transform="translate(53 44) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></g>
+              </g>
+              <g class="mac">
+                <rect class="mac-body dr" pathLength="1" x="220" y="38" width="108" height="44" rx="9" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="mac-foot dr" pathLength="1" d="M234 86h80" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="mac-logo lg"><g transform="translate(263 48.5) scale(0.92)" fill="#1D1C1A"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></g></g>
+              </g>
+              <g class="ok">
+                <circle class="ok-ring" pathLength="1" cx="172" cy="58" r="18" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5" transform="rotate(180 172 58)"></circle>
+                <path class="ok-tick" pathLength="1" d="M164 58.5l5.5 5.5 11-11" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              </g>
+              
+            </svg></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+        <div class="p5-qr" aria-hidden="true"><svg class="p5-qrsvg" width="132" height="132" viewBox="0 0 33 33" shape-rendering="crispEdges"></svg></div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P5</b> Scan to device</div><p class="opt-desc">The QR code clears from the centre out, then folds into the shape of the Mac mini and moves to its place. A line joins it to this PC.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p6" data-loop="6000">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><div class="p6-art">
+              <div class="p6-row">
+                <div class="p6-tile p6-a"><svg width="36" height="36" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><span class="tile-name">Max's PC</span></div>
+                <div class="p6-tile p6-b"><svg width="36" height="36" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><span class="tile-name">Mac mini</span></div>
+              </div>
+              <div class="p6-count"><span class="dot green"></span><span class="roll"><span class="roll-in"><span>1 device connected</span><span>2 devices connected</span></span></span></div>
+            </div></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P6</b> One more</div><p class="opt-desc">This PC slides over to make room. The Mac mini tile joins it, and the count rolls from 1 to 2 devices.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p7" data-loop="6500">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><div class="p7-wrap"><svg class="cart" width="374" height="165" viewBox="0 0 340 150" fill="none" aria-hidden="true">
+              
+              <path class="ln ln-l" pathLength="1" d="M124 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <path class="ln ln-r" pathLength="1" d="M220 58H172" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <g class="pc">
+                <rect class="pc-body dr" pathLength="1" x="12" y="22" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="pc-neck dr" pathLength="1" d="M68 96v10" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <path class="pc-foot dr" pathLength="1" d="M52 108h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="pc-logo lg"><g transform="translate(53 44) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g></g>
+              </g>
+              <g class="mac">
+                <rect class="mac-body dr" pathLength="1" x="220" y="38" width="108" height="44" rx="9" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path class="mac-foot dr" pathLength="1" d="M234 86h80" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g class="mac-logo lg"><g transform="translate(263 48.5) scale(0.92)" fill="#1D1C1A"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></g></g>
+              </g>
+              <g class="ok">
+                <circle class="ok-ring" pathLength="1" cx="172" cy="58" r="18" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5" transform="rotate(180 172 58)"></circle>
+                <path class="ok-tick" pathLength="1" d="M164 58.5l5.5 5.5 11-11" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              </g>
+              
+            </svg><div class="cfs"><svg class="cf cf-0" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-1" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-2" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-3" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-4" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-5" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-6" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-7" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-8" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg><svg class="cf cf-9" width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true"><rect x="2" y="4" width="18" height="20" rx="3" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect><rect x="7" y="1.5" width="8" height="5" rx="1.5" fill="#FFFFFF" stroke="currentColor" stroke-width="2"></rect></svg></div></div></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P7</b> Quiet cheer</div><p class="opt-desc">The link and check arrive first. Then a small, slow puff of clipboard shapes floats up from the check and fades. One burst, no loop.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p8" data-loop="6500">
+    <div class="opt-frame"><div class="stage">
+    <div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 4 of 4"><span class="on"></span><span class="on"></span><span class="on"></span><span class="cur"></span></div>
+      <div class="body">
+        <div class="scr" style="padding: 40px 28px 28px 28px;">
+          <div class="mid">
+            <div class="art"><svg class="bart" width="374" height="187" viewBox="0 0 340 170" fill="none" aria-hidden="true">
+              <path class="arc arc-l" d="M68 70C68 40 108 30 150 30" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <path class="arc arc-r" d="M274 98C274 54 236 30 190 30" stroke="#1E7A46" stroke-width="2.5" stroke-linecap="round"></path>
+              <g class="pc">
+                <rect x="12" y="70" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path d="M68 144v10M52 156h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g transform="translate(53 92) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g>
+              </g>
+              <g class="mac">
+                <rect x="220" y="98" width="108" height="44" rx="9" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect>
+                <path d="M234 146h80" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path>
+                <g transform="translate(263 108.5) scale(0.92)" fill="#1D1C1A"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></g>
+              </g>
+              <g class="ok">
+                <circle class="ok-ring" pathLength="1" cx="170" cy="30" r="18" fill="#FFFFFF" stroke="#1E7A46" stroke-width="2.5" transform="rotate(-90 170 30)"></circle>
+                <path class="ok-tick" pathLength="1" d="M162 30.5l5.5 5.5 11-11" stroke="#1E7A46" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              </g>
+            </svg></div>
+            <div class="ctext">
+              <h1 class="h-l center">Mac mini is added</h1>
+              <p class="sub muted center">Your latest copy is on both.</p>
+            </div>
+          </div>
+          <div class="cbtns">
+            <button type="button" class="btn">Go to my devices</button>
+            <button type="button" class="link">Add another</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div></div>
+    <figcaption><div class="opt-label"><b>P8</b> Bridge</div><p class="opt-desc">Each device lifts an arm that swings up like a drawbridge. They meet over the middle, turn green, and lock with the check.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+</main>
+<script src="art.js"></script>
+<script src="kit.js"></script>
+<script>
+(function () {
+  const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  const IO = 'cubic-bezier(0.65, 0, 0.35, 1)';
+  // Draw a pathLength=1 stroke. Opacity hides the round cap dot before the pen starts.
+  function draw(ctx, t, delay, dur, easing) {
+    return ctx.anim(t, [{ strokeDashoffset: 1, opacity: 0 }, { opacity: 1, offset: 0.03 }, { strokeDashoffset: 0, opacity: 1 }],
+      { duration: dur || 700, delay: delay || 0, easing: easing || IO });
+  }
+  function fadeIn(ctx, t, delay, dur, extra) {
+    const a = Object.assign({ opacity: 0 }, extra || {});
+    const b = { opacity: 1 }; Object.keys(extra || {}).forEach((k) => { if (k === 'transform') b.transform = 'none'; });
+    return ctx.anim(t, [a, b], { duration: dur || 420, delay: delay || 0, easing: OUT });
+  }
+  function hide(ctx, t, delay, dur) { return ctx.anim(t, [{ opacity: 1 }, { opacity: 0 }], { duration: dur || 280, delay: delay || 0, easing: 'cubic-bezier(0.4, 0, 1, 1)' }); }
+  // Title, sentence, buttons. Reduced: opacity only.
+  function endText(ctx, t) {
+    const lift = ctx.reduced ? {} : { transform: 'translateY(10px)' };
+    fadeIn(ctx, '.ctext', t, 520, lift);
+    fadeIn(ctx, '.cbtns', t + 180, 320, ctx.reduced ? {} : { transform: 'translateY(6px)' });
+  }
+  // Stage scale: options are drawn at 0.62 in the gallery.
+  function place(ctx, el, target, cx, cy) {
+    const st = ctx.stage.getBoundingClientRect(), s = st.width / 540;
+    const card = ctx.$('.body').getBoundingClientRect();
+    const r = target.getBoundingClientRect();
+    const x = (r.left - card.left) / s + cx * (r.width / s), y = (r.top - card.top) / s + cy * (r.height / s);
+    el.style.left = (x - el.offsetWidth / 2) + 'px'; el.style.top = (y - el.offsetHeight / 2) + 'px';
+    return { x, y };
+  }
+  // Reduced variant shared by options whose story is "devices, link, check": a calm cross-fade in that order.
+  function reducedLink(ctx) {
+    fadeIn(ctx, '.pc', 0, 400); fadeIn(ctx, '.mac', 150, 400);
+    fadeIn(ctx, '.ln', 500, 400); fadeIn(ctx, '.ok', 900, 500);
+    endText(ctx, 1300);
+  }
+
+  // P1 Drawn together
+  Kit.register('#p1', (ctx) => {
+    if (ctx.reduced) return reducedLink(ctx);
+    ctx.anim('.dr', [{ fillOpacity: 0 }, { fillOpacity: 0, offset: 0.5 }, { fillOpacity: 1 }], { duration: 1100, easing: 'linear' });
+    draw(ctx, '.pc-body', 0, 900); draw(ctx, '.mac-body', 120, 900);
+    draw(ctx, '.pc-neck', 650, 260); draw(ctx, '.pc-foot', 800, 360); draw(ctx, '.mac-foot', 760, 420);
+    fadeIn(ctx, '.lg', 700, 500, { transform: 'scale(0.86)' });
+    draw(ctx, '.ln', 1100, 650);
+    fadeIn(ctx, '.ok', 1650, 10);
+    ctx.anim('.ok-ring', [{ fillOpacity: 0 }, { fillOpacity: 1 }], { duration: 300, delay: 1650 });
+    draw(ctx, '.ok-ring', 1650, 520, OUT);
+    draw(ctx, '.ok-tick', 1950, 420, OUT);
+    endText(ctx, 2250);
+  });
+
+  // P2 Code to check
+  Kit.register('#p2', (ctx) => {
+    const box = ctx.$('.p2-box'), ring = ctx.$('.ok-ring');
+    place(ctx, box, ring, 0.5, 0.5);
+    if (ctx.reduced) {
+      ctx.anim(box, [{ opacity: 1 }, { opacity: 1, offset: 0.6 }, { opacity: 0 }], { duration: 1300, easing: 'linear' });
+      ['.pc', '.mac', '.ln', '.ok'].forEach((s) => fadeIn(ctx, s, 900, 500));
+      return endText(ctx, 1400);
+    }
+    ctx.anim(box, [{ opacity: 1 }, { opacity: 1 }], { duration: 1900 });
+    // digits gather to the centre, outside ones first
+    const digs = ctx.$$('.p2-box .code span:not(.gap)');
+    const bx = box.getBoundingClientRect(), mid = bx.left + bx.width / 2, s = bx.width / 296;
+    digs.forEach((d, i) => {
+      const r = d.getBoundingClientRect(), dx = (mid - (r.left + r.width / 2)) / s;
+      const order = [0, 1, 2, 2, 1, 0][i];
+      ctx.anim(d, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(' + dx + 'px) scale(0.6)', opacity: 0 }],
+        { duration: 620, delay: 450 + order * 90, easing: IO });
+    });
+    // the box folds into a round seal the size of the check ring
+    ctx.anim(box, [
+      { clipPath: 'inset(0px 0px 0px 0px round 18px)' },
+      { clipPath: 'inset(27px 127px 27px 127px round 21px)' }],
+      { duration: 700, delay: 950, easing: IO });
+    ctx.anim(box, [{ backgroundColor: '#1D1C1A' }, { backgroundColor: '#1E7A46' }], { duration: 300, delay: 1550, easing: 'linear' });
+    ctx.anim(box, [{ opacity: 1 }, { opacity: 0 }], { duration: 260, delay: 1900, easing: 'linear' });
+    // the seal becomes the outline check
+    fadeIn(ctx, '.ok', 1750, 200);
+    draw(ctx, '.ok-tick', 1950, 420, OUT);
+    // devices step in, lines reach out to them
+    fadeIn(ctx, '.pc', 2050, 600, { transform: 'translateX(28px)' });
+    fadeIn(ctx, '.mac', 2120, 600, { transform: 'translateX(-28px)' });
+    ctx.anim('.ln-l', [{ strokeDashoffset: -1, opacity: 0 }, { opacity: 1, offset: 0.03 }, { strokeDashoffset: 0, opacity: 1 }], { duration: 520, delay: 2250, easing: IO });
+    ctx.anim('.ln-r', [{ strokeDashoffset: -1, opacity: 0 }, { opacity: 1, offset: 0.03 }, { strokeDashoffset: 0, opacity: 1 }], { duration: 520, delay: 2250, easing: IO });
+    endText(ctx, 2500);
+  });
+
+  // P3 Found you
+  Kit.register('#p3', (ctx) => {
+    const rings = ctx.$$('.rip circle');
+    if (ctx.reduced) {
+      fadeIn(ctx, '.mac', 0, 400);
+      ctx.anim(rings[0], [{ opacity: 0 }, { opacity: 0.3 }, { opacity: 0 }], { duration: 1200, delay: 300, easing: 'ease-in-out' });
+      fadeIn(ctx, '.ln', 1100, 400); fadeIn(ctx, '.ok', 1400, 500);
+      return endText(ctx, 1800);
+    }
+    fadeIn(ctx, '.mac', 0, 600, { transform: 'scale(0.94)' });
+    rings.forEach((c, i) => ctx.anim(c, [
+      { transform: 'scale(0.3)', opacity: 0 }, { opacity: 0.42, offset: 0.12 }, { transform: 'scale(3.6)', opacity: 0 }],
+      { duration: 2000, delay: 350 + i * 450, easing: 'cubic-bezier(0.25, 0.6, 0.3, 1)' }));
+    // this PC notices: its frame warms to green, then settles
+    ctx.anim('.pc-body', [{ stroke: '#1D1C1A' }, { stroke: '#1E7A46', offset: 0.35 }, { stroke: '#1D1C1A' }], { duration: 1100, delay: 900, easing: 'ease-in-out' });
+    ctx.anim('.ln-r', [{ strokeDashoffset: 1, opacity: 0 }, { opacity: 1, offset: 0.03 }, { strokeDashoffset: 0, opacity: 1 }], { duration: 380, delay: 1350, easing: 'cubic-bezier(0.4,0,1,1)' });
+    ctx.anim('.ln-l', [{ strokeDashoffset: -1, opacity: 0 }, { opacity: 1, offset: 0.03 }, { strokeDashoffset: 0, opacity: 1 }], { duration: 460, delay: 1720, easing: OUT });
+    fadeIn(ctx, '.ok', 1850, 520, { transform: 'scale(0.7)' });
+    draw(ctx, '.ok-tick', 2000, 420, OUT);
+    endText(ctx, 2250);
+  });
+
+  // P4 Dock
+  Kit.register('#p4', (ctx) => {
+    if (ctx.reduced) {
+      fadeIn(ctx, '.ptile-a', 0, 400); fadeIn(ctx, '.ptile-b', 150, 400);
+      fadeIn(ctx, '.p4-badge', 700, 500);
+      fadeIn(ctx, '.pdot .green', 900, 400);
+      return endText(ctx, 1200);
+    }
+    fadeIn(ctx, '.ptile-a', 0, 1000, { transform: 'translateX(-96px)' });
+    fadeIn(ctx, '.ptile-b', 0, 1000, { transform: 'translateX(96px)' });
+    fadeIn(ctx, '.p4-badge', 850, 520, { transform: 'scale(0.6)' });
+    draw(ctx, '.b-ring', 850, 520, OUT);
+    draw(ctx, '.b-tick', 1150, 400, OUT);
+    fadeIn(ctx, '.pdot .green', 1250, 400, { transform: 'scale(0.4)' });
+    endText(ctx, 1400);
+  });
+
+  // P5 Scan to device
+  const QR = (function () {
+    const d = (window.UC_ART.qr.match(/ d="([^"]+)"/) || [])[1] || '';
+    const mods = []; const re = /M(\d+) (\d+)h1v1h-1z/g; let m;
+    while ((m = re.exec(d))) mods.push([+m[1], +m[2]]);
+    const bands = [[], [], [], [], [], []];
+    mods.forEach(([x, y]) => { const r = Math.hypot(x + 0.5 - 16.5, y + 0.5 - 16.5); bands[Math.min(5, Math.floor(r / 3.9))].push('M' + x + ' ' + y + 'h1v1h-1z'); });
+    return bands.map((b) => '<path fill="#1D1C1A" d="' + b.join('') + '"></path>').join('');
+  })();
+  Kit.register('#p5', (ctx) => {
+    const card = ctx.$('.p5-qr'), svg = ctx.$('.p5-qrsvg');
+    svg.innerHTML = QR;
+    const art = ctx.$('.cart');
+    const c = place(ctx, card, art, 0.5, 0.5);
+    card.style.left = c.x + 'px'; card.style.top = c.y + 'px';
+    // Mac mini centre in the card: art box + (274, 60) of 340 x 150
+    const mb = ctx.$('.mac-body').getBoundingClientRect(), cr = ctx.$('.body').getBoundingClientRect();
+    const s = ctx.stage.getBoundingClientRect().width / 540;
+    const mx = (mb.left - cr.left + mb.width / 2) / s, my = (mb.top - cr.top + mb.height / 2) / s;
+    const dx = mx - c.x, dy = my - c.y, k = (108 * 374 / 340) / 160;
+    if (ctx.reduced) {
+      ctx.anim(card, [{ opacity: 1 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }], { duration: 1400, easing: 'linear' });
+      ['.pc', '.mac', '.ln', '.ok'].forEach((sel, i) => fadeIn(ctx, sel, 900 + i * 150, 450));
+      return endText(ctx, 1600);
+    }
+    ctx.anim(card, [{ opacity: 1 }, { opacity: 1 }], { duration: 1600 });
+    ctx.$$('.p5-qrsvg path').forEach((p, i) => ctx.anim(p, [{ opacity: 1 }, { opacity: 0 }], { duration: 420, delay: 400 + i * 90, easing: 'ease-in-out' }));
+    // fold the square into the Mac mini shape and carry it to its place
+    // An isolated absolute box, so animating its size moves nothing else. The 2 px frame stays crisp.
+    ctx.anim(card, [
+      { transform: 'translate(-50%, -50%)', width: '160px', height: '160px', borderRadius: '12px' },
+      { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px))', width: (108 * 1.1) + 'px', height: (44 * 1.1) + 'px', borderRadius: '10px' }],
+      { duration: 900, delay: 950, easing: IO });
+    ctx.anim(card, [{ opacity: 1 }, { opacity: 0 }], { duration: 200, delay: 1850, easing: 'linear' });
+    fadeIn(ctx, '.mac', 1800, 200);
+    draw(ctx, '.mac-foot', 1850, 400, OUT);
+    fadeIn(ctx, '.mac-logo', 1850, 420, { transform: 'scale(0.8)' });
+    fadeIn(ctx, '.pc', 2000, 520, { transform: 'translateX(-16px)' });
+    ctx.anim('.ln-r', [{ strokeDashoffset: 1, opacity: 0 }, { opacity: 1, offset: 0.03 }, { strokeDashoffset: 0, opacity: 1 }], { duration: 300, delay: 2250, easing: 'cubic-bezier(0.4,0,1,1)' });
+    ctx.anim('.ln-l', [{ strokeDashoffset: -1, opacity: 0 }, { opacity: 1, offset: 0.03 }, { strokeDashoffset: 0, opacity: 1 }], { duration: 420, delay: 2540, easing: OUT });
+    fadeIn(ctx, '.ok', 2500, 400, { transform: 'scale(0.7)' });
+    draw(ctx, '.ok-tick', 2650, 420, OUT);
+    endText(ctx, 2850);
+  });
+
+  // P6 One more
+  Kit.register('#p6', (ctx) => {
+    const inner = ctx.$('.roll-in');
+    inner.classList.add('go');
+    if (ctx.reduced) {
+      fadeIn(ctx, '.p6-b', 300, 500);
+      ctx.anim(inner, [{ transform: 'translateY(0px)' }, { transform: 'translateY(0px)' }], { duration: 1, fill: 'backwards', delay: 900 });
+      ctx.anim(inner, [{ opacity: 1 }, { opacity: 0, offset: 0.4 }, { opacity: 0, offset: 0.5 }, { opacity: 1 }], { duration: 600, delay: 700, easing: 'linear' });
+      return endText(ctx, 1300);
+    }
+    ctx.anim('.p6-a', [{ transform: 'translateX(63px)' }, { transform: 'none' }], { duration: 800, delay: 300, easing: IO });
+    fadeIn(ctx, '.p6-b', 520, 700, { transform: 'translateX(40px)' });
+    ctx.anim(inner, [{ transform: 'translateY(0px)' }, { transform: 'translateY(-20px)' }], { duration: 560, delay: 1150, easing: IO });
+    ctx.anim('.p6-count', [{ borderColor: '#D9D6D1' }, { borderColor: '#1E7A46', offset: 0.4 }, { borderColor: '#D9D6D1' }], { duration: 1200, delay: 1150, easing: 'ease-in-out' });
+    endText(ctx, 1500);
+  });
+
+  // P7 Quiet cheer
+  const CF = [[-92, -118, -18], [-58, -150, 12], [-24, -132, -8], [10, -160, 16], [44, -128, -14], [78, -146, 10], [104, -110, 20], [-118, -84, -24], [126, -76, 18], [-6, -100, -6]];
+  Kit.register('#p7', (ctx) => {
+    if (ctx.reduced) return reducedLink(ctx);
+    fadeIn(ctx, '.pc', 0, 500, { transform: 'translateY(8px)' }); fadeIn(ctx, '.mac', 100, 500, { transform: 'translateY(8px)' });
+    draw(ctx, '.ln', 400, 520);
+    fadeIn(ctx, '.ok', 850, 420, { transform: 'scale(0.7)' });
+    draw(ctx, '.ok-tick', 1000, 400, OUT);
+    ctx.$$('.cf').forEach((el, i) => {
+      const [x, y, r] = CF[i];
+      ctx.anim(el, [
+        { transform: 'translate(0px, -26px) scale(0.5) rotate(0deg)', opacity: 0 },
+        { opacity: 1, offset: 0.15 },
+        { opacity: 0.9, offset: 0.6 },
+        { transform: 'translate(' + x + 'px, ' + y + 'px) scale(1) rotate(' + r + 'deg)', opacity: 0 }],
+        { duration: 1900, delay: 1150 + (i % 5) * 70, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' });
+    });
+    endText(ctx, 1500);
+  });
+
+  // P8 Bridge
+  Kit.register('#p8', (ctx) => {
+    if (ctx.reduced) {
+      fadeIn(ctx, '.pc', 0, 400); fadeIn(ctx, '.mac', 100, 400);
+      ctx.anim('.arc', [{ opacity: 0, stroke: '#6E6A64' }, { opacity: 1, stroke: '#6E6A64', offset: 0.5 }, { opacity: 1, stroke: '#1E7A46' }], { duration: 1000, delay: 400, easing: 'linear' });
+      fadeIn(ctx, '.ok', 1200, 500);
+      return endText(ctx, 1500);
+    }
+    fadeIn(ctx, '.pc', 0, 450); fadeIn(ctx, '.mac', 80, 450);
+    ctx.anim('.arc', [{ stroke: '#6E6A64' }, { stroke: '#6E6A64', offset: 0.7 }, { stroke: '#1E7A46' }], { duration: 1800, delay: 0, easing: 'linear' });
+    ctx.anim('.arc-l', [{ transform: 'rotate(-78deg)', opacity: 0 }, { opacity: 1, offset: 0.2 }, { transform: 'rotate(0deg)', opacity: 1 }], { duration: 1100, delay: 300, easing: IO });
+    ctx.anim('.arc-r', [{ transform: 'rotate(78deg)', opacity: 0 }, { opacity: 1, offset: 0.2 }, { transform: 'rotate(0deg)', opacity: 1 }], { duration: 1100, delay: 380, easing: IO });
+    fadeIn(ctx, '.ok', 1380, 20);
+    ctx.anim('.ok-ring', [{ fillOpacity: 0 }, { fillOpacity: 1 }], { duration: 300, delay: 1380 });
+    draw(ctx, '.ok-ring', 1380, 500, OUT);
+    draw(ctx, '.ok-tick', 1650, 420, OUT);
+    endText(ctx, 1900);
+  });
+})();
+</script>
+</body>
+</html>

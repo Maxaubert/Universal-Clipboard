@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error motion</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Page-local styles for errors.html. kit.css stays untouched. */
+  /* A stack: every child sits in the same grid cell, so states cross-fade without moving the layout. */
+  .stk { display: grid; }
+  .stk > * { grid-area: 1 / 1; }
+  .stk.c > * { justify-self: center; align-self: center; }
+  /* Earlier states of a loop: hidden at rest. The resting markup is always the last, readable state. */
+  .p0 { opacity: 0; }
+  .txt { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .txt .h-l { text-wrap: balance; max-width: 380px; }
+  .red { color: var(--red); }
+  .digit > .stk { line-height: 1; }
+  .digit .cr { display: flex; }
+
+  /* E1 resting state: the dead code, faded. */
+  #e1 .digit { border-color: var(--line); background: rgba(255, 255, 255, 0); color: var(--ink-4); }
+  #e1 .msg { min-height: 38px; }
+
+  /* E2 thread inside the Connect button. */
+  #e2 .thread {
+    position: absolute; left: 22px; right: 22px; bottom: 9px; height: 2px; border-radius: 1px;
+    background: rgba(255, 255, 255, 0.6); transform-origin: 0 50%; opacity: 0;
+  }
+  #e2 .vpnlink { opacity: 1; }
+
+  /* E3 travelling code chip. */
+  #e3 .chip {
+    position: absolute; left: 0; top: 0; offset-path: path('M 140.8 63.8 Q 189.2 24.2 237.6 63.8');
+    offset-rotate: 0deg; offset-distance: 50%;
+    height: 24px; padding: 0 8px; border-radius: 7px; background: var(--ink); color: var(--white);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.04em; font-variant-numeric: tabular-nums;
+    display: flex; align-items: center; white-space: nowrap;
+    box-shadow: 0 0 0 0 rgba(180, 35, 24, 0), 0 4px 10px rgba(40, 35, 30, 0.18);
+  }
+
+  /* Codebox slots (E4, E5): fixed height so the box never changes size between states. */
+  .codebox .slot { width: 256px; height: 66px; }
+  .codebox .code .d { display: inline-block; }
+  .codebox .code .gap { display: inline-block; width: 0.32em; }
+  .boxmsg { color: var(--white); font-size: 14px; font-weight: 600; line-height: 1.4; text-align: center; text-wrap: balance; }
+  .boxmsg .soft, .boxmsg.soft { color: var(--red-soft); font-weight: 500; }
+  #e4 .lockL { display: flex; align-items: center; gap: 14px; text-align: left; }
+  #e4 .lk { flex: none; display: block; overflow: visible; }
+  #e4 .lk-ring { stroke-dashoffset: 0.04; }
+  #e4 .lk-body { stroke-dashoffset: 0; }
+
+  /* E5 */
+  #e5 .qwrap { position: relative; width: 256px; height: 256px; border-radius: var(--r-tile); background: var(--white); }
+  #e5 .qwrap .qr { position: absolute; inset: 0; }
+  #e5 .qoff { position: absolute; left: 86px; top: 86px; }
+  #e5 .w1 { max-width: 230px; }
+  #e5 .tries { display: flex; gap: 8px; }
+  #e5 .tries i { width: 8px; height: 8px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid rgba(255, 210, 204, 0.9); background: rgba(255, 210, 204, 0.9); }
+  #e5 .w3 { display: flex; flex-direction: column; align-items: center; }
+  #e5 .bar { margin-top: 10px; width: 160px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.18); overflow: hidden; }
+  #e5 .bar span { display: block; height: 100%; width: 100%; background: rgba(255, 255, 255, 0.75); transform-origin: 0 50%; transform: scaleX(0.97); }
+
+  /* E6 radar */
+  #e6 .tip {
+    margin-top: 10px; display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: var(--white);
+    border: 1px solid var(--line); border-radius: var(--r-tile); font-size: 14px; line-height: 1.4; color: var(--ink-2);
+    text-align: left;
+  }
+  #e6 .tip svg { flex: none; }
+  #e6 .logo { opacity: 0.4; }
+
+  /* E7 signal */
+  #e7 .a { opacity: 1; }
+  #e7 .t3 { margin-top: 2px; }
+
+  /* E8 home */
+  #e8 .note {
+    display: flex; align-items: center; gap: 12px; background: var(--white); border: 1px solid var(--line);
+    border-radius: var(--r-tile); padding: 12px 12px 12px 14px;
+  }
+  #e8 .note-ico { flex: none; width: 22px; height: 22px; }
+  #e8 .note-ico svg { display: block; }
+  #e8 .note-txt { flex: 1; min-width: 0; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+  #e8 .note-btn { flex: none; min-width: 92px; }
+  #e8 .tile .tg { opacity: 0.4; }
+  #e8 .tile-name { text-align: center; }
+
+</style>
+</head>
+<body class="gallery">
+<!-- Generated 2026-11-14. Error states for pairing and status, eight motion options.
+     Each option shows two errors in one loop. The resting markup is the last state of each loop. -->
+<header class="gal-head">
+  <div class="gal-titles">
+    <h1>Errors that stay calm</h1>
+    <p class="gal-note">Eight options for pairing and status errors. Each one plays two errors in a row: one sentence, one action, slow and smooth enough to follow in a magnifier. Try the Reduced motion switch too.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+  <h2 class="gal-section">Typing a code</h2>
+
+  <figure class="opt" id="e1" data-loop="10600">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 3 of 4"><span class="on"></span><span class="on"></span><span class="cur"></span><span></span></div>
+      <div class="body"><div class="scr" style="padding: 4px 24px 24px 24px;">
+        <div class="backbar"><button type="button" class="iconbtn" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button></div>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 40px;">
+          <div style="display: flex; flex-direction: column; gap: 8px; text-align: center;">
+            <h1 class="h-l" style="line-height: 1.12;">Enter the code</h1>
+            <p class="sub">It is on your other device.</p>
+          </div>
+          <div class="digits" role="group" aria-label="Code, 6 of 6 digits entered"><div class="digit"><span class="stk c"><span class="ga p0">4</span><span class="gb">9</span><span class="cr p0"><span class="caret"></span></span></span></div><div class="digit"><span class="stk c"><span class="ga p0">1</span><span class="gb">1</span><span class="cr p0"><span class="caret"></span></span></span></div><div class="digit"><span class="stk c"><span class="ga p0">8</span><span class="gb">5</span><span class="cr p0"><span class="caret"></span></span></span></div><span class="split" aria-hidden="true"></span><div class="digit"><span class="stk c"><span class="ga p0">2</span><span class="gb">0</span><span class="cr p0"><span class="caret"></span></span></span></div><div class="digit"><span class="stk c"><span class="ga p0">0</span><span class="gb">3</span><span class="cr p0"><span class="caret"></span></span></span></div><div class="digit"><span class="stk c"><span class="ga p0">7</span><span class="gb">6</span><span class="cr p0"><span class="caret"></span></span></span></div></div>
+          <div class="stk msg" style="width: 360px; margin-top: -24px;">
+            <p class="err m1 p0" role="alert">That code is not right. Check it and try again.</p>
+            <p class="err m2" role="alert">That code no longer works.<br>Make a new code on the other device.</p>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <button type="button" class="btn " style=""><span class="stk c"><span class="lb lb0 p0">Connect</span><span class="lb lb1 p0">Connecting...</span><span class="lb lb2">Enter a new code</span></span></button>
+        </div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E1</b> Shake, then clear</div><p class="opt-desc">Wrong code: one damped shake, red outlines, boxes empty one by one. Dead code: the boxes fade grey in a slow wave.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="e2" data-loop="10800">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 3 of 4"><span class="on"></span><span class="on"></span><span class="cur"></span><span></span></div>
+      <div class="body"><div class="scr" style="padding: 4px 24px 24px 24px;">
+        <div class="backbar"><button type="button" class="iconbtn" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button></div>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 40px;">
+          <div style="display: flex; flex-direction: column; gap: 8px; text-align: center;">
+            <h1 class="h-l" style="line-height: 1.12;">Enter the code</h1>
+            <div class="stk c">
+              <p class="sub s0 p0">It is on your other device.</p>
+              <p class="sub s1 p0 red" role="alert">That code is not right. Check it and try again.</p>
+              <p class="sub s2 red" role="alert">Cannot find the other device.</p>
+            </div>
+          </div>
+          <div class="digits" role="group" aria-label="Code, 6 of 6 digits entered"><div class="digit"><span class="stk c"><span class="gb">4</span></span></div><div class="digit"><span class="stk c"><span class="gb">1</span></span></div><div class="digit"><span class="stk c"><span class="gb">8</span></span></div><span class="split" aria-hidden="true"></span><div class="digit"><span class="stk c"><span class="gb">2</span></span></div><div class="digit"><span class="stk c"><span class="ga p0">0</span><span class="gb">7</span></span></div><div class="digit"><span class="stk c"><span class="ga p0">7</span><span class="gb">0</span></span></div></div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+          <button type="button" class="btn tbtn" style="position: relative; overflow: hidden;"><span class="stk c"><span class="lb lb0 p0">Connect</span><span class="lb lb1 p0">Connecting...</span><span class="lb lb2">Try again</span></span><span class="thread"></span></button>
+          <button type="button" class="link vpnlink">Using a VPN?</button>
+        </div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E2</b> Thread and tide</div><p class="opt-desc">A thin thread grows in the button while connecting. Wrong code: it pulls back and a red tide crosses the boxes. Not found: it fades.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="e3" data-loop="11200">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 3 of 4"><span class="on"></span><span class="on"></span><span class="cur"></span><span></span></div>
+      <div class="body"><div class="scr" style="padding: 4px 28px 28px 28px;">
+        <div class="backbar"><button type="button" class="iconbtn" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px;">
+          <div class="trav" style="position: relative; width: 374px; height: 165px;">
+            <svg width="374" height="165" viewBox="0 0 340 150" fill="none" aria-hidden="true" style="display: block;">
+              <path d="M128 58Q172 22 216 58" stroke="#BDB8B1" stroke-width="1.5" stroke-dasharray="2 6" stroke-linecap="round"></path>
+              <rect x="12" y="22" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M68 96v10M52 108h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g class="" transform="translate(53 44) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g>
+              <g class="ghost p0"><rect x="220" y="38" width="108" height="44" rx="9" fill="none" stroke="#8A857E" stroke-width="1.5" stroke-dasharray="5 5"></rect><path d="M234 86h80" stroke="#8A857E" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="5 5"></path></g>
+              <g class="solid"><rect x="220" y="38" width="108" height="44" rx="9" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M234 86h80" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g class="" transform="translate(263 48.5) scale(0.92)" fill="#1D1C1A"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></g></g>
+            </svg>
+            <div class="chip p0" aria-hidden="true">418 207</div>
+          </div>
+          <div class="stk" style="width: 100%;">
+            <div class="txt p1"><h1 class="h-l center t1 p0">Cannot find the other device</h1><p class="sub muted center t2 p0">Check that both are on the same Wi-Fi.</p><p class="small center t3 p0">Using a VPN? Turn on Local network sharing.</p></div>
+            <div class="txt p2"><h1 class="h-l center t1">That code is not right</h1><p class="sub muted center t2">Check it and try again.</p></div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center;"><button type="button" class="btn " style=""><span class="stk c"><span class="lb lb0 p0">Try again</span><span class="lb lb1">Enter the code again</span></span></button></div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E3</b> The code travels</div><p class="opt-desc">The code rides a chip to the other device. Not found: it dissolves into an empty outline. Wrong code: red edge, then back home.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+  <h2 class="gal-section">Showing a code</h2>
+
+  <figure class="opt" id="e4" data-loop="11200">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 3 of 4"><span class="on"></span><span class="on"></span><span class="cur"></span><span></span></div>
+      <div class="body"><div class="scr" style="padding: 4px 28px 24px 28px;">
+        <div class="backbar" style="margin-left: -12px;"><button type="button" class="iconbtn" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;">
+          <h1 class="h-l center">Pair a device</h1>
+          <div class="codebox">
+            <svg class="qr lock-qr" role="img" aria-label="QR code to scan with your other device" width="256" height="256" viewBox="0 0 33 33" shape-rendering="crispEdges"><path d="M2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM5 2h1v1h-1zM6 2h1v1h-1zM7 2h1v1h-1zM8 2h1v1h-1zM13 2h1v1h-1zM14 2h1v1h-1zM16 2h1v1h-1zM19 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM27 2h1v1h-1zM28 2h1v1h-1zM29 2h1v1h-1zM30 2h1v1h-1zM2 3h1v1h-1zM8 3h1v1h-1zM11 3h1v1h-1zM14 3h1v1h-1zM18 3h1v1h-1zM19 3h1v1h-1zM20 3h1v1h-1zM24 3h1v1h-1zM30 3h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM19 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM26 4h1v1h-1zM27 4h1v1h-1zM28 4h1v1h-1zM30 4h1v1h-1zM2 5h1v1h-1zM4 5h1v1h-1zM5 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM11 5h1v1h-1zM13 5h1v1h-1zM14 5h1v1h-1zM15 5h1v1h-1zM18 5h1v1h-1zM21 5h1v1h-1zM24 5h1v1h-1zM26 5h1v1h-1zM27 5h1v1h-1zM28 5h1v1h-1zM30 5h1v1h-1zM2 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM11 6h1v1h-1zM14 6h1v1h-1zM24 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM2 7h1v1h-1zM8 7h1v1h-1zM10 7h1v1h-1zM11 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM21 7h1v1h-1zM24 7h1v1h-1zM30 7h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM8 8h1v1h-1zM10 8h1v1h-1zM12 8h1v1h-1zM14 8h1v1h-1zM16 8h1v1h-1zM18 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM25 8h1v1h-1zM26 8h1v1h-1zM27 8h1v1h-1zM28 8h1v1h-1zM29 8h1v1h-1zM30 8h1v1h-1zM11 9h1v1h-1zM14 9h1v1h-1zM15 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM2 10h1v1h-1zM5 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM23 10h1v1h-1zM25 10h1v1h-1zM3 11h1v1h-1zM5 11h1v1h-1zM15 11h1v1h-1zM17 11h1v1h-1zM18 11h1v1h-1zM19 11h1v1h-1zM20 11h1v1h-1zM22 11h1v1h-1zM24 11h1v1h-1zM27 11h1v1h-1zM28 11h1v1h-1zM29 11h1v1h-1zM3 12h1v1h-1zM5 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM11 12h1v1h-1zM15 12h1v1h-1zM16 12h1v1h-1zM17 12h1v1h-1zM20 12h1v1h-1zM21 12h1v1h-1zM25 12h1v1h-1zM26 12h1v1h-1zM28 12h1v1h-1zM29 12h1v1h-1zM3 13h1v1h-1zM4 13h1v1h-1zM6 13h1v1h-1zM12 13h1v1h-1zM14 13h1v1h-1zM15 13h1v1h-1zM18 13h1v1h-1zM20 13h1v1h-1zM25 13h1v1h-1zM26 13h1v1h-1zM28 13h1v1h-1zM29 13h1v1h-1zM4 14h1v1h-1zM5 14h1v1h-1zM7 14h1v1h-1zM8 14h1v1h-1zM10 14h1v1h-1zM11 14h1v1h-1zM13 14h1v1h-1zM14 14h1v1h-1zM16 14h1v1h-1zM17 14h1v1h-1zM18 14h1v1h-1zM19 14h1v1h-1zM20 14h1v1h-1zM21 14h1v1h-1zM22 14h1v1h-1zM23 14h1v1h-1zM24 14h1v1h-1zM27 14h1v1h-1zM28 14h1v1h-1zM29 14h1v1h-1zM2 15h1v1h-1zM3 15h1v1h-1zM4 15h1v1h-1zM6 15h1v1h-1zM7 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1zM13 15h1v1h-1zM14 15h1v1h-1zM15 15h1v1h-1zM16 15h1v1h-1zM17 15h1v1h-1zM18 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM22 15h1v1h-1zM25 15h1v1h-1zM29 15h1v1h-1zM30 15h1v1h-1zM2 16h1v1h-1zM4 16h1v1h-1zM6 16h1v1h-1zM8 16h1v1h-1zM11 16h1v1h-1zM12 16h1v1h-1zM13 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM20 16h1v1h-1zM24 16h1v1h-1zM29 16h1v1h-1zM30 16h1v1h-1zM5 17h1v1h-1zM6 17h1v1h-1zM7 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM11 17h1v1h-1zM17 17h1v1h-1zM19 17h1v1h-1zM21 17h1v1h-1zM22 17h1v1h-1zM23 17h1v1h-1zM24 17h1v1h-1zM25 17h1v1h-1zM26 17h1v1h-1zM27 17h1v1h-1zM30 17h1v1h-1zM2 18h1v1h-1zM3 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM8 18h1v1h-1zM9 18h1v1h-1zM13 18h1v1h-1zM15 18h1v1h-1zM17 18h1v1h-1zM18 18h1v1h-1zM19 18h1v1h-1zM20 18h1v1h-1zM22 18h1v1h-1zM3 19h1v1h-1zM4 19h1v1h-1zM5 19h1v1h-1zM10 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM20 19h1v1h-1zM23 19h1v1h-1zM24 19h1v1h-1zM25 19h1v1h-1zM27 19h1v1h-1zM28 19h1v1h-1zM29 19h1v1h-1zM2 20h1v1h-1zM4 20h1v1h-1zM8 20h1v1h-1zM11 20h1v1h-1zM13 20h1v1h-1zM16 20h1v1h-1zM18 20h1v1h-1zM19 20h1v1h-1zM20 20h1v1h-1zM23 20h1v1h-1zM25 20h1v1h-1zM27 20h1v1h-1zM28 20h1v1h-1zM29 20h1v1h-1zM30 20h1v1h-1zM4 21h1v1h-1zM6 21h1v1h-1zM9 21h1v1h-1zM12 21h1v1h-1zM13 21h1v1h-1zM14 21h1v1h-1zM16 21h1v1h-1zM17 21h1v1h-1zM18 21h1v1h-1zM19 21h1v1h-1zM20 21h1v1h-1zM24 21h1v1h-1zM25 21h1v1h-1zM30 21h1v1h-1zM2 22h1v1h-1zM4 22h1v1h-1zM8 22h1v1h-1zM9 22h1v1h-1zM10 22h1v1h-1zM11 22h1v1h-1zM13 22h1v1h-1zM17 22h1v1h-1zM20 22h1v1h-1zM21 22h1v1h-1zM22 22h1v1h-1zM23 22h1v1h-1zM24 22h1v1h-1zM25 22h1v1h-1zM26 22h1v1h-1zM27 22h1v1h-1zM28 22h1v1h-1zM29 22h1v1h-1zM30 22h1v1h-1zM10 23h1v1h-1zM11 23h1v1h-1zM12 23h1v1h-1zM13 23h1v1h-1zM16 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM22 23h1v1h-1zM26 23h1v1h-1zM27 23h1v1h-1zM28 23h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM5 24h1v1h-1zM6 24h1v1h-1zM7 24h1v1h-1zM8 24h1v1h-1zM11 24h1v1h-1zM14 24h1v1h-1zM18 24h1v1h-1zM22 24h1v1h-1zM24 24h1v1h-1zM26 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM2 25h1v1h-1zM8 25h1v1h-1zM10 25h1v1h-1zM11 25h1v1h-1zM13 25h1v1h-1zM14 25h1v1h-1zM16 25h1v1h-1zM18 25h1v1h-1zM22 25h1v1h-1zM26 25h1v1h-1zM28 25h1v1h-1zM2 26h1v1h-1zM4 26h1v1h-1zM5 26h1v1h-1zM6 26h1v1h-1zM8 26h1v1h-1zM13 26h1v1h-1zM19 26h1v1h-1zM20 26h1v1h-1zM22 26h1v1h-1zM23 26h1v1h-1zM24 26h1v1h-1zM25 26h1v1h-1zM26 26h1v1h-1zM30 26h1v1h-1zM2 27h1v1h-1zM4 27h1v1h-1zM5 27h1v1h-1zM6 27h1v1h-1zM8 27h1v1h-1zM10 27h1v1h-1zM15 27h1v1h-1zM18 27h1v1h-1zM19 27h1v1h-1zM20 27h1v1h-1zM21 27h1v1h-1zM24 27h1v1h-1zM25 27h1v1h-1zM26 27h1v1h-1zM27 27h1v1h-1zM28 27h1v1h-1zM29 27h1v1h-1zM2 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM12 28h1v1h-1zM15 28h1v1h-1zM16 28h1v1h-1zM18 28h1v1h-1zM19 28h1v1h-1zM23 28h1v1h-1zM26 28h1v1h-1zM27 28h1v1h-1zM30 28h1v1h-1zM2 29h1v1h-1zM8 29h1v1h-1zM11 29h1v1h-1zM12 29h1v1h-1zM15 29h1v1h-1zM16 29h1v1h-1zM18 29h1v1h-1zM19 29h1v1h-1zM20 29h1v1h-1zM21 29h1v1h-1zM22 29h1v1h-1zM23 29h1v1h-1zM26 29h1v1h-1zM29 29h1v1h-1zM2 30h1v1h-1zM3 30h1v1h-1zM4 30h1v1h-1zM5 30h1v1h-1zM6 30h1v1h-1zM7 30h1v1h-1zM8 30h1v1h-1zM10 30h1v1h-1zM16 30h1v1h-1zM18 30h1v1h-1zM19 30h1v1h-1zM20 30h1v1h-1zM22 30h1v1h-1zM25 30h1v1h-1zM27 30h1v1h-1zM29 30h1v1h-1z" fill="#1D1C1A"></path></svg>
+            <div class="stk c slot">
+              <div class="codeL p0"><p class="code" aria-label="Code 4 1 8 2 0 7"><span class="d">4</span><span class="d">1</span><span class="d">8</span><span class="gap"></span><span class="d">2</span><span class="d">0</span><span class="d">7</span></p><p class="code-err tried p0" style="margin-top: 10px;">Someone else tried this code</p></div>
+              <div class="deadL p0 boxmsg"><p>This code no longer works.</p><p class="soft">The QR code still works.</p></div>
+              <div class="lockL boxmsg" role="status">
+                <svg class="lk" width="46" height="46" viewBox="0 0 46 46" fill="none" aria-hidden="true">
+                  <circle cx="23" cy="23" r="21" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"></circle>
+                  <circle class="lk-ring" cx="23" cy="23" r="21" stroke="#FFD2CC" stroke-width="2" stroke-linecap="round" pathLength="1" stroke-dasharray="1 1" transform="rotate(-90 23 23)"></circle>
+                  <g transform="translate(11 11)" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect class="lk-body" x="5" y="11" width="14" height="10" rx="2" pathLength="1" stroke-dasharray="1 1"></rect>
+                    <path class="lk-shackle" d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+                  </g>
+                </svg>
+                <div class="lk-text"><p class="l1">Too many wrong codes.</p><p class="soft l2">Try again in 5 minutes.</p></div>
+              </div>
+            </div>
+          </div>
+          <div class="os-row" role="img" aria-label="Works on Mac, Windows and Android"><svg width="20" height="20" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><svg width="18" height="18" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><svg width="20" height="20" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg></div>
+        </div>
+        <div style="display: flex; justify-content: center;"><button type="button" class="link">On another network?</button></div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E4</b> The code goes, a lock closes</div><p class="opt-desc">The digits lift and blur away when the code dies. A lock draws itself and closes; its ring drains as the wait. The QR stays.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="e5" data-loop="12400">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 3 of 4"><span class="on"></span><span class="on"></span><span class="cur"></span><span></span></div>
+      <div class="body"><div class="scr" style="padding: 4px 28px 24px 28px;">
+        <div class="backbar" style="margin-left: -12px;"><button type="button" class="iconbtn" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;">
+          <h1 class="h-l center">Pair a device</h1>
+          <div class="codebox">
+            <div class="qwrap"><svg class="qr qsvg" role="img" aria-label="QR code to scan with your other device" width="256" height="256" viewBox="0 0 33 33" shape-rendering="crispEdges"><path d="M2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM5 2h1v1h-1zM6 2h1v1h-1zM7 2h1v1h-1zM8 2h1v1h-1zM13 2h1v1h-1zM14 2h1v1h-1zM16 2h1v1h-1zM19 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM27 2h1v1h-1zM28 2h1v1h-1zM29 2h1v1h-1zM30 2h1v1h-1zM2 3h1v1h-1zM8 3h1v1h-1zM11 3h1v1h-1zM14 3h1v1h-1zM18 3h1v1h-1zM19 3h1v1h-1zM20 3h1v1h-1zM24 3h1v1h-1zM30 3h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM5 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h1v1h-1zM17 4h1v1h-1zM19 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM26 4h1v1h-1zM27 4h1v1h-1zM28 4h1v1h-1zM30 4h1v1h-1zM2 5h1v1h-1zM4 5h1v1h-1zM5 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM11 5h1v1h-1zM13 5h1v1h-1zM14 5h1v1h-1zM15 5h1v1h-1zM18 5h1v1h-1zM21 5h1v1h-1zM24 5h1v1h-1zM26 5h1v1h-1zM27 5h1v1h-1zM28 5h1v1h-1zM30 5h1v1h-1zM2 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM11 6h1v1h-1zM14 6h1v1h-1zM24 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM2 7h1v1h-1zM8 7h1v1h-1zM10 7h1v1h-1zM11 7h1v1h-1zM17 7h1v1h-1zM18 7h1v1h-1zM21 7h1v1h-1zM24 7h1v1h-1zM30 7h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM8 8h1v1h-1zM10 8h1v1h-1zM12 8h1v1h-1zM14 8h1v1h-1zM16 8h1v1h-1zM18 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM25 8h1v1h-1zM26 8h1v1h-1zM27 8h1v1h-1zM28 8h1v1h-1zM29 8h1v1h-1zM30 8h1v1h-1zM11 9h1v1h-1zM14 9h1v1h-1zM15 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM2 10h1v1h-1zM5 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM23 10h1v1h-1zM25 10h1v1h-1zM3 11h1v1h-1zM5 11h1v1h-1zM15 11h1v1h-1zM17 11h1v1h-1zM18 11h1v1h-1zM19 11h1v1h-1zM20 11h1v1h-1zM22 11h1v1h-1zM24 11h1v1h-1zM27 11h1v1h-1zM28 11h1v1h-1zM29 11h1v1h-1zM3 12h1v1h-1zM5 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM11 12h1v1h-1zM15 12h1v1h-1zM16 12h1v1h-1zM17 12h1v1h-1zM20 12h1v1h-1zM21 12h1v1h-1zM25 12h1v1h-1zM26 12h1v1h-1zM28 12h1v1h-1zM29 12h1v1h-1zM3 13h1v1h-1zM4 13h1v1h-1zM6 13h1v1h-1zM12 13h1v1h-1zM14 13h1v1h-1zM15 13h1v1h-1zM18 13h1v1h-1zM20 13h1v1h-1zM25 13h1v1h-1zM26 13h1v1h-1zM28 13h1v1h-1zM29 13h1v1h-1zM4 14h1v1h-1zM5 14h1v1h-1zM7 14h1v1h-1zM8 14h1v1h-1zM10 14h1v1h-1zM11 14h1v1h-1zM13 14h1v1h-1zM14 14h1v1h-1zM16 14h1v1h-1zM17 14h1v1h-1zM18 14h1v1h-1zM19 14h1v1h-1zM20 14h1v1h-1zM21 14h1v1h-1zM22 14h1v1h-1zM23 14h1v1h-1zM24 14h1v1h-1zM27 14h1v1h-1zM28 14h1v1h-1zM29 14h1v1h-1zM2 15h1v1h-1zM3 15h1v1h-1zM4 15h1v1h-1zM6 15h1v1h-1zM7 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1zM13 15h1v1h-1zM14 15h1v1h-1zM15 15h1v1h-1zM16 15h1v1h-1zM17 15h1v1h-1zM18 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM22 15h1v1h-1zM25 15h1v1h-1zM29 15h1v1h-1zM30 15h1v1h-1zM2 16h1v1h-1zM4 16h1v1h-1zM6 16h1v1h-1zM8 16h1v1h-1zM11 16h1v1h-1zM12 16h1v1h-1zM13 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM20 16h1v1h-1zM24 16h1v1h-1zM29 16h1v1h-1zM30 16h1v1h-1zM5 17h1v1h-1zM6 17h1v1h-1zM7 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM11 17h1v1h-1zM17 17h1v1h-1zM19 17h1v1h-1zM21 17h1v1h-1zM22 17h1v1h-1zM23 17h1v1h-1zM24 17h1v1h-1zM25 17h1v1h-1zM26 17h1v1h-1zM27 17h1v1h-1zM30 17h1v1h-1zM2 18h1v1h-1zM3 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM8 18h1v1h-1zM9 18h1v1h-1zM13 18h1v1h-1zM15 18h1v1h-1zM17 18h1v1h-1zM18 18h1v1h-1zM19 18h1v1h-1zM20 18h1v1h-1zM22 18h1v1h-1zM3 19h1v1h-1zM4 19h1v1h-1zM5 19h1v1h-1zM10 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM20 19h1v1h-1zM23 19h1v1h-1zM24 19h1v1h-1zM25 19h1v1h-1zM27 19h1v1h-1zM28 19h1v1h-1zM29 19h1v1h-1zM2 20h1v1h-1zM4 20h1v1h-1zM8 20h1v1h-1zM11 20h1v1h-1zM13 20h1v1h-1zM16 20h1v1h-1zM18 20h1v1h-1zM19 20h1v1h-1zM20 20h1v1h-1zM23 20h1v1h-1zM25 20h1v1h-1zM27 20h1v1h-1zM28 20h1v1h-1zM29 20h1v1h-1zM30 20h1v1h-1zM4 21h1v1h-1zM6 21h1v1h-1zM9 21h1v1h-1zM12 21h1v1h-1zM13 21h1v1h-1zM14 21h1v1h-1zM16 21h1v1h-1zM17 21h1v1h-1zM18 21h1v1h-1zM19 21h1v1h-1zM20 21h1v1h-1zM24 21h1v1h-1zM25 21h1v1h-1zM30 21h1v1h-1zM2 22h1v1h-1zM4 22h1v1h-1zM8 22h1v1h-1zM9 22h1v1h-1zM10 22h1v1h-1zM11 22h1v1h-1zM13 22h1v1h-1zM17 22h1v1h-1zM20 22h1v1h-1zM21 22h1v1h-1zM22 22h1v1h-1zM23 22h1v1h-1zM24 22h1v1h-1zM25 22h1v1h-1zM26 22h1v1h-1zM27 22h1v1h-1zM28 22h1v1h-1zM29 22h1v1h-1zM30 22h1v1h-1zM10 23h1v1h-1zM11 23h1v1h-1zM12 23h1v1h-1zM13 23h1v1h-1zM16 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM22 23h1v1h-1zM26 23h1v1h-1zM27 23h1v1h-1zM28 23h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM5 24h1v1h-1zM6 24h1v1h-1zM7 24h1v1h-1zM8 24h1v1h-1zM11 24h1v1h-1zM14 24h1v1h-1zM18 24h1v1h-1zM22 24h1v1h-1zM24 24h1v1h-1zM26 24h1v1h-1zM27 24h1v1h-1zM29 24h1v1h-1zM2 25h1v1h-1zM8 25h1v1h-1zM10 25h1v1h-1zM11 25h1v1h-1zM13 25h1v1h-1zM14 25h1v1h-1zM16 25h1v1h-1zM18 25h1v1h-1zM22 25h1v1h-1zM26 25h1v1h-1zM28 25h1v1h-1zM2 26h1v1h-1zM4 26h1v1h-1zM5 26h1v1h-1zM6 26h1v1h-1zM8 26h1v1h-1zM13 26h1v1h-1zM19 26h1v1h-1zM20 26h1v1h-1zM22 26h1v1h-1zM23 26h1v1h-1zM24 26h1v1h-1zM25 26h1v1h-1zM26 26h1v1h-1zM30 26h1v1h-1zM2 27h1v1h-1zM4 27h1v1h-1zM5 27h1v1h-1zM6 27h1v1h-1zM8 27h1v1h-1zM10 27h1v1h-1zM15 27h1v1h-1zM18 27h1v1h-1zM19 27h1v1h-1zM20 27h1v1h-1zM21 27h1v1h-1zM24 27h1v1h-1zM25 27h1v1h-1zM26 27h1v1h-1zM27 27h1v1h-1zM28 27h1v1h-1zM29 27h1v1h-1zM2 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM12 28h1v1h-1zM15 28h1v1h-1zM16 28h1v1h-1zM18 28h1v1h-1zM19 28h1v1h-1zM23 28h1v1h-1zM26 28h1v1h-1zM27 28h1v1h-1zM30 28h1v1h-1zM2 29h1v1h-1zM8 29h1v1h-1zM11 29h1v1h-1zM12 29h1v1h-1zM15 29h1v1h-1zM16 29h1v1h-1zM18 29h1v1h-1zM19 29h1v1h-1zM20 29h1v1h-1zM21 29h1v1h-1zM22 29h1v1h-1zM23 29h1v1h-1zM26 29h1v1h-1zM29 29h1v1h-1zM2 30h1v1h-1zM3 30h1v1h-1zM4 30h1v1h-1zM5 30h1v1h-1zM6 30h1v1h-1zM7 30h1v1h-1zM8 30h1v1h-1zM10 30h1v1h-1zM16 30h1v1h-1zM18 30h1v1h-1zM19 30h1v1h-1zM20 30h1v1h-1zM22 30h1v1h-1zM25 30h1v1h-1zM27 30h1v1h-1zM29 30h1v1h-1z" fill="#1D1C1A"></path></svg><svg class="qoff p0" width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path pathLength="1" stroke-dasharray="1 1" d="M4.5 9.5a10.6 10.6 0 0 1 15 0"></path><path pathLength="1" stroke-dasharray="1 1" d="M7.5 12.6a6.4 6.4 0 0 1 9 0"></path><path pathLength="1" stroke-dasharray="1 1" d="M10.4 15.6a2.3 2.3 0 0 1 3.2 0"></path><path pathLength="1" stroke-dasharray="1 1" d="M12 19h.01"></path><path pathLength="1" stroke-dasharray="1 1" d="M4 4l16 16"></path></svg></div>
+            <div class="stk c slot">
+              <p class="code-wait w0 p0">Making a code...</p>
+              <p class="boxmsg w1 p0" role="status">This device found no network it can use.</p>
+              <div class="w2 p0" style="display: flex; flex-direction: column; align-items: center; gap: 12px;"><p class="code"><span class="d">4</span><span class="d">1</span><span class="d">8</span><span class="gap"></span><span class="d">2</span><span class="d">0</span><span class="d">7</span></p><div class="tries"><i></i><i></i><i></i><i></i><i></i></div></div>
+              <div class="w3 boxmsg" role="status"><p>Too many wrong codes.</p><p class="soft">Try again in 5 minutes.</p><div class="bar"><span></span></div></div>
+            </div>
+          </div>
+          <div class="os-row" role="img" aria-label="Works on Mac, Windows and Android"><svg width="20" height="20" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg><svg width="18" height="18" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></svg><svg width="20" height="20" viewBox="0 0 24 24" fill="#5E5B56" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg></div>
+        </div>
+        <div class="stk c"><button type="button" class="link k0 p0">Try again</button><button type="button" class="link k1">On another network?</button></div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E5</b> Draining time bar</div><p class="opt-desc">No network: the QR fades and a no-signal mark draws in. Then the QR wipes in, five dots fill as wrong tries, and a thin bar drains as the wait.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+  <h2 class="gal-section">Finding the other device and the network</h2>
+
+  <figure class="opt" id="e6" data-loop="10800">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="steps" role="img" aria-label="Step 3 of 4"><span class="on"></span><span class="on"></span><span class="cur"></span><span></span></div>
+      <div class="body"><div class="scr" style="padding: 4px 28px 28px 28px;">
+        <div class="backbar"><button type="button" class="iconbtn" aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;">
+          <svg class="radar" width="260" height="220" viewBox="0 0 260 220" fill="none" aria-hidden="true" style="display: block; overflow: visible;">
+            <defs><linearGradient id="radarg" gradientUnits="userSpaceOnUse" x1="52" y1="44" x2="130" y2="8"><stop offset="0" stop-color="#1D1C1A" stop-opacity="0"></stop><stop offset="1" stop-color="#1D1C1A" stop-opacity="0.13"></stop></linearGradient></defs>
+            <circle class="rg r3 p0" cx="130" cy="110" r="102" fill="none" stroke="#BDB8B1" stroke-width="1.5" stroke-dasharray="2 6" stroke-linecap="round" style="transform-origin: 130px 110px;"></circle><circle class="rg r2 p0" cx="130" cy="110" r="74" fill="none" stroke="#BDB8B1" stroke-width="1.5" stroke-dasharray="2 6" stroke-linecap="round" style="transform-origin: 130px 110px;"></circle><circle class="rg r1 p0" cx="130" cy="110" r="46" fill="none" stroke="#BDB8B1" stroke-width="1.5" stroke-dasharray="2 6" stroke-linecap="round" style="transform-origin: 130px 110px;"></circle>
+            <g class="sweep p0" style="transform-origin: 130px 110px;"><path d="M130 110L51.9 44.4A102 102 0 0 1 130 8Z" fill="url(#radarg)"></path><path d="M130 110V8" stroke="#1D1C1A" stroke-opacity="0.45" stroke-width="1.5" stroke-linecap="round"></path></g>
+            <rect x="100" y="89" width="60" height="40" rx="5" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M130 129v6M120 136h20" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g class="logo" transform="translate(121 100) scale(0.75)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g>
+            <g class="badge" style="transform-origin: 162px 128px;"><circle cx="162" cy="128" r="15" fill="#FFFFFF" stroke="#B42318" stroke-width="2"></circle><g transform="translate(153 119) scale(0.75)" stroke="#B42318" stroke-width="2.4" stroke-linecap="round" fill="none"><path d="M4.5 9.5a10.6 10.6 0 0 1 15 0"></path><path d="M7.5 12.6a6.4 6.4 0 0 1 9 0"></path><path d="M10.4 15.6a2.3 2.3 0 0 1 3.2 0"></path><path d="M12 19h.01"></path><path d="M4 4l16 16"></path></g></g>
+          </svg>
+          <div class="stk" style="width: 100%;">
+            <div class="p1 txt">
+              <h1 class="h-l center t1 p0">Cannot find the other device</h1>
+              <p class="sub muted center t2 p0">Check that both are on the same Wi-Fi.</p>
+              <div class="tip t3 p0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l8 3.2v6c0 4.6-3.3 8.3-8 9.6-4.7-1.3-8-5-8-9.6V6z"></path></svg><span>Using a VPN? Turn on Local network sharing in it.</span></div>
+            </div>
+            <div class="p2 txt">
+              <h1 class="h-l center t1">No network</h1>
+              <p class="sub muted center t2">This device found no network it can use.</p>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center;"><button type="button" class="btn " style=""><span class="stk c"><span class="lb lb0">Try again</span></span></button></div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E6</b> Quiet radar</div><p class="opt-desc">A slow sweep circles the PC, finds nothing, and the VPN tip rises. On Try again the rings pull in: no network.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="e7" data-loop="11000">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr" style="padding: 4px 28px 28px 28px;">
+        <div style="height: 36px; flex: none; display: flex; align-items: center; justify-content: flex-end; margin-right: var(--wc);"><button type="button" class="iconbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px;">
+          <svg width="374" height="165" viewBox="0 0 340 150" fill="none" aria-hidden="true" style="display: block;">
+            <defs><mask id="sigmask" maskUnits="userSpaceOnUse" x="0" y="0" width="340" height="150"><path class="mpath" d="M160 59H214" stroke="#FFFFFF" stroke-width="8" pathLength="1" stroke-dasharray="1 1" stroke-dashoffset="0.3"></path></mask></defs>
+            <path class="bridge" d="M160 59H214" stroke="#6E6A64" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 7" mask="url(#sigmask)" opacity="0.5"></path>
+            <rect x="12" y="22" width="112" height="74" rx="7" fill="#FFFFFF" stroke="#1D1C1A" stroke-width="2"></rect><path d="M68 96v10M52 108h32" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round"></path><g class="logo" transform="translate(53 44) scale(1.25)" fill="#1D1C1A"><rect x="1" y="1" width="10.5" height="10.5"></rect><rect x="12.5" y="1" width="10.5" height="10.5"></rect><rect x="1" y="12.5" width="10.5" height="10.5"></rect><rect x="12.5" y="12.5" width="10.5" height="10.5"></rect></g>
+            <path class="a a1" d="M135.7 52.6A10 10 0 0 1 135.7 65.4" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" style="transform-origin: 128px 59px;"></path><path class="a a2" d="M143.3 46.1A20 20 0 0 1 143.3 71.9" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" style="transform-origin: 128px 59px;"></path><path class="a a3" d="M151.0 39.7A30 30 0 0 1 151.0 78.3" stroke="#1D1C1A" stroke-width="2.5" stroke-linecap="round" style="transform-origin: 128px 59px;"></path>
+            <g class="ghost" opacity="0.6"><rect x="220" y="38" width="108" height="44" rx="9" fill="none" stroke="#8A857E" stroke-width="1.5" stroke-dasharray="5 5"></rect><path d="M234 86h80" stroke="#8A857E" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="5 5"></path></g>
+          </svg>
+          <div class="stk" style="width: 100%;">
+            <div class="txt p1"><h1 class="h-l center t1 p0">No network</h1><p class="sub muted center t2 p0">This device found no network it can use.</p></div>
+            <div class="txt p2"><h1 class="h-l center t1">Cannot find the other device</h1><p class="sub muted center t2">Check that both are on the same Wi-Fi.</p><p class="small center t3">Using a VPN? Turn on Local network sharing.</p></div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center;"><button type="button" class="btn " style=""><span class="stk c"><span class="lb lb0">Try again</span></span></button></div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E7</b> Signal fades, bridge waits</div><p class="opt-desc">No network: the signal arcs fade from the outside in. On Try again they return and a dotted line stops halfway.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="e8" data-loop="11000">
+    <div class="opt-frame"><div class="stage"><div class="card">
+      <div class="wcbar">
+        <button type="button" class="wc" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 5h10"></path></svg></button>
+        <button type="button" class="wc" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"></rect></svg></button>
+        <button type="button" class="wc x" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10"></path></svg></button>
+      </div>
+      <div class="body"><div class="scr" style="padding: 44px 20px 22px 20px; gap: 16px;">
+        <div class="hdr">
+          <div class="hdr-text">
+            <div class="stk"><h1 class="h-m h0 p0">Working</h1><h1 class="h-m h1">Not syncing</h1></div>
+            <div class="stk">
+              <div class="hdr-sub s0 p0"><span class="dot green"></span><span>5 devices connected</span></div>
+              <div class="hdr-sub s1 p0"><span class="dot red"></span><span>No network</span></div>
+              <div class="hdr-sub s2"><span class="dot red"></span><span>Blocked by a VPN</span></div>
+            </div>
+          </div>
+          <button type="button" class="hdrbtn" aria-label="Pause"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></svg></button>
+          <button type="button" class="hdrbtn" aria-label="Settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+        </div>
+        <div class="note" role="status">
+          <span class="stk c note-ico"><span class="i0 p0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 9.5a10.6 10.6 0 0 1 15 0"></path><path d="M7.5 12.6a6.4 6.4 0 0 1 9 0"></path><path d="M10.4 15.6a2.3 2.3 0 0 1 3.2 0"></path><path d="M12 19h.01"></path><path d="M4 4l16 16"></path></svg></span><span class="i1"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path pathLength="1" stroke-dasharray="1 1" class="shp" d="M12 2.8l8 3.2v6c0 4.6-3.3 8.3-8 9.6-4.7-1.3-8-5-8-9.6V6z"></path></svg></span></span>
+          <span class="stk note-txt"><span class="n0 p0">This device found no network it can use.</span><span class="n1">Your VPN may be blocking your local network.</span></span>
+          <button type="button" class="btn sm note-btn"><span class="stk c"><span class="b0 p0">Try again</span><span class="b1">Fix</span></span></button>
+        </div>
+        <div class="tiles">
+          <button type="button" class="tile"><span class="tg" style="display: block; line-height: 0;"><svg width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg></span><span class="tile-text"><span class="tile-name">Mac mini</span><span class="stk c"><span class="tile-state ok p0"><span class="dot green"></span>Connected</span><span class="tile-state wait"><span class="dot ring"></span>Waiting</span></span></span></button><button type="button" class="tile"><span class="tg" style="display: block; line-height: 0;"><svg width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M17.61.455a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zM12.92.8C8.923.777 5.137 2.941 3.148 6.451a4.5 4.5 0 0 1 .26-.007 4.92 4.92 0 0 1 2.585.737A8.316 8.316 0 0 1 12.688 3.6 4.944 4.944 0 0 1 13.723.834 11.008 11.008 0 0 0 12.92.8zm9.226 4.994a4.915 4.915 0 0 1-1.918 2.246 8.36 8.36 0 0 1-.273 8.303 4.89 4.89 0 0 1 1.632 2.54 11.156 11.156 0 0 0 .559-13.089zM3.41 7.932A3.41 3.41 0 0 0 0 11.342a3.41 3.41 0 0 0 3.41 3.409 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41zm2.027 7.866a4.908 4.908 0 0 1-2.915.358 11.1 11.1 0 0 0 7.991 6.698 11.234 11.234 0 0 0 2.422.249 4.879 4.879 0 0 1-.999-2.85 8.484 8.484 0 0 1-.836-.136 8.304 8.304 0 0 1-5.663-4.32zm11.405.928a3.41 3.41 0 0 0-3.41 3.41 3.41 3.41 0 0 0 3.41 3.41 3.41 3.41 0 0 0 3.41-3.41 3.41 3.41 0 0 0-3.41-3.41z"></path></svg></span><span class="tile-text"><span class="tile-name">Ubuntu laptop</span><span class="stk c"><span class="tile-state ok p0"><span class="dot green"></span>Connected</span><span class="tile-state wait"><span class="dot ring"></span>Waiting</span></span></span></button><button type="button" class="tile"><span class="tg" style="display: block; line-height: 0;"><svg width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg></span><span class="tile-text"><span class="tile-name">iPhone</span><span class="stk c"><span class="tile-state ok p0"><span class="dot green"></span>Connected</span><span class="tile-state wait"><span class="dot ring"></span>Waiting</span></span></span></button><button type="button" class="tile"><span class="tg" style="display: block; line-height: 0;"><svg width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"></path></svg></span><span class="tile-text"><span class="tile-name">iPad</span><span class="stk c"><span class="tile-state ok p0"><span class="dot ring"></span>Asleep</span><span class="tile-state wait"><span class="dot ring"></span>Waiting</span></span></span></button><button type="button" class="tile"><span class="tg" style="display: block; line-height: 0;"><svg width="44" height="44" viewBox="0 0 24 24" fill="#1D1C1A" aria-hidden="true" style="flex: none;"><path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"></path></svg></span><span class="tile-text"><span class="tile-name">Pixel 8</span><span class="stk c"><span class="tile-state ok p0"><span class="dot green"></span>Connected</span><span class="tile-state wait"><span class="dot ring"></span>Waiting</span></span></span></button>
+          <button type="button" class="tile add"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="tile-name">Add a device</span></button>
+        </div>
+      </div></div>
+    </div></div></div>
+    <figcaption><div class="opt-label"><b>E8</b> Home quietly waits</div><p class="opt-desc">A notice slides in and the tiles dim one by one: no network. On Try again a soft pass runs over the tiles, then the notice names the VPN.</p><button type="button" class="opt-replay"></button></figcaption>
+  </figure>
+</main>
+<script src="art.js"></script>
+<script src="kit.js"></script>
+<script>
+/* errors.html page script. Every option is one timeline: each element gets ONE WAAPI animation that
+   spans the whole loop, with keyframes placed at absolute times. That keeps seek exact and avoids
+   overlapping fill modes. Under reduced motion, movement (transform, filter, offset) is removed and
+   the same states cross-fade; colour and text changes stay. */
+(function () {
+  'use strict';
+  const EO = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)';
+  const EI = 'cubic-bezier(0.4, 0, 1, 1)';
+  const MOVE = ['transform', 'filter', 'offsetDistance'];
+
+  function timeline(ctx, total) {
+    const R = ctx.reduced;
+    const clean = (p) => { const o = Object.assign({}, p); if (R) MOVE.forEach((k) => delete o[k]); return o; };
+    function tl(target, frames) {
+      const kf = frames.map(([ms, p, e]) => Object.assign(clean(p), { offset: Math.max(0, Math.min(1, ms / total)), easing: e || 'linear' }));
+      if (kf[0].offset > 0) kf.unshift(Object.assign({}, kf[0], { offset: 0, easing: 'linear' }));
+      if (kf[kf.length - 1].offset < 1) kf.push(Object.assign({}, kf[kf.length - 1], { offset: 1 }));
+      if (R && kf.every((k) => Object.keys(k).length <= 2)) return null; // only offset + easing left
+      return ctx.anim(target, kf, { duration: total, easing: 'linear' });
+    }
+    /* Show an element during intervals [[in, out|null], ...]. rise: px it travels up on the way in. */
+    function vis(target, ivs, o = {}) {
+      const d = o.d || 420, rise = o.rise == null ? 6 : o.rise, od = o.od || 240, lag = o.lag || 0;
+      const off = { opacity: 0, transform: `translateY(${rise}px)` };
+      const gone = { opacity: 0, transform: `translateY(${-Math.round(rise * 0.6)}px)` };
+      const on = { opacity: 1, transform: 'translateY(0px)' };
+      const f = [[0, ivs[0][0] <= 0 ? on : off]];
+      ivs.forEach(([a, b]) => {
+        if (a > 0) f.push([a + lag, off, EO], [a + lag + d, on]);
+        if (b != null) f.push([b, on, EI], [b + od, gone]);
+      });
+      return tl(target, f);
+    }
+    /* A short press on a button: scale down and back. */
+    function press(target, times) {
+      const f = [[0, { transform: 'scale(1)' }]];
+      times.forEach((t) => f.push([t, { transform: 'scale(1)' }, EO], [t + 90, { transform: 'scale(0.97)' }, EO], [t + 300, { transform: 'scale(1)' }]));
+      return tl(target, f);
+    }
+    return { tl, vis, press, R };
+  }
+
+  /* ---------------- E1 Shake, then clear ---------------- */
+  Kit.register('#e1', (ctx) => {
+    const T = 7400;
+    const { tl, vis, press, R } = timeline(ctx, T);
+    const W = 'rgb(255, 255, 255)', W0 = 'rgba(255, 255, 255, 0)';
+    const S = (b, act, bg, c) => ({ borderColor: b, boxShadow: `inset 0 0 0 ${act ? 1 : 0}px #1D1C1A`, backgroundColor: bg, color: c });
+    const N = S('#BDB8B1', 0, W, '#1D1C1A');
+    const RED = S('#B42318', 0, W, '#1D1C1A');
+    const ACT = S('#1D1C1A', 1, W, '#1D1C1A');
+    const DEAD = S('#D9D6D1', 0, W0, '#6E6A64');
+    const digits = ctx.$$('.digit');
+    const ty = digits.map((_, i) => 3800 + i * 170);   // typing the new code
+    const firstAct = 3350;
+    digits.forEach((d, i) => {
+      const c = 2400 + (5 - i) * 90;                     // clearing, right to left
+      const a = i === 0 ? firstAct : ty[i - 1];
+      const dead = 6400 + i * 70;
+      tl(d, [[0, N], [1600, N, EO], [1820, RED], [c, RED, EO], [c + 400, N], [a, N, EO], [a + 140, ACT], [ty[i], ACT, EO], [ty[i] + 180, N], [dead, N, EIO], [dead + 700, DEAD]]);
+      tl(d.querySelector('.ga'), [[0, { opacity: 1, transform: 'translateY(0px)' }], [c, { opacity: 1, transform: 'translateY(0px)' }, EI], [c + 200, { opacity: 0, transform: 'translateY(5px)' }]]);
+      tl(d.querySelector('.gb'), [[0, { opacity: 0, transform: 'scale(0.86)' }], [ty[i], { opacity: 0, transform: 'scale(0.86)' }, EO], [ty[i] + 240, { opacity: 1, transform: 'scale(1)' }]]);
+      vis(d.querySelector('.cr'), [[a, ty[i]]], { d: 140, od: 90, rise: 0 });
+    });
+    // One damped shake, 7 px at most. Under reduced motion the red outline alone says "wrong".
+    if (!R) {
+      const x = (v) => ({ transform: `translateX(${v}px)` });
+      tl('.digits', [[0, x(0)], [1600, x(0), EIO], [1700, x(-7), EIO], [1810, x(6), EIO], [1920, x(-4), EIO], [2030, x(2), EIO], [2140, x(0)]]);
+    }
+    vis('.m1', [[1700, 3800]]);
+    vis('.m2', [[6600, null]]);
+    // Button: black, then disabled while the boxes are empty, black again when six digits are in.
+    const B = { backgroundColor: '#1D1C1A', color: '#FFFFFF', boxShadow: 'inset 0 0 0 1px rgba(189, 184, 177, 0)' };
+    const D = { backgroundColor: '#FFFFFF', color: '#6E6A64', boxShadow: 'inset 0 0 0 1px rgba(189, 184, 177, 1)' };
+    tl('.btn', [[0, B], [2500, B, EO], [2800, D], [ty[5] + 60, D, EO], [ty[5] + 360, B]]);
+    press('.btn > .stk', [500, 5300]);
+    vis('.lb0', [[0, 560], [1600, 5360]], { d: 220, rise: 0, od: 140, lag: 140 });
+    vis('.lb1', [[560, 1600], [5360, 6450]], { d: 220, rise: 0, od: 140, lag: 140 });
+    vis('.lb2', [[6450, null]], { d: 300, rise: 0, lag: 140 });
+  });
+
+  /* ---------------- E2 Thread and tide ---------------- */
+  Kit.register('#e2', (ctx) => {
+    const T = 7600;
+    const { tl, vis, press } = timeline(ctx, T);
+    const N = { borderColor: '#BDB8B1', backgroundColor: 'rgb(255, 255, 255)' };
+    const RED = { borderColor: '#B42318', backgroundColor: 'rgb(255, 246, 244)' };
+    ctx.$$('.digit').forEach((d, i) => {
+      const w = 1950 + i * 80, back = 3000 + i * 80;
+      tl(d, [[0, N], [w, N, EO], [w + 360, RED], [back, RED, EIO], [back + 1000, N]]);
+    });
+    // Digits 5 and 6 are fixed by the user (207 to 270).
+    ctx.$$('.digit .ga').forEach((g, k) => tl(g, [[0, { opacity: 1, transform: 'translateY(0px)' }], [3900 + k * 220, { opacity: 1, transform: 'translateY(0px)' }, EI], [4060 + k * 220, { opacity: 0, transform: 'translateY(4px)' }]]));
+    ctx.$$('.digit .ga + .gb').forEach((g, k) => tl(g, [[0, { opacity: 0, transform: 'scale(0.86)' }], [4000 + k * 220, { opacity: 0, transform: 'scale(0.86)' }, EO], [4240 + k * 220, { opacity: 1, transform: 'scale(1)' }]]));
+    vis('.s0', [[0, 1900], [3900, 6600]], { rise: 4, lag: 200 });
+    vis('.s1', [[1950, 3850]], { rise: 4, lag: 200 });
+    vis('.s2', [[6700, null]], { rise: 4, lag: 200 });
+    // The thread: grows slowly while connecting. Wrong code pulls it back; not found leaves it and fades.
+    const th = (s, o) => ({ transform: `scaleX(${s})`, opacity: o });
+    tl('.thread', [[0, th(0, 0)], [460, th(0, 0), EO], [520, th(0.02, 1), 'cubic-bezier(0.25, 0.6, 0.3, 1)'], [1900, th(0.62, 1), EIO], [2450, th(0, 0.9), EO], [2550, th(0, 0)],
+      [4660, th(0, 0), EO], [4720, th(0.02, 1), 'cubic-bezier(0.25, 0.6, 0.3, 1)'], [6600, th(0.9, 1), EO], [7300, th(0.9, 0)]]);
+    press('.tbtn > .stk', [400, 4600]);
+    vis('.lb0', [[0, 460], [1900, 4660]], { d: 220, rise: 0, od: 140, lag: 140 });
+    vis('.lb1', [[460, 1900], [4660, 6600]], { d: 220, rise: 0, od: 140, lag: 140 });
+    vis('.lb2', [[6650, null]], { d: 300, rise: 0, lag: 140 });
+    vis('.vpnlink', [[6900, null]], { rise: 4 });
+  });
+
+  /* ---------------- E3 The code travels ---------------- */
+  Kit.register('#e3', (ctx) => {
+    const T = 8600;
+    const { tl, vis, press } = timeline(ctx, T);
+    const ch = (d, o, s, red) => ({ offsetDistance: d + '%', opacity: o, transform: `scale(${s})`,
+      boxShadow: `0 0 0 ${red ? 2 : 0}px rgba(180, 35, 24, ${red ? 1 : 0}), 0 4px 10px rgba(40, 35, 30, 0.18)` });
+    tl('.chip', [
+      [0, ch(31, 0, 0.9)], [300, ch(31, 0, 0.9), EO], [700, ch(33, 1, 1)],
+      [700, ch(33, 1, 1), 'cubic-bezier(0.3, 0.2, 0.2, 1)'], [2500, ch(74, 1, 1)],
+      [2500, ch(74, 1, 1), EI], [3100, ch(80, 0, 0.92)],        // drifts into the empty outline and dissolves
+      [5300, ch(31, 0, 0.9), EO], [5700, ch(33, 1, 1)],
+      [5700, ch(33, 1, 1), 'cubic-bezier(0.3, 0.2, 0.2, 1)'], [7000, ch(72, 1, 1)],
+      [7000, ch(72, 1, 1), EO], [7300, ch(72, 1, 1, true)],      // red edge at the door
+      [7500, ch(72, 1, 1, true), EIO], [8300, ch(35, 1, 1, true)],
+      [8300, ch(35, 1, 1, true), EI], [8600, ch(33, 0, 0.92, true)],
+    ]);
+    // The empty outline breathes once while the chip looks for it.
+    tl('.ghost', [[0, { opacity: 0.55 }], [2200, { opacity: 0.55 }, EIO], [2900, { opacity: 0.9 }, EIO], [3700, { opacity: 0.55 }], [4900, { opacity: 0.55 }, EO], [5300, { opacity: 0 }]]);
+    tl('.solid', [[0, { opacity: 0 }], [4950, { opacity: 0 }, EO], [5450, { opacity: 1 }]]);
+    vis('.p1 .t1', [[2800, 4900]]); vis('.p1 .t2', [[2920, 4900]]); vis('.p1 .t3', [[3040, 4900]]);
+    vis('.p2 .t1', [[7300, null]]); vis('.p2 .t2', [[7420, null]]);
+    press('.btn > .stk', [4600]);
+    vis('.lb0', [[0, 7300]], { d: 220, rise: 0, od: 140, lag: 140 });
+    vis('.lb1', [[7300, null]], { d: 300, rise: 0, lag: 140 });
+  });
+
+  /* ---------------- E4 The code goes, a lock closes ---------------- */
+  Kit.register('#e4', (ctx) => {
+    const T = 8600;
+    const { tl, vis } = timeline(ctx, T);
+    vis('.codeL', [[0, 2900]], { od: 10, rise: 0 });
+    vis('.tried', [[700, 2200]], { rise: 4 });
+    ctx.$$('.codeL .d').forEach((d, i) => {
+      const t = 2200 + i * 80;
+      tl(d, [[0, { opacity: 1, filter: 'blur(0px)', transform: 'translateY(0px)' }], [t, { opacity: 1, filter: 'blur(0px)', transform: 'translateY(0px)' }, EI], [t + 520, { opacity: 0, filter: 'blur(4px)', transform: 'translateY(-8px)' }]]);
+    });
+    vis('.deadL', [[2900, 4700]]);
+    vis('.lockL', [[4900, null]], { d: 300, rise: 0 });
+    tl('.lk-body', [[0, { strokeDashoffset: 1 }], [4950, { strokeDashoffset: 1 }, EIO], [5550, { strokeDashoffset: 0 }]]);
+    tl('.lk-shackle', [[0, { opacity: 0, transform: 'translateY(-5px)' }], [5000, { opacity: 0, transform: 'translateY(-5px)' }, EO], [5300, { opacity: 1, transform: 'translateY(-5px)' }], [5500, { opacity: 1, transform: 'translateY(-5px)' }, EIO], [5850, { opacity: 1, transform: 'translateY(0px)' }]]);
+    // The ring fills once, then drains very slowly: time passing, not an alarm.
+    tl('.lk-ring', [[0, { strokeDashoffset: 1 }], [5200, { strokeDashoffset: 1 }, EIO], [5900, { strokeDashoffset: 0 }], [6100, { strokeDashoffset: 0 }], [T, { strokeDashoffset: 0.04 }]]);
+    vis('.l1', [[5350, null]], { rise: 4 }); vis('.l2', [[5470, null]], { rise: 4 });
+  });
+
+  /* ---------------- E5 Draining time bar ---------------- */
+  Kit.register('#e5', (ctx) => {
+    const T = 10000;
+    const { tl, vis, press } = timeline(ctx, T);
+    const q = (o, clip) => ({ opacity: o, clipPath: `inset(0px 0px ${clip}% 0px round 12px)` });
+    // Ghost QR while making a code, gone when there is no network, then wiped in top to bottom.
+    tl('.qsvg', [[0, q(0.1, 0)], [1300, q(0.1, 0), EI], [1700, q(0, 0)], [4700, q(0, 100), EO], [4720, q(1, 100), EIO], [5700, q(1, 0)]]);
+    vis('.qoff', [[1600, 4600]], { rise: 0, d: 300 });
+    ctx.$$('.qoff path').forEach((p, i) => tl(p, [[0, { strokeDashoffset: 1 }], [1600 + i * 120, { strokeDashoffset: 1 }, EIO], [2200 + i * 120, { strokeDashoffset: 0 }]]));
+    vis('.w0', [[0, 1400]], { rise: 0 });
+    vis('.w1', [[1800, 4600]], { rise: 4 });
+    vis('.w2', [[5500, null]], { rise: 4 });
+    const dot = (f) => ({ backgroundColor: `rgba(255, 210, 204, ${f ? 0.9 : 0})`, borderColor: `rgba(255, 255, 255, ${f ? 0 : 0.35})`, borderColor2: null });
+    ctx.$$('.tries i').forEach((d, i) => {
+      const t = 6200 + i * 380;
+      const a = dot(false), b = dot(true); delete a.borderColor2; delete b.borderColor2;
+      tl(d, [[0, a], [t, a, EO], [t + 300, b]]);
+    });
+    // Code and dots sink away, the lockout text and the draining bar take their place.
+    tl('.w2 .code', [[0, { opacity: 1, transform: 'translateY(0px)' }], [8200, { opacity: 1, transform: 'translateY(0px)' }, EI], [8560, { opacity: 0, transform: 'translateY(10px)' }]]);
+    tl('.w2 .tries', [[0, { opacity: 1 }], [8200, { opacity: 1 }, EI], [8460, { opacity: 0 }]]);
+    vis('.w3', [[8500, null]], { rise: 4 });
+    tl('.bar span', [[0, { transform: 'scaleX(1)' }], [8700, { transform: 'scaleX(1)' }], [T, { transform: 'scaleX(0.97)' }]]);
+    press('.k0', [4300]);
+    vis('.k0', [[1800, 4500]], { rise: 0, d: 300, od: 200, lag: 220 });
+    vis('.k1', [[0, 1800], [4500, null]], { rise: 0, d: 300, od: 200, lag: 220 });
+  });
+
+  /* ---------------- E6 Quiet radar ---------------- */
+  Kit.register('#e6', (ctx) => {
+    const T = 8000;
+    const { tl, vis, press } = timeline(ctx, T);
+    ['.r1', '.r2', '.r3'].forEach((s, k) => {
+      const t = 100 + k * 120, c = 6500 - k * 160; // contract: outer first
+      tl(s, [[0, { opacity: 0, transform: 'scale(0.86)' }], [t, { opacity: 0, transform: 'scale(0.86)' }, EO], [t + 700, { opacity: 1, transform: 'scale(1)' }],
+        [3300, { opacity: 1, transform: 'scale(1)' }, EIO], [3900, { opacity: k ? 0.6 : 1, transform: 'scale(1)' }],
+        [c, { opacity: k ? 0.6 : 1, transform: 'scale(1)' }, EIO], [c + 800, { opacity: 0, transform: 'scale(0.42)' }]]);
+    });
+    tl('.sweep', [[0, { opacity: 0, transform: 'rotate(-30deg)' }], [300, { opacity: 0, transform: 'rotate(-30deg)' }, EO],
+      [800, { opacity: 1, transform: 'rotate(40deg)' }, 'cubic-bezier(0.3, 0, 0.4, 1)'], [3000, { opacity: 1, transform: 'rotate(560deg)' }, EO], [3600, { opacity: 0, transform: 'rotate(620deg)' }]]);
+    vis('.p1 .t1', [[3400, 6100]]); vis('.p1 .t2', [[3520, 6100]]); vis('.p1 .t3', [[3700, 6100]], { rise: 10 });
+    press('.btn > .stk', [5900]);
+    tl('.logo', [[0, { opacity: 1 }], [6600, { opacity: 1 }, EO], [7100, { opacity: 0.4 }]]);
+    tl('.badge', [[0, { opacity: 0, transform: 'scale(0.7)' }], [6900, { opacity: 0, transform: 'scale(0.7)' }, EO], [7400, { opacity: 1, transform: 'scale(1)' }]]);
+    vis('.p2 .t1', [[7000, null]]); vis('.p2 .t2', [[7120, null]]);
+  });
+
+  /* ---------------- E7 Signal fades, bridge waits ---------------- */
+  Kit.register('#e7', (ctx) => {
+    const T = 8400;
+    const { tl, vis, press } = timeline(ctx, T);
+    const on = { opacity: 1, transform: 'scale(1)' }, off = { opacity: 0, transform: 'scale(0.88)' };
+    ['.a3', '.a2', '.a1'].forEach((s, k) => {
+      const out = 500 + k * 320, back = 4600 + (2 - k) * 200;
+      tl(s, [[0, on], [out, on, EIO], [out + 650, off], [back, off, EO], [back + 550, on]]);
+    });
+    tl('.logo', [[0, { opacity: 1 }], [1100, { opacity: 1 }, EIO], [1800, { opacity: 0.35 }], [4500, { opacity: 0.35 }, EO], [5000, { opacity: 1 }]]);
+    vis('.p1 .t1', [[1500, 4400]]); vis('.p1 .t2', [[1620, 4400]]);
+    press('.btn > .stk', [4100]);
+    // The dotted bridge reaches for the other device, stops short, and rests faint.
+    tl('.mpath', [[0, { strokeDashoffset: 1 }], [5500, { strokeDashoffset: 1 }, 'cubic-bezier(0.25, 0.6, 0.3, 1)'], [6900, { strokeDashoffset: 0.3 }]]);
+    tl('.bridge', [[0, { opacity: 1 }], [6900, { opacity: 1 }, EIO], [7600, { opacity: 0.5 }]]);
+    tl('.ghost', [[0, { opacity: 0.6 }], [6000, { opacity: 0.6 }, EIO], [6700, { opacity: 0.95 }, EIO], [7500, { opacity: 0.6 }]]);
+    vis('.p2 .t1', [[6800, null]]); vis('.p2 .t2', [[6920, null]]); vis('.p2 .t3', [[7040, null]]);
+  });
+
+  /* ---------------- E8 Home quietly waits ---------------- */
+  Kit.register('#e8', (ctx) => {
+    const T = 8200;
+    const { tl, vis, press } = timeline(ctx, T);
+    const note = ctx.$('.note');
+    const H = note.offsetHeight + 16; // the gap the notice opens
+    vis('.h0', [[0, 700]], { rise: 0 }); vis('.h1', [[700, null]], { rise: 0, lag: 260 });
+    vis('.hdr-sub.s0', [[0, 600]], { rise: 0 }); vis('.hdr-sub.s1', [[600, 4800]], { rise: 0, lag: 260 }); vis('.hdr-sub.s2', [[4800, null]], { rise: 0, lag: 260 });
+    // The notice opens a gap and the tiles slide down into place (FLIP: they start where they were).
+    tl('.tiles', [[0, { transform: `translateY(${-H}px)` }], [900, { transform: `translateY(${-H}px)` }, EIO], [1500, { transform: 'translateY(0px)' }]]);
+    tl(note, [[0, { opacity: 0, transform: 'translateY(-8px)' }], [1050, { opacity: 0, transform: 'translateY(-8px)' }, EO], [1550, { opacity: 1, transform: 'translateY(0px)' }]]);
+    ctx.$$('.tile:not(.add)').forEach((t, i) => {
+      const d = 1400 + i * 120, pass = 4700 + i * 140;
+      tl(t.querySelector('.tg'), [[0, { opacity: 1 }], [d, { opacity: 1 }, EIO], [d + 500, { opacity: 0.4 }], [pass, { opacity: 0.4 }, EIO], [pass + 400, { opacity: 0.75 }, EIO], [pass + 900, { opacity: 0.4 }]]);
+      vis(t.querySelector('.ok'), [[0, d]], { rise: 0, od: 200 });
+      vis(t.querySelector('.wait'), [[d + 120, null]], { rise: 0, d: 300 });
+    });
+    vis('.i0', [[0, 4700]], { rise: 0 });
+    vis('.i1', [[4700, null]], { rise: 0, d: 200 });
+    tl('.shp', [[0, { strokeDashoffset: 1 }], [4750, { strokeDashoffset: 1 }, EIO], [5450, { strokeDashoffset: 0 }]]);
+    vis('.n0', [[0, 4650]], { rise: 3 }); vis('.n1', [[4800, null]], { rise: 3, lag: 100 });
+    vis('.b0', [[0, 4650]], { rise: 0, d: 200, od: 120 }); vis('.b1', [[4750, null]], { rise: 0, d: 200, lag: 120 });
+    press('.note-btn', [4200]);
+  });
+})();
+
+</script>
+</body>
+</html>

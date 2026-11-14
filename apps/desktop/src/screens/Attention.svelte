@@ -2,6 +2,7 @@
   import Art from '../components/Art.svelte';
   import * as art from '../lib/art';
   import { failureText } from '../lib/ipc';
+  import { msgIn } from '../lib/motion';
   import { S } from '../lib/strings';
   import { store } from '../lib/store.svelte';
 
@@ -41,7 +42,7 @@
       {#if !oneClick && st?.fix}
         <p data-testid="fix-text" style="margin: 0; font-size: 14px; line-height: 1.45; color: #3F3C38; text-align: center;">{st.fix}</p>
       {/if}
-      {#if error}<div class="err" role="alert">{error}</div>{/if}
+      {#if error}<div class="err" role="alert" in:msgIn>{error}</div>{/if}
     </div>
   </div>
   <div style="display: flex; flex-direction: column; align-items: center;">

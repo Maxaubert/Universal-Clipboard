@@ -72,15 +72,44 @@ Run from `apps/desktop`:
   It covers the whole setup flow, show and enter a code, wrong code, lockout notice, home,
   device detail, rename and remove, settings, paused, needs attention, VPN help, the title bar
   and the agent-down screen. Nothing opens on screen.
-- `visual.spec.ts` takes a picture of each screen and compares it with the locked design
-  rendered in the same browser (limit 1% of pixels). The setup screens show 4 step dots where
+- `visual.spec.ts` takes a picture of each screen after its motion has settled and compares it
+  with its reference rendered in the same browser (limit 1% of pixels): the locked design, except
+  Home (L07, compared with the last frame of the H3 mockup, mock scenario `h3`) and Paused (L10,
+  compared with a picture of the app in `tests/e2e/baselines`, because no design shows Paused in
+  the H3 layout; `UPDATE_BASELINES=1` writes it again). The setup screens show 4 step dots where
   the design has 5 (a few pixels). L02 uses the mock's `mac-blocked` (macOS blocks the network
   and paste access) and shows those two rows, not the design's Windows rows, so its limit is 2%. The side-by-side pictures are in
   `docs/design/desktop/impl-check/`.
+- `motion.spec.ts`: setup, pairing success, wrong code and dead code, pause and resume, and a
+  copy moving, each with full motion and with reduced motion (`emulateMedia`).
 - `cargo test` in `src-tauri`: the call list matches the agent.
 - `caret.spec.ts`: the real text caret of the code field is in the box that takes the next
   digit (0, 3, 6 digits, backspace, paste). It paints the invisible input's caret red and
   finds it in a screenshot.
+
+## Motion (2026-11-14)
+
+Max picked these from the mockups in `docs/design/desktop/motion` (timings, easings and art
+are taken from them):
+
+| Pick | Where | Code |
+|---|---|---|
+| S1 "One shape" | Setup: the black button that was pressed grows into the next black part (Show a code button, code box); on pairing it shrinks to the node between the devices, turns green and the check draws (Connected) | `src/lib/flow.ts`, `src/lib/art-motion.ts` |
+| E1 "Shake, then clear" | Wrong code: one damped shake, red outlines, boxes empty from the right, caret back in box 1. Dead code: boxes fade grey in a wave, typing starts a new code. Show a code: a wrong try shakes the code; a lockout fades the digits, then the notice rises. Error texts rise in everywhere | `EnterCode.svelte`, `ShowCode.svelte` |
+| H3 "You are here" | Home: this device is a dark bar at the bottom with the last copy (facts only); build-in from the top; a device that comes on pops its dot | `Home.svelte` |
+| A3 "Ticker" | A copy that moves: the line under the headline rolls to it for 2.8 s (arrow up sent, green arrow down received), the sender's tile edge turns green, the bar's line runs across and the logo rings | `Home.svelte` |
+| A4 "Hush" | Pause and Resume: headline and line roll, a colour wave runs from the button across the tiles | `Home.svelte` |
+
+How it works: each screen is a `.layer` in a `{#key}` in `App.svelte`, so the old screen leaves
+while the new one arrives. `store.go(route, { from })` passes the pressed button. Back,
+settings and the other screens cross-fade (S1's reduced variant). Reduced motion (the OS
+setting): every change is a fade, no shake, no shape, no wave lag. The leaving layer is inert
+and hidden from screen readers; focus moves to the new screen's heading (Enter a code keeps
+its own focus on the code field). Headline and line are a `role="status"` region; errors are
+`role="alert"`. Web Animations and CSS transitions only, no library. Mostly transform and
+opacity; the A4 wave and E1 outlines also move colours, as in the mockups.
+The last copy comes from the agent's `status.activity` and the `activity` event (kind,
+direction, device, time), never the content.
 
 ## The code field and the caret (2026-11-14)
 

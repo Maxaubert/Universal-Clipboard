@@ -70,3 +70,26 @@ h1 { margin: 0; font-weight: 700; letter-spacing: -0.02em; }
 }
 .err { color: #B42318; font-size: 13.5px; line-height: 1.4; text-align: center; }
 .dot { box-sizing: border-box; flex: none; width: 8px; height: 8px; border-radius: 50%; }
+
+/* ---------- Motion (picks of 2026-11-14, docs/design/desktop/motion; code in src/lib/flow.ts) ---------- */
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+/* Each screen is a layer, so the old one can leave while the new one arrives. */
+.layer { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+/* S1: one black shape carries through setup. Only clip-path and opacity move. */
+.blob { position: absolute; inset: 0; z-index: 5; background: #1D1C1A; opacity: 0; pointer-events: none; clip-path: inset(50%); }
+/* Focus moves to the new screen's heading; a heading is not a control, so no ring. */
+h1:focus { outline: none; }
+/* E1: Connect turns from black to the empty-code look when the boxes clear. */
+.btn { transition: background-color 300ms var(--ease-out), color 300ms var(--ease-out); }
+.btn .lbl { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+/* Step dots: the current dot shrinks while the next one grows (S1). */
+.stepdot { transition: width 420ms var(--ease-in-out), background-color 420ms var(--ease-in-out); }
+/* Setup art parts move on their own (S1). */
+.w-dev, .w-clip, .w-e1, .w-e2, .a-dev, .a-plus, .l-dev, .l-check { transform-box: fill-box; transform-origin: center; }
+.l-solid, .l-tick { stroke-dasharray: 1 2; stroke-dashoffset: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .stepdot { transition-duration: 200ms; }
+}
