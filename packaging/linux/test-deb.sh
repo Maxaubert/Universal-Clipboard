@@ -18,6 +18,10 @@ apt-get update -qq >/dev/null
 apt-get install -y -qq "./$DEB" >/tmp/install.log 2>&1 || { cat /tmp/install.log; fail "install"; }
 grep -q 'command line tool is "uc"' /tmp/install.log || fail "postinst message"
 [ -x /usr/lib/universal-clipboard/uc-agent ] || fail "agent missing"
+[ -x /usr/lib/universal-clipboard/universal-clipboard ] || fail "window missing"
+[ -e /usr/share/applications/io.github.maxaubert.uclip.desktop ] || fail "menu entry missing"
+# The window needs WebKitGTK and GTK 3: apt must have pulled them in.
+if ldd /usr/lib/universal-clipboard/universal-clipboard | grep "not found"; then fail "window has missing libraries"; fi
 [ "$(readlink /usr/bin/uc)" = /usr/lib/universal-clipboard/uc ] || fail "uc link"
 uc --version | grep -q "uc " || fail "uc --version"
 uc-agent --version | grep -q "uc-agent " || fail "uc-agent --version"
@@ -40,6 +44,7 @@ PID=$(sed -n 's/.*"pid": *\([0-9]*\).*/\1/p' /tmp/status.json | head -n 1)
 apt-get remove -y -qq universal-clipboard >/tmp/remove.log 2>&1 || { cat /tmp/remove.log; fail "remove"; }
 grep -q 'uc leave' /tmp/remove.log || fail "remove advice"
 [ ! -e /usr/lib/universal-clipboard/uc-agent ] || fail "agent left behind"
+[ ! -e /usr/lib/universal-clipboard/universal-clipboard ] || fail "window left behind"
 [ ! -e /usr/bin/uc ] && [ ! -L /usr/bin/uc ] || fail "uc link left behind"
 dpkg-query -W -f='${Status}' universal-clipboard 2>/dev/null | grep -q "ok installed" && fail "package still installed"
 # The running agent keeps running until it exits; then the supervisor sees no binary and ends.

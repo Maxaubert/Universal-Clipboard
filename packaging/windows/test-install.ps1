@@ -27,7 +27,7 @@ function Run($exe, $argList) {
 
 # --- 1. Silent install.
 if ((Run $Setup "/S") -ne 0) { Fail "install exit code" }
-foreach ($f in "uc-agent.exe", "uc.exe", "Uninstall.exe", "cli-name.txt") {
+foreach ($f in "uc-agent.exe", "uc.exe", "Universal Clipboard.exe", "Uninstall.exe", "cli-name.txt") {
   if (-not (Test-Path (Join-Path $dir $f))) { Fail "$f missing" }
 }
 if ((Get-Content (Join-Path $dir "cli-name.txt")) -ne "uc") { Fail "cli name should be uc" }
@@ -61,7 +61,7 @@ if (-not (Test-Path (Join-Path $state "state.json"))) { Fail "an update removed 
 if ((Run (Join-Path $dir "Uninstall.exe") "/S /REMOVEFIREWALL _?=$dir") -ne 0) { Fail "uninstall exit code" }
 Start-Sleep -Seconds 2
 # With _?= the uninstaller runs in place (so -Wait works) and cannot delete itself.
-foreach ($f in "uc-agent.exe", "uc.exe", "uclip.exe", "cli-name.txt") {
+foreach ($f in "uc-agent.exe", "uc.exe", "uclip.exe", "Universal Clipboard.exe", "cli-name.txt") {
   if (Test-Path (Join-Path $dir $f)) { Fail "$f left behind" }
 }
 if (Test-Path $uninstKey) { Fail "uninstall entry left behind" }
@@ -104,6 +104,9 @@ if ($Msix) {
   Add-AppxPackage -Path $signed
   $pkg = Get-AppxPackage -Name Maxaubert.UniversalClipboard
   if (-not $pkg) { Fail "MSIX not installed" }
+  # The window is in the package (never started here).
+  if (-not (Test-Path (Join-Path $pkg.InstallLocation "Universal Clipboard.exe"))) { Fail "window missing in the MSIX" }
+  if ((Get-Content -Raw (Join-Path $pkg.InstallLocation "AppxManifest.xml")) -notmatch 'Executable="Universal Clipboard.exe"') { Fail "MSIX manifest has no window app" }
   $alias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\uclip.exe"
   if (-not (Test-Path $alias)) { Fail "uclip alias missing" }
   & $alias --version
