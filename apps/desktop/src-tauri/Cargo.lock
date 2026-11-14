@@ -300,6 +300,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "blake2"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46502ad458c9a52b69d4d4d32775c788b7a1b85e8bc9d482d92250fc0e3f8efe"
+dependencies = [
+ "digest",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2430,6 +2439,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5848f5a9e8117cf94f2f90faac24a87ff81600ff8628c1e3deaab572e76bfa1"
 
 [[package]]
+name = "minisign-verify"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2836,6 +2851,29 @@ dependencies = [
  "objc2",
  "objc2-core-foundation",
  "objc2-foundation",
+]
+
+[[package]]
+name = "objc2-security"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "709fe137109bd1e8b5a99390f77a7d8b2961dafc1a1c5db8f2e60329ad6d895a"
+dependencies = [
+ "bitflags 2.13.2",
+ "objc2",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-service-management"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b213642d6959cc6023ceb1217aa595eaaf09b8094ce95127c103cab611fe65e8"
+dependencies = [
+ "objc2",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "objc2-security",
 ]
 
 [[package]]
@@ -4965,6 +5003,9 @@ dependencies = [
  "data-encoding",
  "ed25519-dalek",
  "libc",
+ "objc2",
+ "objc2-foundation",
+ "objc2-service-management",
  "quinn",
  "rand_core 0.6.4",
  "serde",
@@ -4980,6 +5021,7 @@ dependencies = [
  "uc-keys",
  "uc-net",
  "uc-pair",
+ "uc-update",
  "uc-winhost",
  "windows-sys 0.61.2",
  "zeroize",
@@ -5104,6 +5146,22 @@ dependencies = [
  "spake2",
  "subtle",
  "uc-keys",
+ "zeroize",
+]
+
+[[package]]
+name = "uc-update"
+version = "0.0.1"
+dependencies = [
+ "blake2",
+ "blake3",
+ "data-encoding",
+ "ed25519-dalek",
+ "minisign-verify",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2",
  "zeroize",
 ]
 

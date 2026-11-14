@@ -13,11 +13,17 @@ on Max's PC or Mac: install and uninstall tests run on CI runners and in Docker.
 | Windows | `UniversalClipboard-<v>-windows-x64-setup.exe` (NSIS, per user, no admin) | `packaging/windows/build.ps1` | CI: silent install, uninstall, update over the top, name rule, firewall rule (`packaging/windows/test-install.ps1`) |
 | Windows | `UniversalClipboard-<v>-windows-x64.msix` (Store build, unsigned) | same | CI: signed with a throwaway certificate, installed, alias run, removed |
 | macOS | `UniversalClipboard-<v>-macos-aarch64.dmg` and `...app.tar.gz` (the update archive) | `packaging/macos/build-app.sh` | CI: DMG verified and mounted read-only, bundle signature checked. The Mac mini: bundle built over ssh (no DMG, `SKIP_DMG=1`, nothing opened) |
-| Linux | `universal-clipboard_<v>_amd64.deb` | `packaging/linux/build-deb.sh` | Docker: `packaging/linux/test-deb.sh` in `ubuntu:22.04`, `ubuntu:24.04`, `debian:12` |
+| Linux | `universal-clipboard_<v>_amd64.deb` | `packaging/linux/build-deb.sh` | Docker: `packaging/linux/test-deb.sh` (also checks the window and its libraries) in `ubuntu:22.04`, `ubuntu:24.04`, `debian:12` |
 
-The window (M8b) is packaged when its binary is in the bin folder (`Universal Clipboard.exe`,
-`universal-clipboard`). Without it the packages hold the agent and `uc` only: the macOS bundle
-then runs the agent as its main program (`LSUIElement`), and the MSIX has no visible app.
+The window (M8b, Tauri 2, `apps/desktop`) is in every installer. `package.yml` builds it on each
+OS with `npm ci && npx tauri build --no-bundle` (the shell has its own `Cargo.lock` and is not
+in the root workspace) and puts it in the bin folder under the name each script expects:
+`Universal Clipboard.exe` (Windows), `universal-clipboard` (macOS, Linux). Linux builds it on
+ubuntu-22.04 with `libwebkit2gtk-4.1-dev`, `libsoup-3.0-dev`, `libgtk-3-dev`, `librsvg2-dev` and
+`libssl-dev`, so glibc stays 2.35. The `.deb` then depends on `libwebkit2gtk-4.1-0` and
+`libgtk-3-0`. The install tests check that the window file is in the installed package; they
+never start it. A local build without the window still works: the scripts skip it, the macOS
+bundle then runs the agent as its main program (`LSUIElement`), and the MSIX has no visible app.
 
 `rpm` and AppImage are cut from v1 (plan 8.1). The signed apt repository (plan 8.1) is not
 built yet: it needs an apt key and GitHub Pages. Until then, apt updates do not happen; a new

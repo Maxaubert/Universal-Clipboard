@@ -63,6 +63,9 @@ Files: *
 License: MIT or Apache-2.0
 EOF
 
+DEPENDS="libc6 (>= 2.35), libdbus-1-3"
+# The window: WebKitGTK 4.1 and GTK 3 (Ubuntu 22.04+, Debian 12) and the tray library.
+[ -x "$BIN/universal-clipboard" ] && DEPENDS="$DEPENDS, libwebkit2gtk-4.1-0, libgtk-3-0"
 SIZE=$(du -sk "$D/usr" | cut -f1)
 cat > "$D/DEBIAN/control" <<EOF
 Package: $PKG
@@ -70,7 +73,7 @@ Version: $VERSION
 Architecture: $ARCH
 Maintainer: Universal Clipboard contributors <noreply@users.noreply.github.com>
 Installed-Size: $SIZE
-Depends: libc6 (>= 2.35), libdbus-1-3
+Depends: $DEPENDS
 Section: utils
 Priority: optional
 Homepage: https://github.com/Maxaubert/Universal-Clipboard
