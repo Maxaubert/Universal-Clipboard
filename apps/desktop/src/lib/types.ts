@@ -14,6 +14,8 @@ export interface Status {
   reason: string | null;
   fix: string | null;
   fix_code: string | null;
+  /** A non-blocking note (for example a missing Windows firewall rule) and its fix. */
+  note?: { code: string; text: string; fix: string } | null;
   devices: number;
   connected: number;
   paused: boolean;
@@ -41,6 +43,12 @@ export interface SetupRow {
   why: string;
   if_refused?: string;
   state: 'todo' | 'done' | 'refused';
+}
+
+/** Reply of `firewall.check`. */
+export interface FirewallCheck {
+  rule: 'present' | 'absent' | 'not-needed';
+  incoming: boolean;
 }
 
 export interface SetupStatus {

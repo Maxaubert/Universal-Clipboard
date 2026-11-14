@@ -198,31 +198,77 @@ fn wrong_code_is_refused_with_the_plan_text() {
     let _ = show.wait();
 }
 
-/// `uc setup` registers start at login (in the test sandbox, never the real login items)
-/// and `uc settings set start-at-login off` removes it again.
+/// Decision 2026-11-14 (Max): start at login is on from the first run (in the test sandbox,
+/// never the real login items), it is not a setup row, and when the user turns it off a
+/// restart never turns it on again. `uc setup` only asks the rows that are left.
 #[test]
-fn setup_and_autostart_in_the_sandbox() {
+fn start_at_login_is_on_by_default_in_the_sandbox() {
     let mut a = Agent::new(41);
     a.start();
+    let at = uc_agent::autostart::Autostart::new(&a.profile, "x".into(), &a.dir);
+    assert!(at.is_enabled(), "on after the first run");
     let v = a.uc_json(&["setup", "--yes"]);
     assert_eq!(v["sandboxed"], true);
+    assert_eq!(v["done"], true);
     let rows = v["rows"].as_array().unwrap();
-    let auto = rows.iter().find(|r| r["row"] == "autostart");
-    if cfg!(target_os = "macos") {
-        // macOS: a setting (on by default), not a setup row; setup turns it on when done.
-        assert!(auto.is_none(), "{rows:?}");
-    } else {
-        assert_eq!(auto.unwrap()["state"], "done");
+    for r in rows {
+        assert!(
+            !matches!(r["row"].as_str(), Some("autostart" | "firewall")),
+            "{r}"
+        );
     }
-    let at = uc_agent::autostart::Autostart::new(&a.profile, "x".into(), &a.dir);
-    assert!(at.is_enabled());
+    if !cfg!(target_os = "macos") {
+        assert!(rows.is_empty(), "{rows:?}");
+    }
     a.uc_json(&["settings", "set", "start-at-login", "off"]);
     assert!(!at.is_enabled());
+    a.stop();
+    a.start();
+    assert!(!at.is_enabled(), "a restart keeps the user's off");
+    assert_eq!(a.uc_json(&["settings"])["start-at-login"]["value"], "off");
     // Text output, no colours when not a terminal.
     let o = a.uc(&["status"]);
     let s = String::from_utf8_lossy(&o.stdout);
     assert!(!s.contains('\u{1b}'), "no colour codes");
     assert!(s.contains("Not set up"), "{s}");
+}
+
+/// Decision 2026-11-14 (Max): the network never waits for a setup answer. A missing Windows
+/// firewall rule (faked here: test profiles never look at the real rule) gives outbound-only
+/// mode and a non-blocking note with the fix; `uc firewall check` reports it.
+#[test]
+fn missing_firewall_rule_is_a_note_not_a_setup_step() {
+    let mut a = Agent::new(42);
+    a.extra_env
+        .push(("UCLIP_TEST_FIREWALL_RULE".into(), "absent".into()));
+    a.start();
+    let st = a.uc_json(&["status"]);
+    assert_eq!(st["state"], "not-set-up", "{st}");
+    assert_eq!(st["note"]["code"], "firewall", "{st}");
+    assert!(
+        st["note"]["fix"]
+            .as_str()
+            .unwrap()
+            .contains("uc firewall add")
+    );
+    let v = a.uc_json(&["firewall", "check"]);
+    assert_eq!(v["rule"], "absent");
+    assert_eq!(v["incoming"], false);
+    let d = a.uc_json(&["diagnostics"]);
+    let r = d["report"].as_str().unwrap();
+    assert!(r.contains("Network: on"), "{r}");
+    assert!(r.contains("Firewall rule: absent (incoming: false)"), "{r}");
+    let o = a.uc(&["status"]);
+    let s = String::from_utf8_lossy(&o.stdout);
+    assert!(s.contains("Note: Other devices cannot connect"), "{s}");
+
+    // Default test profile: no rule of ours is needed, no note.
+    let mut b = Agent::new(43);
+    b.start();
+    assert!(b.uc_json(&["status"])["note"].is_null());
+    assert_eq!(b.uc_json(&["firewall", "check"])["rule"], "not-needed");
+    // `uc firewall add` in a test profile never elevates; it only checks again.
+    assert_eq!(b.uc_json(&["firewall", "add"])["rule"], "not-needed");
 }
 
 /// Lockout ladder (protocol 4.6): the 5th wrong code turns the code off for 1 minute. The

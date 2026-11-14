@@ -32,6 +32,7 @@ pub const ALLOWED: &[&str] = &[
     "leave",
     "setup.status",
     "setup.step",
+    "firewall.check",
     "version",
 ];
 
@@ -75,6 +76,28 @@ async fn ipc_call(call: String, params: Value) -> Result<Value, Failure> {
     }
 }
 
+/// The window's Fix for a missing Windows firewall rule: the same path as `uc firewall add`
+/// (the one-time helper, one UAC prompt), then `firewall.check` so the agent looks again.
+#[tauri::command]
+async fn firewall_add() -> Result<Value, Failure> {
+    let p = profile()?;
+    let p2 = p.clone();
+    let code = tauri::async_runtime::spawn_blocking(move || uc_cli::add_firewall_rule(&p2))
+        .await
+        .unwrap_or(1);
+    match code {
+        0 => {}
+        3 => {
+            return Err(fail(
+                "refused",
+                "You said no. This PC only connects out; sync works when the other device accepts connections.",
+            ));
+        }
+        _ => return Err(fail("firewall", "The firewall rule could not be added.")),
+    }
+    ipc_call("firewall.check".into(), json!({})).await
+}
+
 /// Forward the agent's events to the page. Reconnects when the agent restarts.
 async fn event_loop(app: tauri::AppHandle) {
     let Ok(p) = profile() else { return };
@@ -109,7 +132,7 @@ pub fn run() {
             tauri::async_runtime::spawn(event_loop(app.handle().clone()));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ipc_call])
+        .invoke_handler(tauri::generate_handler![ipc_call, firewall_add])
         .run(tauri::generate_context!())
         .expect("error while running the Universal Clipboard window");
 }

@@ -2,10 +2,10 @@
 // calls as the real agent (docs/agent.md) with the same reply shapes. Tests steer it through
 // `window.__ucMock` (see tests/e2e).
 import type { Api } from './ipc';
-import { isMac } from './platform';
 import type {
   AgentEvent,
   Device,
+  FirewallCheck,
   IpcFailure,
   PairOffer,
   Settings,
@@ -13,7 +13,10 @@ import type {
   Status,
 } from './types';
 
-export type Scenario = 'fresh' | 'home' | 'paused' | 'attention' | 'vpn' | 'lockout' | 'down';
+// 'fresh' is a new device: no setup rows on any OS (decision 2026-11-14), so the window skips
+// the permissions screen. 'mac-blocked' is a new Mac where macOS blocks the local network and
+// paste access: the only case with rows (the agent shows them only then).
+export type Scenario = 'fresh' | 'mac-blocked' | 'home' | 'paused' | 'attention' | 'vpn' | 'lockout' | 'down';
 
 interface World {
   status: Status;
@@ -72,21 +75,14 @@ export function makeWorld(s: Scenario): World {
   const w: World = {
     status: baseStatus(),
     devices: homeDevices(),
-    setup: {
-      done: true,
-      // macOS asks nothing in setup (start at login is a setting, on by default).
-      rows: isMac
-        ? []
-        : [
-            { row: 'autostart', title: 'Start with Windows', why: 'The app works after a restart.', state: 'done' },
-            { row: 'firewall', title: 'Let your devices find this PC', why: 'Other devices can connect to this PC.', state: 'done' },
-          ],
-    },
+    // No setup rows on any OS: the installer adds the Windows firewall rule, and start at
+    // login is on by default (decision 2026-11-14).
+    setup: { done: true, rows: [] },
     settings: baseSettings(),
     offer: { code: '418 207', qr: 'UCLIP1:mock-qr-payload-0123456789', expires_ms: 0, notice: null },
     down: false,
   };
-  if (s === 'fresh') {
+  if (s === 'fresh' || s === 'mac-blocked') {
     w.devices = [dev("Max's PC", 'Windows', 'This device', true)];
     w.status = {
       ...w.status,
@@ -97,8 +93,24 @@ export function makeWorld(s: Scenario): World {
       reason: 'This device has no other devices yet.',
     };
     w.setup.done = false;
-    for (const r of w.setup.rows) if (r.row === 'firewall' || (isMac && r.row === 'autostart')) r.state = 'todo';
-    w.settings['start-at-login'].value = 'off';
+  }
+  if (s === 'mac-blocked') {
+    w.devices = [dev("Max's Mac", 'macOS', 'This device', true)];
+    w.status.this_device = "Max's Mac";
+    w.setup.rows = [
+      {
+        row: 'local-network',
+        title: 'Find devices on your network',
+        why: 'Needed to reach devices on your network.',
+        state: 'refused',
+      },
+      {
+        row: 'paste',
+        title: 'Read what you copy',
+        why: 'The app must read the clipboard without asking each time.',
+        state: 'refused',
+      },
+    ];
   }
   if (s === 'paused') {
     w.status = { ...w.status, state: 'paused', text: 'Paused', paused: true };
@@ -112,9 +124,12 @@ export function makeWorld(s: Scenario): World {
       fix: 'Allow Universal Clipboard through the firewall.',
       fix_code: 'firewall',
       connected: 0,
+      note: {
+        code: 'firewall',
+        text: 'Other devices cannot connect to this PC.',
+        fix: 'Run "uc firewall add".',
+      },
     };
-    const fw = w.setup.rows.find((r) => r.row === 'firewall');
-    if (fw) fw.state = 'refused';
   }
   if (s === 'vpn') {
     w.status = {
@@ -149,6 +164,8 @@ export interface MockHandle {
   /** What the next pair.join does. */
   joinResult: { ok: true; name: string; os: string } | { ok: false; error: IpcFailure };
   windowLog: string[];
+  /** What the next firewallAdd does: 0 done, 3 the user said no in the UAC prompt. */
+  firewallAddResult: 0 | 3;
 }
 
 declare global {
@@ -176,6 +193,7 @@ export function createMockApi(initial?: Scenario): Api {
     },
     joinResult: { ok: true, name: 'Mac mini', os: 'macOS' },
     windowLog: [],
+    firewallAddResult: 0,
   };
   if (typeof window !== 'undefined') window.__ucMock = h;
 
@@ -216,18 +234,14 @@ export function createMockApi(initial?: Scenario): Api {
         return structuredClone(w.setup);
       case 'setup.step': {
         const row = String(p.row);
-        if (row === 'done') {
-          w.setup.done = true;
-          if (isMac) w.settings['start-at-login'].value = 'on';
-        }
+        if (row === 'done') w.setup.done = true;
         const r = w.setup.rows.find((x) => x.row === row);
         if (r) r.state = p.answer ? 'done' : 'refused';
-        if (row === 'autostart') w.settings['start-at-login'].value = p.answer ? 'on' : 'off';
-        if (row === 'firewall' && p.answer && w.status.fix_code === 'firewall') {
-          w.status = { ...baseStatus(), devices: w.devices.length };
-          h.emit('status');
-        }
         return structuredClone(w.setup);
+      }
+      case 'firewall.check': {
+        const absent = w.status.note?.code === 'firewall';
+        return { rule: absent ? 'absent' : 'present', incoming: !absent } satisfies FirewallCheck;
       }
       case 'pause.set': {
         const off = p.mode === 'off';
@@ -269,9 +283,6 @@ export function createMockApi(initial?: Scenario): Api {
         return { left: true };
       }
       case 'pair.start':
-        if (w.status.state === 'not-set-up' && w.setup.rows.some((r) => r.state === 'todo' && r.row === 'autostart')) {
-          throw fail('no-network', 'The network is not on yet. Run "uc setup" first.');
-        }
         return structuredClone(w.offer);
       case 'pair.cancel':
         h.emit('pair.closed', { reason: 'cancelled' });
@@ -304,6 +315,22 @@ export function createMockApi(initial?: Scenario): Api {
     async call<T>(name: string, p: Record<string, unknown> = {}) {
       h.calls.push({ call: name, params: p });
       return (await handle(name, p)) as T;
+    },
+    async firewallAdd() {
+      h.calls.push({ call: 'firewall.add', params: {} });
+      if (h.world.down) throw fail('agent-down', 'The background service is not running.');
+      if (h.firewallAddResult === 3) {
+        throw fail(
+          'refused',
+          'You said no. This PC only connects out; sync works when the other device accepts connections.',
+        );
+      }
+      const w = h.world;
+      if (w.status.note?.code === 'firewall') {
+        w.status = { ...baseStatus(), devices: w.devices.length };
+        h.emit('status');
+      }
+      return (await this.call('firewall.check')) as FirewallCheck;
     },
     onEvent(cb) {
       subs.add(cb);

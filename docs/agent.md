@@ -35,7 +35,8 @@ never touches `state.json`), and it needs no extra cipher.
 
 JSON lines: request `{"id","call","params"}`, reply `{"id","ok","result"|"error"}`, events
 `{"event","data"}` after `subscribe`. Calls: the plan's list plus `setup.status`,
-`setup.step` and `version`. Test profiles also accept `debug.copy`, `debug.clipboard`,
+`setup.step`, `firewall.check` (looks at the Windows rule again; `uc firewall check|add`) and
+`version`. Test profiles also accept `debug.copy`, `debug.clipboard`,
 `debug.wake` and `debug.shutdown`; the real app refuses them.
 
 Hardening:
@@ -117,11 +118,21 @@ only), `device-name` (a `rename` change when in a group).
 | Sleep and wake | `PowerRegisterSuspendResumeNotification`, plus the time-jump check | time-jump check (a 1 s tick that comes more than 5 s late, or a wall clock jump) | same as macOS |
 | Crash restart | none yet (M9 decides with the installer) | `KeepAlive` | `--supervise`: 1 s doubling to 60 s, reset after 60 s up; stops on exit 0 or 3 |
 
-- **Windows firewall order rule:** the real app does not start the network before `uc setup`
-  (or the window) answered the firewall row. "No" gives outbound-only mode
-  (`NetConfig::accept_incoming = false`). M7 only records the answer; the rule itself (one UAC
-  prompt) comes from the M9 helper. Whether Windows shows its own alert for our UDP sockets in
-  outbound-only mode is checked on `win-b` in M9.
+- **Windows firewall (decision 2026-11-14, Max):** no setup row, and the network never waits.
+  The NSIS installer adds the rule (`docs/install.md`). At each network start the agent checks
+  it: there, it accepts incoming; missing, outbound-only (`NetConfig::accept_incoming = false`)
+  and a non-blocking `note` in `status` with the fix `uc firewall add`. "Needs attention"
+  (`fix_code` `firewall`) only when in a group with nobody connected. Old `state.json` files
+  with the `firewall` field still load (ignored). Whether Windows shows its own alert for our
+  UDP sockets in outbound-only mode is checked on `win-b`.
+- **Start at login (decision 2026-11-14, Max):** on by default, not a setup row. The first run
+  turns it on once (`state.json` `autostart_default_done`); a later "off" from the settings or
+  `uc settings set start-at-login off` is never undone. Setups from before the decision keep
+  their answer. Test profiles do this in their sandbox.
+- **Setup rows left:** none of their own on any OS. macOS shows "local-network" only when the
+  network failed (Allow retries it) and "paste" only when paste access is not "allow" (macOS
+  lets the launchd agent do both without a prompt, checked 2026-11-14 on macOS 27.2); "desktop"
+  when a Linux desktop blocks the clipboard. Otherwise `uc setup` only marks setup as done.
 - **macOS paste access (plan 3.9):** the agent reads `accessBehavior`; "Ask" or "Deny" gives
   "Needs attention". The "detect first" step uses the pasteboard **type list**, which reads no
   content and shows no prompt (M5 checked this); the `detect*` pattern methods add nothing for
@@ -136,7 +147,8 @@ only), `device-name` (a `rename` change when in a group).
 Only test profiles (any `UCLIP_PROFILE` that is not empty) read these; see `profile.rs`.
 `UCLIP_STATE_DIR`, `UCLIP_TEST_KEYSTORE=file`, `UCLIP_TEST_CLIPBOARD=os`,
 `UCLIP_TEST_PASTEBOARD`, `UCLIP_TEST_LOOPBACK`, `UCLIP_TEST_PAIR_ADDRS` (read by `uc`),
-`UCLIP_TEST_FAST`. **A test profile never opens the user's clipboard:** the OS backend only
+`UCLIP_TEST_FAST`, `UCLIP_TEST_FIREWALL_RULE` (`present` or `absent`: fakes the Windows rule
+check; without it a test profile needs no rule). **A test profile never opens the user's clipboard:** the OS backend only
 inside `tools/winhost` (Windows), on a named pasteboard (macOS), or on a display the test
 started (Linux, Docker). Elsewhere it refuses, and two tests check that.
 
@@ -145,7 +157,7 @@ started (Linux, Docker). Elsewhere it refuses, and two tests check that.
 | Test | Where it ran (2026-11-14) |
 |---|---|
 | `uc-cli` unit: every settings-window action maps to a `uc` command; every IPC call is reachable; `--json` everywhere; no send/get | PC, Mac, WSL |
-| `agents.rs`: 3 agents paired through the CLI (third from the second device), copy matrix, rename, pause and resume, settings, remove (the removed device learns it), leave, no content in logs or report; restart and reconnect, newest clip after reconnect, single agent; wrong code; `uc setup` and start at login in the sandbox | PC, Mac, WSL |
+| `agents.rs`: 3 agents paired through the CLI (third from the second device), copy matrix, rename, pause and resume, settings, remove (the removed device learns it), leave, no content in logs or report; restart and reconnect, newest clip after reconnect, single agent; wrong code; start at login on by default in the sandbox and kept off after a restart; a missing firewall rule is a note, not a setup step | PC, Mac, WSL |
 | `winhost.rs`: one agent on the real Windows clipboard in a private window station, paired with a fake-clipboard agent, copy matrix both ways | PC |
 | `macpb.rs`: one agent on the real macOS backend with a named pasteboard, copy matrix | Mac over ssh, no prompt, nothing on screen |
 | `linux_live.rs`: an X11 agent (Xvfb) and a Wayland agent (headless Sway), copy matrix | Docker (`live/docker.sh`), CI `linux-clipboard` |

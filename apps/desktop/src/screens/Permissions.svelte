@@ -3,14 +3,13 @@
   import * as art from '../lib/art';
   import { failureText } from '../lib/ipc';
   import { S } from '../lib/strings';
-  import { store } from '../lib/store.svelte';
+  import { askRows, store } from '../lib/store.svelte';
   import type { SetupRow } from '../lib/types';
 
   let error = $state<string | null>(null);
-  // The design shows "Start when you sign in" first.
-  const rows = $derived(
-    [...(store.setup?.rows ?? [])].sort((a, b) => Number(b.row === 'autostart') - Number(a.row === 'autostart')),
-  );
+  // No OS asks anything in setup any more (decision 2026-11-14). Rows appear only when the
+  // OS blocks something (macOS: Local Network, paste access); otherwise Welcome skips this.
+  const rows = $derived(askRows(store.setup));
 
   const label = (r: SetupRow) => S.rowTitles[r.row] ?? r.title;
 

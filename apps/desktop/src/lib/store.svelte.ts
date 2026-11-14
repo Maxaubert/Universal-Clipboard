@@ -1,5 +1,4 @@
 import { failureText, getApi, type Api } from './ipc';
-import { isMac } from './platform';
 import type { AgentEvent, Device, Settings, SetupStatus, Status } from './types';
 
 export type Route =
@@ -14,15 +13,20 @@ export type Route =
   | 'settings'
   | 'vpn';
 
-/** Step of the 5-step indicator for the setup screens, else 0 (no indicator). */
-/** Setup steps: 5 on Windows and Linux; 4 on macOS, which has no permissions step. */
-export const STEPS = isMac ? 4 : 5;
+/** Setup steps: 4 on every OS (decision 2026-11-14): no OS asks anything in setup, so there is
+ * no permissions step. When the OS blocks something (macOS rows) the permissions screen still
+ * shows, as part of step 1. */
+export const STEPS = 4;
 
+/** Step of the setup indicator for the setup screens, else 0 (no indicator). */
 export function stepOf(r: Route): number {
-  const steps: Record<string, number> = isMac
-    ? { welcome: 1, perms: 1, add: 2, show: 3, enter: 3, connected: 4 }
-    : { welcome: 1, perms: 2, add: 3, show: 4, enter: 4, connected: 5 };
+  const steps: Record<string, number> = { welcome: 1, perms: 1, add: 2, show: 3, enter: 3, connected: 4 };
   return steps[r as string] ?? 0;
+}
+
+/** Setup rows the permissions screen asks ("desktop" only explains, Needs attention shows it). */
+export function askRows(s: SetupStatus | null): SetupStatus['rows'] {
+  return (s?.rows ?? []).filter((r) => r.row !== 'desktop');
 }
 
 class Store {
@@ -120,6 +124,11 @@ class Store {
     const prev = this.back[this.back.length - 1];
     this.back = this.back.slice(0, -1);
     this.route = prev ?? fallback;
+  }
+
+  /** True when the permissions screen (L02) has rows to ask: only when macOS blocks something. */
+  get needsPerms(): boolean {
+    return askRows(this.setup).length > 0;
   }
 
   get thisDevice(): Device | undefined {
