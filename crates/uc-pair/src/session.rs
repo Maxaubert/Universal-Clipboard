@@ -4,6 +4,7 @@
 //! and the remote address of one connection. M2 wires the real QUIC connection. The caller moves
 //! frames between the stream and these state machines and passes the time in.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -27,12 +28,14 @@ pub const PAIRING_LIFETIME_MS: u64 = 10 * 60 * 1000;
 pub const STEP_TIMEOUT_MS: u64 = 10 * 1000;
 /// Tries per 6-digit code.
 pub const CODE_TRIES: u32 = 5;
-/// Tries per QR secret.
+/// Tries per QR secret, per remote address (4.6).
 pub const QR_TRIES: u32 = 20;
+/// Remote addresses whose QR tries are tracked per pairing. Bounds memory (4.6).
+pub const QR_SOURCES_MAX: usize = 1024;
 /// Pairing connections handled at the same time.
 pub const MAX_CONNECTIONS: u32 = 4;
-/// Dead codes in a row before the short code is turned off.
-pub const LOCKOUT_DEAD_CODES: u32 = 5;
+/// Failed code tries in a row, over all pairings, before the short code is turned off (4.6).
+pub const LOCKOUT_FAILED_TRIES: u32 = 15;
 /// How long the short code stays off.
 pub const LOCKOUT_MS: u64 = 60 * 60 * 1000;
 
@@ -95,14 +98,18 @@ pub struct Status {
     pub open: bool,
     pub succeeded: bool,
     pub tries_code: u32,
+    /// QR tries of this pairing, all addresses together.
     pub tries_qr: u32,
     /// Failed code tries so far. The notice [`NOTICE_FAILED_TRY`] shows after each.
     pub failed_code_tries: u32,
     pub code_dead: bool,
     /// The short code is off for this device (lockout).
     pub code_off: bool,
-    pub dead_codes_in_a_row: u32,
+    /// Failed code tries over all pairings since the last success or lockout (4.6).
+    pub failed_code_tries_in_a_row: u32,
     pub active_connections: u32,
+    /// The open pairing still holds the code or the QR secret in memory.
+    pub holds_secrets: bool,
 }
 
 /// Why a connection was refused before any frame.
@@ -118,10 +125,13 @@ pub enum Refuse {
 
 struct Open {
     code: Option<PairSecret>,
-    qr: PairSecret,
+    /// `None` once the pairing succeeded: the secret is wiped (4.2 step 5).
+    qr: Option<PairSecret>,
     expires_ms: u64,
     tries_code: u32,
     tries_qr: u32,
+    /// QR tries per remote address (4.6).
+    qr_by_source: HashMap<IpAddr, u32>,
     failed_code: u32,
     succeeded: bool,
     cancelled: bool,
@@ -140,7 +150,8 @@ struct HostState {
     open: Option<Open>,
     serial: u64,
     active: u32,
-    dead_in_a_row: u32,
+    /// Failed code tries over all pairings since the last success or lockout (4.6).
+    failed_in_a_row: u32,
     code_off_until_ms: Option<u64>,
 }
 
@@ -151,21 +162,26 @@ impl HostState {
 
     /// Records the end of a counted run that did not end with a correct `conf_b`.
     fn record_failure(&mut self, serial: u64, mode: Mode, now_ms: u64) {
+        if mode != Mode::Code {
+            return;
+        }
+        // The lockout counts every failed code try, also of a pairing that was cancelled or
+        // replaced since, so neither stopping at 4 tries per code nor reopening escapes it (4.6).
+        self.failed_in_a_row += 1;
+        if self.failed_in_a_row >= LOCKOUT_FAILED_TRIES {
+            self.code_off_until_ms = Some(now_ms + LOCKOUT_MS);
+            self.failed_in_a_row = 0;
+        }
         let Some(o) = self.open.as_mut().filter(|o| o.serial == serial) else {
             return;
         };
-        if mode != Mode::Code || o.code.is_none() {
+        if o.code.is_none() {
             return;
         }
         o.failed_code += 1;
         if o.failed_code == CODE_TRIES {
             // The code is dead (4.6). The QR code stays valid.
             o.code = None;
-            self.dead_in_a_row += 1;
-            if self.dead_in_a_row >= LOCKOUT_DEAD_CODES {
-                self.code_off_until_ms = Some(now_ms + LOCKOUT_MS);
-                self.dead_in_a_row = 0;
-            }
         }
     }
 }
@@ -214,10 +230,11 @@ impl Host {
         let expires_ms = now_ms + PAIRING_LIFETIME_MS;
         s.open = Some(Open {
             code: code.clone(),
-            qr: PairSecret::Qr(qr_secret),
+            qr: Some(PairSecret::Qr(qr_secret)),
             expires_ms,
             tries_code: 0,
             tries_qr: 0,
+            qr_by_source: HashMap::new(),
             failed_code: 0,
             succeeded: false,
             cancelled: false,
@@ -255,7 +272,7 @@ impl Host {
         let s = self.lock();
         let mut st = Status {
             code_off: s.code_off(now_ms),
-            dead_codes_in_a_row: s.dead_in_a_row,
+            failed_code_tries_in_a_row: s.failed_in_a_row,
             active_connections: s.active,
             ..Status::default()
         };
@@ -266,6 +283,7 @@ impl Host {
             st.tries_qr = o.tries_qr;
             st.failed_code_tries = o.failed_code;
             st.code_dead = o.failed_code >= CODE_TRIES;
+            st.holds_secrets = o.code.is_some() || o.qr.is_some();
         }
         st
     }
@@ -298,6 +316,7 @@ impl Host {
             own_key,
             peer_key: t.peer_key(),
             exporter: t.exporter(),
+            remote: ip,
             state: InvState::WaitHello,
             counted: None,
             conf: None,
@@ -350,6 +369,8 @@ pub struct InviterRun {
     own_key: Key,
     peer_key: Key,
     exporter: [u8; 32],
+    /// The remote address; QR tries are counted per address (4.6).
+    remote: IpAddr,
     state: InvState,
     /// The mode of a counted try; set just before `PairReply`.
     counted: Option<Mode>,
@@ -450,12 +471,19 @@ impl InviterRun {
                     }
                 },
                 Mode::Qr => {
-                    if o.tries_qr >= QR_TRIES {
+                    // Counted per remote address, so junk hellos from one LAN host cannot use up
+                    // the tries of the real joiner (4.6).
+                    let allowed = match o.qr_by_source.get(&self.remote) {
+                        Some(&n) => n < QR_TRIES,
+                        None => o.qr_by_source.len() < QR_SOURCES_MAX,
+                    };
+                    let Some(qr) = o.qr.clone().filter(|_| allowed) else {
                         drop(s);
                         return self.fail(Some(AbortReason::NotOpen));
-                    }
+                    };
+                    *o.qr_by_source.entry(self.remote).or_insert(0) += 1;
                     o.tries_qr += 1;
-                    o.qr.clone()
+                    qr
                 }
             };
             self.counted = Some(mode);
@@ -508,10 +536,13 @@ impl InviterRun {
                 .filter(|o| o.serial == self.serial && o.is_live(now_ms))
             {
                 Some(o) => {
-                    // A correct conf_b ends the pairing for both modes (4.6).
+                    // A correct conf_b ends the pairing for both modes (4.6). Both secrets are
+                    // wiped now (4.2 step 5); only the status stays.
                     o.succeeded = true;
                     o.code = None;
-                    s.dead_in_a_row = 0;
+                    o.qr = None;
+                    o.qr_by_source = HashMap::new();
+                    s.failed_in_a_row = 0;
                 }
                 None => {
                     drop(s);

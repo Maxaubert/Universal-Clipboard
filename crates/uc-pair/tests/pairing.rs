@@ -485,15 +485,15 @@ fn dropped_after_reply_stays_counted() {
 }
 
 #[test]
-fn lockout_after_five_dead_codes() {
+fn lockout_after_fifteen_failed_tries() {
     let mut w = World::new("lockout");
     let mut now = T0;
-    for _ in 0..4 {
+    for _ in 0..2 {
         w.open(now);
         kill_code(&mut w, now);
         now += 1000;
     }
-    assert_eq!(w.host.status(now).dead_codes_in_a_row, 4);
+    assert_eq!(w.host.status(now).failed_code_tries_in_a_row, 10);
     assert!(!w.host.status(now).code_off);
     w.open(now);
     kill_code(&mut w, now);
@@ -524,10 +524,10 @@ fn lockout_after_five_dead_codes() {
 }
 
 #[test]
-fn success_resets_dead_code_count() {
+fn success_resets_failed_try_count() {
     let mut w = World::new("reset");
     let mut now = T0;
-    for _ in 0..4 {
+    for _ in 0..2 {
         w.open(now);
         kill_code(&mut w, now);
         now += 1000;
@@ -535,10 +535,117 @@ fn success_resets_dead_code_count() {
     let o = w.open(now);
     let j = DeviceKey::from_seed(&arr32("joiner"));
     full_run(&mut w, &j, o.code.as_ref().unwrap(), Mode::Code, now).unwrap();
-    assert_eq!(w.host.status(now).dead_codes_in_a_row, 0);
-    w.open(now);
-    kill_code(&mut w, now);
+    assert_eq!(w.host.status(now).failed_code_tries_in_a_row, 0);
+    for _ in 0..2 {
+        w.open(now);
+        kill_code(&mut w, now);
+    }
     assert!(!w.host.status(now).code_off);
+}
+
+/// `n` failed code tries from one guesser against the open pairing. Returns the runs, which the
+/// caller ends.
+fn wrong_tries(w: &World, n: usize, now: u64) -> Vec<InviterRun> {
+    let wrong = PairSecret::code("999999").unwrap();
+    let j = DeviceKey::from_seed(&arr32("guesser"));
+    (0..n)
+        .map(|_| {
+            let (ti, _) = w.transport_for(&j, "192.168.1.30");
+            let mut run = w.accept(&ti, now).unwrap();
+            let (step, _) = try_once(w, &mut run, &j, &wrong, Mode::Code, now);
+            assert!(matches!(step, InviterStep::Send(_)));
+            run
+        })
+        .collect()
+}
+
+/// M3-SEC-1: a guesser that stops at 4 tries per code never kills a code, but is still locked
+/// out after 15 failed tries in all.
+#[test]
+fn four_tries_per_code_still_locks_out() {
+    let mut w = World::new("four");
+    let mut now = T0;
+    for i in 1..=3 {
+        w.open(now);
+        for mut run in wrong_tries(&w, 4, now) {
+            run.on_close();
+        }
+        let st = w.host.status(now);
+        assert!(!st.code_dead, "4 tries never kill the code");
+        assert!(!st.code_off, "not yet after {} tries", 4 * i);
+        assert_eq!(st.failed_code_tries_in_a_row, 4 * i);
+        now += 1000;
+    }
+    w.open(now);
+    for mut run in wrong_tries(&w, 3, now) {
+        run.on_close();
+    }
+    let st = w.host.status(now);
+    assert!(st.code_off, "15 failed tries start the lockout");
+    assert_eq!(st.failed_code_tries_in_a_row, 0);
+    assert!(w.open(now + 1).code.is_none());
+}
+
+/// M3-SEC-1: a failed try counts even when its pairing was cancelled or replaced before the
+/// try ended.
+#[test]
+fn failed_tries_of_closed_pairings_count() {
+    let mut w = World::new("closed");
+    w.open(T0);
+    let runs = wrong_tries(&w, 4, T0);
+    w.host.cancel();
+    drop(runs);
+    assert_eq!(w.host.status(T0).failed_code_tries_in_a_row, 4);
+    w.open(T0);
+    let runs = wrong_tries(&w, 4, T0);
+    w.open(T0); // "Add a device" again replaces the pairing
+    drop(runs);
+    let st = w.host.status(T0);
+    assert_eq!(st.failed_code_tries_in_a_row, 8);
+    assert_eq!(
+        st.failed_code_tries, 0,
+        "the new pairing has no failed tries"
+    );
+}
+
+/// M3-SEC-5: junk QR hellos from one address use up only that address's tries.
+#[test]
+fn qr_tries_are_counted_per_address() {
+    let mut w = World::new("qrdos");
+    let o = w.open(T0);
+    let junk = PairSecret::Qr([0x55; 16]);
+    let a = DeviceKey::from_seed(&arr32("attacker"));
+    for _ in 0..QR_TRIES {
+        let (ti, _) = w.transport_for(&a, "192.168.1.30");
+        let mut run = w.accept(&ti, T0).unwrap();
+        let (step, _) = try_once(&w, &mut run, &a, &junk, Mode::Qr, T0);
+        assert!(matches!(step, InviterStep::Send(_)));
+        run.on_close();
+    }
+    let (ti, _) = w.transport_for(&a, "192.168.1.30");
+    let mut run = w.accept(&ti, T0).unwrap();
+    let (step, _) = try_once(&w, &mut run, &a, &junk, Mode::Qr, T0);
+    assert_eq!(abort_reason(&step), Some(AbortReason::NotOpen));
+    drop(run);
+    assert_eq!(w.host.status(T0).tries_qr, QR_TRIES);
+    // The real joiner, from another address, still pairs with the QR code.
+    let j = DeviceKey::from_seed(&arr32("joiner"));
+    let (joined, _) = full_run(&mut w, &j, &PairSecret::Qr(o.qr_secret), Mode::Qr, T0).unwrap();
+    assert!(joined.graph.is_member(&j.public()));
+}
+
+/// M3-SEC-8: after a success both secrets are wiped, while the status stays.
+#[test]
+fn success_wipes_both_secrets() {
+    let mut w = World::new("wipe");
+    let o = w.open(T0);
+    assert!(w.host.status(T0).holds_secrets);
+    let j = DeviceKey::from_seed(&arr32("joiner"));
+    full_run(&mut w, &j, &PairSecret::Qr(o.qr_secret), Mode::Qr, T0).unwrap();
+    assert!(!w.host.is_open(T0));
+    let st = w.host.status(T0);
+    assert!(st.succeeded);
+    assert!(!st.holds_secrets, "code and QR secret are wiped on success");
 }
 
 #[test]
