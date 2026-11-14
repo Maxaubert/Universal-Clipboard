@@ -2,8 +2,9 @@
 
 Date: 2026-11-14. Plan: sections 2.1, 3.2, 3.13, 4.1, 7 (M9), 8. Spike: `docs/spikes/s8-msix.md`.
 
-Windows builds are **unsigned**. macOS builds are ad hoc by default and can be signed with
-Max's Developer ID (see "Signing and notarization"). The update manifest is signed with our own
+Windows builds are **unsigned**. macOS builds are ad hoc by default (PR CI, local builds);
+release builds are signed with Max's Developer ID and notarized in CI (see "Signing and
+notarization"). The update manifest is signed with our own
 updater key. Nothing in this milestone was installed
 on Max's PC or Mac: install and uninstall tests run on CI runners and in Docker.
 
@@ -237,7 +238,9 @@ updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the la
 ## Releases
 
 - `release.yml`, on a tag `vX.Y.Z` that matches `Cargo.toml`: `package.yml` builds and tests
-  everything, then the `publish` job (environment `release`, waits for Max) signs
+  everything, `macos-signed` (environment `release`, waits for Max) builds the signed and
+  notarized macOS files (see "Signing and notarization"), then the `publish` job (environment
+  `release`, waits for Max again) signs
   `latest.json` at 10% and makes a **draft** release. Without the secret there is no
   `latest.json`, so nothing auto-updates to that release.
 - `rollout.yml` (run by hand): re-signs `latest.json` of a tag with a new percentage, for
@@ -255,8 +258,59 @@ updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the la
   --team-id WV7BY8CUM8`. The certificate is in the Mac mini's login keychain. Without
   notarization, `spctl` says "Unnotarized Developer ID" and a downloaded copy is blocked.
   A Developer ID also keeps Keychain access and privacy grants across updates (an ad-hoc
-  signature changes with every build). CI does not sign yet: the certificate and an App Store
-  Connect API key would be secrets of the `release` environment.
+  signature changes with every build). `NOTARY_KEYCHAIN=<path>` names the keychain that
+  holds the profile when it is not the login keychain (CI uses this). `build-app.sh` fails
+  when Apple does not answer "Accepted" (notarytool itself can exit 0 for "Invalid").
+- **macOS in CI (2026-11-14):** `package.yml` (every PR) stays ad hoc and uses no secrets. In
+  `release.yml`, the job `macos-signed` (environment `release`, so Max approves it; it starts
+  next to `package`) builds the app again, imports the certificate into a temporary keychain,
+  stores the API key as a notarytool profile in that keychain, and runs `build-app.sh` with
+  `SIGN_IDENTITY` and `NOTARY_PROFILE`. It then checks the app, the DMG, the app inside the DMG
+  and the unpacked update archive: `codesign --verify --deep --strict`, the Developer ID
+  authority, `spctl -a -vv` must say `source=Notarized Developer ID`, `stapler validate`. A
+  missing secret or any failed step fails the release: there is no ad-hoc fallback. The
+  keychain and the key files are deleted at the end, also after a failure. `publish` takes the
+  macOS files only from this job. With two jobs in `release`, Max approves twice per release.
+  No rust or npm cache in this job (a job with signing keys does not restore caches).
+- **Secrets of the `release` environment** (Max sets them; nothing is in the repo):
+
+  | Secret | Value |
+  |---|---|
+  | `MACOS_CERT_P12` | the Developer ID Application certificate with its private key, `.p12`, base64 |
+  | `MACOS_CERT_PASSWORD` | the password set when the `.p12` was exported |
+  | `APPLE_API_KEY_P8` | the App Store Connect API key file `AuthKey_<id>.p8`, base64 |
+  | `APPLE_API_KEY_ID` | its Key ID (10 characters) |
+  | `APPLE_API_ISSUER_ID` | the Issuer ID (a UUID) on the same page |
+
+- **To do (Max), once:**
+  1. Export the certificate on the Mac mini. Keychain Access > login > My Certificates >
+     "Developer ID Application: MAX AUBERT (WV7BY8CUM8)". Open the arrow and check that a
+     private key is under it. Right-click the certificate > Export > format "Personal
+     Information Exchange (.p12)" > save as `~/uc-cert.p12`, and set a strong password.
+     (Terminal: `security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12
+     -P '<password>' -o ~/uc-cert.p12` also works, but it exports every identity in the
+     keychain, so the Keychain Access way is better.)
+  2. Make the API key. App Store Connect > Users and Access > Integrations > App Store Connect
+     API > Team Keys > "+" (the first time, the Account Holder must request API access). Name:
+     `uclip-notary`, Access: **Developer**. Download `AuthKey_<id>.p8` (only possible once).
+     Note the Key ID in the list and the Issuer ID above it.
+  3. Set the secrets (on the Mac mini, in a clone of the repo or with `--repo
+     Maxaubert/Universal-Clipboard`):
+
+     ```sh
+     base64 -i ~/uc-cert.p12 -o ~/uc-cert.p12.b64
+     gh secret set MACOS_CERT_P12 --env release < ~/uc-cert.p12.b64
+     gh secret set MACOS_CERT_PASSWORD --env release        # paste the password at the prompt
+     base64 -i ~/Downloads/AuthKey_<id>.p8 -o ~/uc-notary.p8.b64
+     gh secret set APPLE_API_KEY_P8 --env release < ~/uc-notary.p8.b64
+     gh secret set APPLE_API_KEY_ID --env release            # paste the Key ID
+     gh secret set APPLE_API_ISSUER_ID --env release         # paste the Issuer ID
+     rm ~/uc-cert.p12 ~/uc-cert.p12.b64 ~/uc-notary.p8.b64
+     ```
+
+     On the PC instead (PowerShell, absolute paths): `[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\Users\Admin\Downloads\AuthKey_<id>.p8")) | gh secret set APPLE_API_KEY_P8 --env release`.
+  4. Keep the `.p8` in a password manager or delete it; a lost key can be revoked and a new
+     one made. Check with `gh secret list --env release` (six names with `UCLIP_UPDATER_KEY`).
 - **Windows:** the exe stays unsigned until SignPath Foundation (or Certum) accepts the project
   (plan 8.1). The Store signs the MSIX on submit; its `Publisher` must then be the one Partner
   Center gives (`build.ps1 -Publisher`).
