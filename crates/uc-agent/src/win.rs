@@ -485,6 +485,27 @@ pub fn is_packaged() -> bool {
     r != 15700
 }
 
+/// Stop our standard handles from being inherited by programs we start. Rust gives a child
+/// its own handles for the `Stdio` we choose, but Windows also passes every other inheritable
+/// handle. So a detached agent started by `uc` would keep `uc`'s output pipe open, and a
+/// script that reads `uc status` would wait for ever.
+pub fn no_inherit_std_handles() {
+    use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    for id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: plain calls; a null or invalid handle makes SetHandleInformation fail, which
+        // is fine.
+        unsafe {
+            let h = GetStdHandle(id);
+            if !h.is_null() {
+                SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

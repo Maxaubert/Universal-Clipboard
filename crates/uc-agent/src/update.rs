@@ -287,6 +287,7 @@ fn detach(c: &mut Command) {
         use std::os::windows::process::CommandExt;
         // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
         c.creation_flags(0x0000_0008 | 0x0000_0200 | 0x0800_0000);
+        crate::win::no_inherit_std_handles();
     }
     #[cfg(unix)]
     {

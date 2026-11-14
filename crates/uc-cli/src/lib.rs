@@ -344,6 +344,8 @@ fn start_agent(p: &Profile) {
         use std::os::windows::process::CommandExt;
         // DETACHED_PROCESS | CREATE_NO_WINDOW: no console, nothing on screen.
         c.creation_flags(0x0000_0008 | 0x0800_0000);
+        // The agent must not hold our output pipe ("uc status | ..." would never end).
+        uc_agent::win::no_inherit_std_handles();
     }
     let _ = c.spawn();
 }
