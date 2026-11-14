@@ -11,6 +11,7 @@ import type {
   Settings,
   SetupStatus,
   Status,
+  UpdateStatus,
 } from './types';
 
 // 'fresh' is a new device: no setup rows on any OS (decision 2026-11-14), so the window skips
@@ -18,7 +19,20 @@ import type {
 // paste access: the only case with rows (the agent shows them only then).
 // 'h3' is the device set of the H3 "You are here" mockup (docs/design/desktop/motion/home.html),
 // for the visual check of Home.
-export type Scenario = 'fresh' | 'mac-blocked' | 'home' | 'h3' | 'paused' | 'attention' | 'vpn' | 'lockout' | 'down';
+// 'update' is a Home whose agent found a newer version at start; 'update-failed' is the agent
+// that runs after a failed update (the old version came back).
+export type Scenario =
+  | 'fresh'
+  | 'mac-blocked'
+  | 'home'
+  | 'h3'
+  | 'paused'
+  | 'attention'
+  | 'vpn'
+  | 'lockout'
+  | 'down'
+  | 'update'
+  | 'update-failed';
 
 interface World {
   status: Status;
@@ -27,6 +41,7 @@ interface World {
   settings: Settings;
   offer: PairOffer;
   down: boolean;
+  update: UpdateStatus;
 }
 
 const dev = (name: string, os: string, state: Device['state'], me = false): Device => ({
@@ -74,6 +89,22 @@ function baseSettings(): Settings {
   };
 }
 
+function baseUpdate(): UpdateStatus {
+  return {
+    enabled: true,
+    current: '1.0.0',
+    available: null,
+    failed_version: null,
+    notes_url: null,
+    state: 'none',
+    dismissed: false,
+    checked: true,
+    checks: 1,
+    last_check_ms: Date.now(),
+    last_error: null,
+  };
+}
+
 export function makeWorld(s: Scenario): World {
   const w: World = {
     status: baseStatus(),
@@ -84,7 +115,14 @@ export function makeWorld(s: Scenario): World {
     settings: baseSettings(),
     offer: { code: '418 207', qr: 'UCLIP1:mock-qr-payload-0123456789', expires_ms: 0, notice: null },
     down: false,
+    update: baseUpdate(),
   };
+  if (s === 'update') {
+    w.update = { ...w.update, state: 'available', available: '1.1.0' };
+  }
+  if (s === 'update-failed') {
+    w.update = { ...w.update, state: 'failed', failed_version: '1.1.0', last_error: 'health check failed: the network did not start' };
+  }
   if (s === 'fresh' || s === 'mac-blocked') {
     w.devices = [dev("Max's PC", 'Windows', 'This device', true)];
     w.status = {
@@ -180,6 +218,12 @@ export interface MockHandle {
   windowLog: string[];
   /** What the next firewallAdd does: 0 done, 3 the user said no in the UAC prompt. */
   firewallAddResult: 0 | 3;
+  /** What the next update.apply does: 'ok' starts the helper (state applying), 'fail' does not. */
+  updateApplyResult: 'ok' | 'fail';
+  /** The screen the window was started for (`--route update` from the agent). */
+  launchRoute: string | null;
+  /** The agent found an update (or not) at start: set the status and send the `update` event. */
+  setUpdate(u: Partial<UpdateStatus>): void;
   /** A copy moved (facts only): the agent records it and sends an `activity` event. */
   copy(direction: 'sent' | 'received', kind?: string, device?: string | null): void;
 }
@@ -210,6 +254,12 @@ export function createMockApi(initial?: Scenario): Api {
     joinResult: { ok: true, name: 'Mac mini', os: 'macOS' },
     windowLog: [],
     firewallAddResult: 0,
+    updateApplyResult: 'ok',
+    launchRoute: params?.get('launch') ?? null,
+    setUpdate(u) {
+      h.world.update = { ...h.world.update, ...u };
+      h.emit('update', { ...h.world.update });
+    },
     copy(direction, kind = 'Text', device = null) {
       const a = { kind, direction, device: direction === 'received' ? device : null, time_ms: Date.now(), note: null };
       h.world.status.activity = [a, ...(h.world.status.activity ?? [])].slice(0, 5);
@@ -326,6 +376,23 @@ export function createMockApi(initial?: Scenario): Api {
       }
       case 'diagnostics':
         return { report: 'Universal Clipboard (mock)' };
+      case 'update.status':
+        return structuredClone(w.update);
+      case 'update.later':
+        w.update.dismissed = true;
+        h.emit('update', { ...w.update });
+        return structuredClone(w.update);
+      case 'update.apply': {
+        if (w.update.state !== 'available') throw fail('update', 'There is no update to install.');
+        if (h.updateApplyResult === 'fail') {
+          w.update = { ...w.update, state: 'failed', failed_version: w.update.available, available: null, last_error: 'Could not start the update: the app folder cannot be written' };
+          h.emit('update', { ...w.update });
+          throw fail('update', w.update.last_error!);
+        }
+        w.update.state = 'applying';
+        h.emit('update', { ...w.update });
+        return { applying: true, version: w.update.available };
+      }
       default:
         throw fail('unknown-call', `Unknown call "${name}".`);
     }
@@ -352,6 +419,9 @@ export function createMockApi(initial?: Scenario): Api {
         h.emit('status');
       }
       return (await this.call('firewall.check')) as FirewallCheck;
+    },
+    async launchRoute() {
+      return h.launchRoute;
     },
     onEvent(cb) {
       subs.add(cb);

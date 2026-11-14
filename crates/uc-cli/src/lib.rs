@@ -82,6 +82,16 @@ pub enum Cmd {
         #[command(subcommand)]
         action: FirewallCmd,
     },
+    /// Updates: show whether a newer version is ready, install it, or ask again later. The app
+    /// looks for a new version once, when it starts; there is no "check now".
+    Update {
+        /// Install the version that is ready (the same as "uc update now").
+        #[arg(long)]
+        install: bool,
+        /// now or later.
+        #[command(subcommand)]
+        action: Option<UpdateCmd>,
+    },
     /// Remove this device from your devices and forget everything.
     Leave {
         /// Do not ask to confirm.
@@ -118,6 +128,16 @@ pub enum FirewallCmd {
     Check,
 }
 
+/// `uc update ...`.
+#[derive(Debug, Subcommand)]
+pub enum UpdateCmd {
+    /// Install the version that is ready. The app restarts by itself; on a problem the old
+    /// version comes back.
+    Now,
+    /// Do not ask again until the app starts next time.
+    Later,
+}
+
 /// `uc settings set ...`.
 #[derive(Debug, Subcommand)]
 pub enum SettingsCmd {
@@ -149,6 +169,19 @@ impl Cmd {
             Cmd::Diagnostics => vec!["diagnostics"],
             Cmd::Setup { .. } => vec!["setup.status", "setup.step"],
             Cmd::Firewall { .. } => vec!["firewall.check"],
+            Cmd::Update {
+                action: Some(UpdateCmd::Later),
+                ..
+            } => vec!["update.later"],
+            Cmd::Update {
+                install: true,
+                action: None,
+            }
+            | Cmd::Update {
+                action: Some(UpdateCmd::Now),
+                ..
+            } => vec!["update.status", "update.apply"],
+            Cmd::Update { .. } => vec!["update.status"],
             Cmd::Leave { .. } => vec!["leave"],
             Cmd::Help => vec![],
         }
@@ -250,6 +283,22 @@ pub const UI_ACTIONS: &[(&str, &[&str], &str)] = &[
         "firewall.check",
     ),
     ("First run: done", &["uc", "setup"], "setup.step"),
+    (
+        "Update: Version X is ready",
+        &["uc", "update"],
+        "update.status",
+    ),
+    (
+        "Update: Update now",
+        &["uc", "update", "--install"],
+        "update.apply",
+    ),
+    (
+        "Update: Update now",
+        &["uc", "update", "now"],
+        "update.apply",
+    ),
+    ("Update: Later", &["uc", "update", "later"], "update.later"),
     (
         "First run: permissions (macOS)",
         &["uc", "setup", "--yes"],
@@ -493,6 +542,11 @@ pub async fn run(cli: Cli) -> Result<(), Fail> {
         }
         Cmd::Setup { yes } => setup(&mut c, &p, j, yes).await?,
         Cmd::Firewall { action } => firewall(&mut c, &p, j, action).await?,
+        Cmd::Update { install, action } => {
+            let install = install || matches!(action, Some(UpdateCmd::Now));
+            let later = matches!(action, Some(UpdateCmd::Later));
+            update(&mut c, j, install, later).await?
+        }
         Cmd::Leave { yes } => {
             if !yes {
                 match yes_no(
@@ -805,6 +859,67 @@ async fn firewall(c: &mut Client, p: &Profile, j: bool, action: FirewallCmd) -> 
     Ok(())
 }
 
+/// The update status in words.
+pub fn update_text(v: &Value) -> String {
+    let current = v["current"].as_str().unwrap_or("");
+    if v["enabled"] == json!(false) {
+        return format!(
+            "Version {current}. This app is updated by the store or the package manager."
+        );
+    }
+    let mut s = match v["state"].as_str().unwrap_or("none") {
+        "available" => format!(
+            "Version {} is ready. You have {current}.\nInstall it: uc update --install",
+            v["available"].as_str().unwrap_or("")
+        ),
+        "applying" => format!(
+            "Installing version {}. The app restarts by itself.",
+            v["available"].as_str().unwrap_or("")
+        ),
+        "failed" => format!(
+            "Version {} could not be installed. You still have {current}.",
+            v["failed_version"].as_str().unwrap_or("")
+        ),
+        _ if v["checked"] == json!(true) => format!("Version {current} is the newest."),
+        _ => format!("Version {current}. The app looks for a new version shortly after it starts."),
+    };
+    if let Some(e) = v["last_error"].as_str() {
+        s.push_str(&format!("\nLast problem: {e}"));
+    }
+    if let Some(n) = v["notes_url"].as_str() {
+        s.push_str(&format!("\nWhat is new: {n}"));
+    }
+    s
+}
+
+/// `uc update [--install | now | later]`. There is no "check now": the agent checks once when
+/// it starts (decision 2026-11-14).
+async fn update(c: &mut Client, j: bool, install: bool, later: bool) -> Result<(), Fail> {
+    if later {
+        let v = call(c, "update.later", json!({})).await?;
+        out(j, &v, || {
+            "OK. The app asks again the next time it starts.".into()
+        });
+        return Ok(());
+    }
+    let st = call(c, "update.status", json!({})).await?;
+    if !install {
+        out(j, &st, || update_text(&st));
+        return Ok(());
+    }
+    if st["state"] != json!("available") {
+        return Err(Fail(update_text(&st), 1));
+    }
+    let v = call(c, "update.apply", json!({})).await?;
+    out(j, &v, || {
+        format!(
+            "Installing version {}. The app restarts by itself; on a problem the old version comes back.",
+            v["version"].as_str().unwrap_or("")
+        )
+    });
+    Ok(())
+}
+
 fn print_help() {
     println!(
         "uc: Universal Clipboard. Copy on one device, paste on another.
@@ -823,6 +938,8 @@ fn print_help() {
   uc diagnostics                 report for help (no clipboard content, no keys)
   uc setup                       first-run steps (macOS permissions)
   uc firewall add | check        Windows: let your other devices connect to this PC
+  uc update                      is a newer version ready? (checked when the app starts)
+  uc update --install            install it (also: uc update now); uc update later
   uc leave [--yes]               remove this device and forget everything
   uc --version
 
@@ -906,6 +1023,21 @@ mod tests {
         for bad in ["send", "get", "fetch", "push", "pull"] {
             assert!(Cli::try_parse_from(["uc", bad]).is_err(), "{bad}");
         }
+    }
+
+    /// Decision 2026-11-14: the app looks for updates only when it starts.
+    #[test]
+    fn there_is_no_check_now() {
+        for argv in [
+            &["uc", "update", "check"][..],
+            &["uc", "update", "--check"],
+            &["uc", "update", "refresh"],
+        ] {
+            assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
+        }
+        let v = json!({"enabled": true, "current": "0.1.0", "available": "0.1.1",
+            "state": "available", "checked": true});
+        assert!(update_text(&v).contains("Version 0.1.1 is ready"));
     }
 
     #[test]

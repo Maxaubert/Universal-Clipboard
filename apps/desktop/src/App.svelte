@@ -10,6 +10,7 @@
   import Permissions from './screens/Permissions.svelte';
   import Settings from './screens/Settings.svelte';
   import ShowCode from './screens/ShowCode.svelte';
+  import Update from './screens/Update.svelte';
   import VpnHelp from './screens/VpnHelp.svelte';
   import Welcome from './screens/Welcome.svelte';
   import { screenIn, screenOut } from './lib/flow';
@@ -49,7 +50,7 @@
 
 <div class="stage">
   <Chrome>
-    {#if store.down}
+    {#if store.down && !store.updating}
       <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 28px;">
         <h1 style="font-size: 24px; text-align: center;">{S.agentDown}</h1>
         <button type="button" class="btn" style="width: auto; padding: 0 26px;" onclick={() => store.init()}>{S.retry}</button>
@@ -70,6 +71,7 @@
           {:else if view === 'device'}<DeviceDetail />
           {:else if view === 'settings'}<Settings />
           {:else if view === 'vpn'}<VpnHelp />
+          {:else if view === 'update'}<Update />
           {:else}<Home />
           {/if}
         </div>

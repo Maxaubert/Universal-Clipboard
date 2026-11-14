@@ -45,8 +45,13 @@ The font is Figtree, bundled from `@fontsource/figtree`. Nothing loads from the 
 | L09 Settings | `settings.get`, `settings.set` (`start-at-login`), `leave` |
 | L11 Needs attention | `status` (reason and fix code). Fix for `firewall`: the shell command `firewall_add` (the helper, one UAC prompt, the same code as `uc firewall add`), then `firewall.check` |
 | L12 VPN help | none |
+| Update (placeholder, `src/screens/Update.svelte`) | `update.status`, `update.apply`, `update.later`; event `update`. "Version X is ready." with Update now and Later, plus the applying and failed states. Plain on purpose: the final look and motion come from Max's mockup pick |
 
-Window rules: the window opens only when the user starts the app. Closing it ends the window
+Window rules: the window opens when the user starts the app, and once when the agent finds a
+newer version at its start (the agent starts it with `--route update`; the shell's
+`launch_route` command tells the page, and a second start forwards the route through the
+single-instance handler as the page event `open`). While the update helper has the agent
+stopped, the update screen stays instead of "agent is down". Closing it ends the window
 process and leaves the agent running. A second start brings the first window to the front.
 Windows and Linux: the title bar is our own (no native frame) with a drag strip and drawn
 minimize, maximize and close buttons. macOS (2026-11-14): a native window

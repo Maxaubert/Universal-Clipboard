@@ -35,8 +35,10 @@ never touches `state.json`), and it needs no extra cipher.
 
 JSON lines: request `{"id","call","params"}`, reply `{"id","ok","result"|"error"}`, events
 `{"event","data"}` after `subscribe`. Calls: the plan's list plus `setup.status`,
-`setup.step`, `firewall.check` (looks at the Windows rule again; `uc firewall check|add`) and
-`version`. Test profiles also accept `debug.copy`, `debug.clipboard`,
+`setup.step`, `firewall.check` (looks at the Windows rule again; `uc firewall check|add`),
+`version`, and `update.status`, `update.apply`, `update.later` (`uc update [--install | now |
+later]`; the agent checks once at start and never installs without the user, see
+`docs/install.md` "Self-update"). Event `update` carries the `update.status` reply. Test profiles also accept `debug.copy`, `debug.clipboard`,
 `debug.wake` and `debug.shutdown`; the real app refuses them.
 
 Hardening:

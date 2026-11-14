@@ -286,3 +286,41 @@ test('UI text cannot be selected; text fields still can (Max 2026-11-14)', async
   const input = page.locator('input').first();
   expect(await input.evaluate((el) => getComputedStyle(el).userSelect)).not.toBe('none');
 });
+
+test('update: the agent opens the window on "Version X is ready."; Update now shows installing', async ({ page }) => {
+  await page.goto('/?scenario=update&launch=update');
+  await expect(page.getByRole('heading', { name: 'Version 1.1.0 is ready.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Update now' }).click();
+  await expect(page.getByRole('heading', { name: 'Installing version 1.1.0...' })).toBeVisible();
+  expect(await mockCalls(page)).toContain('update.apply');
+  await page.evaluate(() => {
+    window.__ucMock!.world.down = true;
+    window.__ucMock!.emit('status');
+  });
+  await page.waitForTimeout(100);
+  await expect(page.getByTestId('update')).toBeVisible();
+});
+
+test('update: Later goes home and the update does not come back in this run', async ({ page }) => {
+  await page.goto('/?scenario=update&launch=update');
+  await page.getByRole('button', { name: 'Later' }).click();
+  await expect(page.getByTestId('headline')).toHaveText('Working');
+  expect(await mockCalls(page)).toContain('update.later');
+  await page.evaluate(() => window.__ucMock!.setUpdate({}));
+  await page.waitForTimeout(100);
+  await expect(page.getByTestId('update')).toHaveCount(0);
+});
+
+test('update: an open window moves to the update screen when the agent finds one', async ({ page }) => {
+  await open(page, 'home');
+  await expect(page.getByTestId('headline')).toHaveText('Working');
+  await page.evaluate(() => window.__ucMock!.setUpdate({ state: 'available', available: '1.1.0' }));
+  await expect(page.getByRole('heading', { name: 'Version 1.1.0 is ready.' })).toBeVisible();
+});
+
+test('update: failed state after a rollback', async ({ page }) => {
+  await page.goto('/?scenario=update-failed&launch=update');
+  await expect(page.getByRole('heading', { name: 'Version 1.1.0 could not be installed.' })).toBeVisible();
+  await page.getByRole('button', { name: 'OK' }).click();
+  await expect(page.getByTestId('headline')).toHaveText('Working');
+});

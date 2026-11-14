@@ -83,6 +83,18 @@ export const S = {
   vpnTip: 'Turn on Local network sharing in your VPN',
   vpnBack: 'Back',
 
+  // Update (placeholder screen, 2026-11-14).
+  updateReady: (v: string) => `Version ${v} is ready.`,
+  updateReadySub: (cur: string) => `You have version ${cur}. The app restarts by itself.`,
+  updateNow: 'Update now',
+  updateLater: 'Later',
+  updateApplying: (v: string) => `Installing version ${v}...`,
+  updateApplyingSub: 'The app restarts by itself in a moment.',
+  updateFailed: (v: string) => `Version ${v} could not be installed.`,
+  updateFailedSub: (cur: string) => `You still have version ${cur}. Nothing was lost.`,
+  updateNone: (cur: string) => `Version ${cur} is the newest.`,
+  updateOk: 'OK',
+
   agentDown: 'The background service is not running.',
   retry: 'Try again',
 } as const;

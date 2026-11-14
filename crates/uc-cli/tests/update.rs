@@ -7,8 +7,11 @@
 //! - N+1: the same binary with `test-version.txt` (and, for the broken case, `test-broken`,
 //!   which makes it exit at once).
 //!
-//! The agent finds the update, the helper stops it, installs N+1, starts it and checks its
-//! health. Broken: it puts N back, starts it and marks N+1 bad. Good: N+1 runs.
+//! The agent checks once at start and finds the update. It installs nothing by itself: it
+//! asks for the window (logged, never opened, in test profiles) and waits for Update now
+//! (`update.apply`, `uc update --install`). The helper then stops it, installs N+1, starts it
+//! and checks its health. Broken: it puts N back, starts it and marks N+1 bad, and N shows
+//! "failed". Good: N+1 runs.
 
 mod common;
 
@@ -133,6 +136,71 @@ fn stop_all(a: &mut Agent) {
     });
 }
 
+/// How often this agent asked the window to open (test profiles only log it).
+fn window_opens(a: &Agent) -> usize {
+    std::fs::read_to_string(a.dir.join("update").join("window-opens.log"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| *l == "update")
+        .count()
+}
+
+fn update_status(a: &Agent) -> serde_json::Value {
+    a.try_call("update.status", json!({})).unwrap_or(json!({}))
+}
+
+/// Wait until the one check found `next` and the agent asks the user.
+fn wait_available(a: &Agent, next: &str) {
+    let ok = until(Duration::from_secs(60), || {
+        let s = update_status(a);
+        s["state"] == "available" && s["available"] == next
+    });
+    assert!(
+        ok,
+        "no update offered; status: {}\nupdate.json: {}\nagent log:\n{}",
+        update_status(a),
+        update_state(a),
+        a.log()
+    );
+}
+
+/// Decision 2026-11-14: the agent checks once at start, opens the window once, installs
+/// nothing by itself, and "Later" holds until the next agent start.
+#[test]
+fn found_at_start_asks_once_and_never_installs_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let next = next_version();
+    let (url, key) = make_feed(&tmp.path().join("feed"), &next, false);
+    let install = tmp.path().join("install");
+    let mut a = Agent::new(3);
+    start_n(&mut a, &install, &url, &key);
+    wait_available(&a, &next);
+    assert_eq!(window_opens(&a), 1, "the window is asked for once");
+    let s = a.uc_json(&["update"]);
+    assert_eq!(s["state"], "available");
+    assert_eq!(s["current"], env!("CARGO_PKG_VERSION"));
+    // A long quiet run (the fast profile used to check every 5 s and install after 1 s idle):
+    // no second check, no second window, nothing installed.
+    std::thread::sleep(Duration::from_secs(12));
+    let s = update_status(&a);
+    assert_eq!(s["checks"], 1, "{s}");
+    assert_eq!(window_opens(&a), 1);
+    assert_eq!(version_of(&a).as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    assert!(helper_log(&a).is_empty(), "nothing was installed");
+    // Later: dismissed until the agent starts again.
+    let l = a.uc_json(&["update", "later"]);
+    assert_eq!(l["dismissed"], true);
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(window_opens(&a), 1);
+    // The next agent start checks once more and asks again.
+    stop_all(&mut a);
+    start_n(&mut a, &install, &url, &key);
+    wait_available(&a, &next);
+    assert_eq!(update_status(&a)["dismissed"], false);
+    assert_eq!(window_opens(&a), 2);
+    stop_all(&mut a);
+}
+
 #[test]
 fn broken_update_rolls_back_to_n() {
     let tmp = tempfile::tempdir().unwrap();
@@ -142,6 +210,10 @@ fn broken_update_rolls_back_to_n() {
     let mut a = Agent::new(1);
     start_n(&mut a, &install, &url, &key);
     assert_eq!(version_of(&a).as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    wait_available(&a, &next);
+    // The user picks Update now (the window's button and `uc update --install` are the same call).
+    let r = a.uc_json(&["update", "--install"]);
+    assert_eq!(r["version"], next.as_str());
     // The helper tries N+1, it fails, N comes back and N+1 is marked bad.
     let ok = until(Duration::from_secs(90), || {
         update_state(&a)["bad"]
@@ -158,10 +230,17 @@ fn broken_update_rolls_back_to_n() {
         a.log()
     );
     assert!(!install.join("test-broken").exists(), "N is back on disk");
-    // N stays: the bad version is not tried again.
+    // The agent that runs now (N) says the update failed, and asks the window once more.
+    let ok = until(Duration::from_secs(20), || {
+        update_status(&a)["state"] == "failed"
+    });
+    assert!(ok, "status: {}\nagent log:\n{}", update_status(&a), a.log());
+    assert_eq!(update_status(&a)["failed_version"], next.as_str());
+    // N stays: the bad version is not offered again.
     std::thread::sleep(Duration::from_secs(8));
     assert_eq!(version_of(&a).as_deref(), Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(update_state(&a)["failures_in_row"], 1);
+    assert_eq!(update_status(&a)["available"], serde_json::Value::Null);
     let report = a.call("diagnostics", json!({})).to_string();
     assert!(report.contains("bad versions"), "{report}");
     stop_all(&mut a);
@@ -175,6 +254,9 @@ fn good_update_runs_n_plus_1() {
     let install = tmp.path().join("install");
     let mut a = Agent::new(2);
     start_n(&mut a, &install, &url, &key);
+    wait_available(&a, &next);
+    let r = a.call("update.apply", json!({}));
+    assert_eq!(r["applying"], true);
     let ok = until(Duration::from_secs(90), || {
         version_of(&a).as_deref() == Some(next.as_str()) && helper_log(&a).contains("Updated")
     });
@@ -194,5 +276,11 @@ fn good_update_runs_n_plus_1() {
             .join(exe_name())
             .exists()
     );
+    // N+1 is the newest: its own start check offers nothing.
+    let ok = until(Duration::from_secs(20), || {
+        update_status(&a)["checked"] == true
+    });
+    assert!(ok, "{}", update_status(&a));
+    assert_eq!(update_status(&a)["state"], "none");
     stop_all(&mut a);
 }
