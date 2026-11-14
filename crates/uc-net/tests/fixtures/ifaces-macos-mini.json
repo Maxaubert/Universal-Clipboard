@@ -1,0 +1,416 @@
+[
+  {
+    "name": "lo0",
+    "index": 1,
+    "description": "",
+    "link": "Loopback",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "127.0.0.1",
+        "prefix": 8
+      },
+      {
+        "ip": "127.227.78.9",
+        "prefix": 8
+      },
+      {
+        "ip": "::1",
+        "prefix": 128
+      },
+      {
+        "ip": "fe80::1001",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "gif0",
+    "index": 2,
+    "description": "",
+    "link": "Tunnel",
+    "up": false,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "stf0",
+    "index": 3,
+    "description": "",
+    "link": "Tunnel",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "anpi1",
+    "index": 4,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "anpi0",
+    "index": 5,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "anpi3",
+    "index": 6,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "en0",
+    "index": 7,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "192.168.1.17",
+        "prefix": 24
+      },
+      {
+        "ip": "fe80::1007",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "en4",
+    "index": 8,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "en5",
+    "index": 9,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "en6",
+    "index": 10,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "en2",
+    "index": 11,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "en7",
+    "index": 12,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "en3",
+    "index": 13,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "bridge0",
+    "index": 14,
+    "description": "",
+    "link": "Other",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "ap1",
+    "index": 15,
+    "description": "",
+    "link": "Wifi",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": []
+  },
+  {
+    "name": "en1",
+    "index": 16,
+    "description": "",
+    "link": "Wifi",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "192.168.1.26",
+        "prefix": 24
+      },
+      {
+        "ip": "fe80::1010",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "awdl0",
+    "index": 17,
+    "description": "",
+    "link": "Other",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1011",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "llw0",
+    "index": 18,
+    "description": "",
+    "link": "Wifi",
+    "up": true,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1012",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun0",
+    "index": 19,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1013",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun1",
+    "index": 20,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1014",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun2",
+    "index": 21,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1015",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun3",
+    "index": 22,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1016",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "nan0",
+    "index": 23,
+    "description": "",
+    "link": "Other",
+    "up": false,
+    "point_to_point": false,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1017",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun4",
+    "index": 24,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1018",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun5",
+    "index": 25,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::1019",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun6",
+    "index": 26,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::101a",
+        "prefix": 64
+      }
+    ]
+  },
+  {
+    "name": "utun7",
+    "index": 27,
+    "description": "",
+    "link": "Tunnel",
+    "up": true,
+    "point_to_point": true,
+    "has_device": null,
+    "devtype": null,
+    "arphrd": null,
+    "addrs": [
+      {
+        "ip": "fe80::101b",
+        "prefix": 64
+      }
+    ]
+  }
+]
