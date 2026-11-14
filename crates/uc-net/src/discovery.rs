@@ -15,6 +15,10 @@ use crate::ifaces::Interface;
 /// The DNS-SD service type.
 pub const SERVICE_TYPE: &str = "_uclip._udp.local.";
 
+/// The DNS-SD service type of an open pairing (protocol 4.2 step 4). Instance name: the
+/// 8-byte pairing tag as 16 hex characters. One TXT entry, `v=1`.
+pub const PAIR_SERVICE_TYPE: &str = "_uclip-pair._udp.local.";
+
 /// One service instance seen on the LAN.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Found {
@@ -50,6 +54,19 @@ pub trait Discovery: Send + Sync {
     fn withdraw(&self);
     /// Everything resolved since the last call. Never blocks.
     fn poll(&self) -> Vec<Found>;
+
+    /// Advertise an open pairing (protocol 4.2 step 4). Default: not supported (no pairing
+    /// by mDNS; the joiner needs the QR code or a known address).
+    fn advertise_pair(&self, _instance: &str, _port: u16) -> Result<(), DiscoveryError> {
+        Ok(())
+    }
+    /// Stop advertising the pairing (4.2 step 5).
+    fn withdraw_pair(&self) {}
+    /// Pairing services resolved since the last call (the joiner side). The first call starts
+    /// browsing. Never blocks.
+    fn poll_pair(&self) -> Vec<Found> {
+        Vec::new()
+    }
 }
 
 /// No discovery at all (remembered addresses and gossip only).
@@ -80,6 +97,8 @@ pub struct MdnsSd {
 struct MdnsState {
     advertised: Option<String>,
     enabled: Vec<String>,
+    pair_advertised: Option<String>,
+    pair_browse: Option<mdns_sd::Receiver<mdns_sd::ServiceEvent>>,
 }
 
 impl MdnsSd {
@@ -194,6 +213,80 @@ impl Discovery for MdnsSd {
         {
             let _ = self.daemon.unregister(&old);
         }
+    }
+
+    fn advertise_pair(&self, instance: &str, port: u16) -> Result<(), DiscoveryError> {
+        let e = |x: mdns_sd::Error| DiscoveryError(x.to_string());
+        let mut st = self
+            .state
+            .lock()
+            .map_err(|_| DiscoveryError("lock".into()))?;
+        let host = format!("{instance}.local.");
+        let txt: std::collections::HashMap<String, String> =
+            [("v".to_string(), "1".to_string())].into();
+        let mut info = mdns_sd::ServiceInfo::new(
+            PAIR_SERVICE_TYPE,
+            instance,
+            &host,
+            &[] as &[IpAddr],
+            port,
+            Some(txt),
+        )
+        .map_err(e)?
+        .enable_addr_auto();
+        info.set_requires_probe(false);
+        info.set_interfaces(
+            st.enabled
+                .iter()
+                .map(|n| mdns_sd::IfKind::Name(n.clone()))
+                .collect(),
+        );
+        let full = info.get_fullname().to_string();
+        if let Some(old) = st.pair_advertised.take() {
+            let _ = self.daemon.unregister(&old);
+        }
+        self.daemon.register(info).map_err(e)?;
+        st.pair_advertised = Some(full);
+        Ok(())
+    }
+
+    fn withdraw_pair(&self) {
+        if let Ok(mut st) = self.state.lock()
+            && let Some(old) = st.pair_advertised.take()
+        {
+            let _ = self.daemon.unregister(&old);
+        }
+    }
+
+    fn poll_pair(&self) -> Vec<Found> {
+        let Ok(mut st) = self.state.lock() else {
+            return Vec::new();
+        };
+        if st.pair_browse.is_none() {
+            match self.daemon.browse(PAIR_SERVICE_TYPE) {
+                Ok(rx) => st.pair_browse = Some(rx),
+                Err(_) => return Vec::new(),
+            }
+        }
+        let mut out = Vec::new();
+        if let Some(rx) = &st.pair_browse {
+            while let Ok(ev) = rx.try_recv() {
+                if let mdns_sd::ServiceEvent::ServiceResolved(r) = ev {
+                    let Some(instance) = r
+                        .get_fullname()
+                        .strip_suffix(&format!(".{PAIR_SERVICE_TYPE}"))
+                    else {
+                        continue;
+                    };
+                    out.push(Found {
+                        instance: instance.to_string(),
+                        addrs: r.get_addresses().iter().map(|a| a.to_ip_addr()).collect(),
+                        port: r.get_port(),
+                    });
+                }
+            }
+        }
+        out
     }
 
     fn poll(&self) -> Vec<Found> {

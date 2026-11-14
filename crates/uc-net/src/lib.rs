@@ -43,7 +43,7 @@ pub use discovery::{Discovery, FakeLan, FakeMdns, MdnsSd, NoDiscovery};
 pub use endpoint::{ALPN_PAIR, ALPN_SYNC, Conn, LanEndpoint, Timing};
 pub use ifaces::{ClassifyOptions, Interface, Kind};
 pub use link::{Link, QuicPeer};
-pub use node::{Net, NetConfig, NetEvent, Status};
+pub use node::{Net, NetConfig, NetEvent, NetHandle, Status};
 pub use path::{Attention, NoPath, PathState};
 pub use tags::Secrets;
 

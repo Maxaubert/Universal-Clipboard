@@ -248,6 +248,29 @@ impl MacClipboard {
             self.change_count()
         })
     }
+
+    /// Put raw types on the pasteboard with **no** marker, as another app would. For the
+    /// agent's test mode only, and refused on the general pasteboard so it can never touch
+    /// the user's clipboard. Returns the change count.
+    pub fn write_foreign(&mut self, items: &[(&str, &[u8])]) -> Result<u64, ClipboardError> {
+        if self.name() == GENERAL_NAME {
+            return Err(ClipboardError::Denied);
+        }
+        autoreleasepool(|_| {
+            self.pb.clearContents();
+            for (ty, bytes) in items {
+                if !self.set_data(ty, bytes) {
+                    return Err(ClipboardError::Other(format!("set-{ty}")));
+                }
+            }
+            Ok(self.change_count())
+        })
+    }
+
+    /// True if this is the user's general pasteboard.
+    pub fn is_general(&self) -> bool {
+        self.name() == GENERAL_NAME
+    }
 }
 
 /// The name of the general pasteboard (`NSPasteboardNameGeneral`). A constant, so that tests

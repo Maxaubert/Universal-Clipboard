@@ -122,9 +122,21 @@ impl Node {
     }
 
     pub fn start_with(n: u8, port: u16, lan: &FakeLan, ifaces: Ifaces) -> Node {
+        Self::start_cfg(n, port, lan, ifaces, |_| {})
+    }
+
+    pub fn start_cfg(
+        n: u8,
+        port: u16,
+        lan: &FakeLan,
+        ifaces: Ifaces,
+        tweak: impl FnOnce(&mut NetConfig),
+    ) -> Node {
         let mdns = lan.node();
+        let mut cfg = config(n, port, &ifaces);
+        tweak(&mut cfg);
         let net = Net::start(
-            config(n, port, &ifaces),
+            cfg,
             Arc::new(AddressBinder),
             Arc::new(mdns.clone()),
             uc_net::LanBook::new(),

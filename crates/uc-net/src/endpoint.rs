@@ -471,6 +471,24 @@ impl LanEndpoint {
         remote: SocketAddr,
         alpn: &[u8],
     ) -> Result<Conn, DialError> {
+        self.dial_opt(Some(peer), remote, alpn).await
+    }
+
+    /// Dial a pairing connection to `remote` without knowing the key there (code-mode
+    /// pairing, protocol 4.4). Only [`ALPN_PAIR`] is allowed. The LAN rule applies as usual.
+    pub async fn dial_pair_any(&self, remote: SocketAddr) -> Result<Conn, DialError> {
+        self.dial_opt(None, remote, ALPN_PAIR).await
+    }
+
+    async fn dial_opt(
+        &self,
+        peer: Option<DeviceId>,
+        remote: SocketAddr,
+        alpn: &[u8],
+    ) -> Result<Conn, DialError> {
+        if peer.is_none() && alpn != ALPN_PAIR {
+            return Err(DialError::WrongPeer);
+        }
         let remote = SocketAddr::new(addr::canonical(remote.ip()), remote.port());
         let b = self
             .list()
@@ -486,8 +504,11 @@ impl LanEndpoint {
             }
             r => r,
         };
-        let crypto = tls::client_crypto(&self.key, peer, alpn)
-            .map_err(|e| DialError::Quic(e.to_string()))?;
+        let crypto = match peer {
+            Some(p) => tls::client_crypto(&self.key, p, alpn),
+            None => tls::client_crypto_any(&self.key, alpn),
+        }
+        .map_err(|e| DialError::Quic(e.to_string()))?;
         let mut cfg = quinn::ClientConfig::new(Arc::new(crypto));
         cfg.transport_config(transport(&self.timing));
         let connecting =
@@ -498,10 +519,16 @@ impl LanEndpoint {
             Ok(Err(e)) => return Err(DialError::Quic(e.to_string())),
             Ok(Ok(c)) => c,
         };
-        if tls::peer_key(&conn) != Some(peer) || tls::alpn(&conn).as_deref() != Some(alpn) {
+        let got = tls::peer_key(&conn);
+        let key_ok = match peer {
+            Some(p) => got == Some(p),
+            None => got.is_some(),
+        };
+        let (Some(peer), true, true) = (got, key_ok, tls::alpn(&conn).as_deref() == Some(alpn))
+        else {
             conn.close(CLOSE_WRONG_PEER.into(), b"wrong peer");
             return Err(DialError::WrongPeer);
-        }
+        };
         Ok(Conn {
             conn,
             peer,

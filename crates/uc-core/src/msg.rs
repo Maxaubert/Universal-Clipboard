@@ -80,6 +80,9 @@ pub struct Hello {
     pub epoch: u64,
     /// The sender's wall clock in ms. Lets a device learn that its own clock is wrong.
     pub wall_ms: u64,
+    /// The sender's group ID (protocol 5.9 step 2): the change ID of its genesis, or all
+    /// zeros when it has no group. Added in M7.
+    pub group: [u8; 32],
 }
 
 /// The header of a clip: everything except the bytes.
@@ -144,6 +147,20 @@ pub enum Message {
     },
     /// "You were removed from the group."
     Removed,
+    /// "Send me the group secret of this epoch" (protocol 5.8). The agent handles it, not the
+    /// engine.
+    WantSecret {
+        /// The epoch.
+        epoch: u32,
+    },
+    /// The group secret of one epoch (protocol 5.8). Sent only to members, after membership
+    /// sync. The agent handles it, not the engine.
+    Secret {
+        /// The epoch.
+        epoch: u32,
+        /// The secret.
+        secret: [u8; 32],
+    },
 }
 
 const T_HELLO: u8 = 0;
@@ -153,6 +170,39 @@ const T_LATEST: u8 = 3;
 const T_CLIP: u8 = 4;
 const T_WANT: u8 = 5;
 const T_REMOVED: u8 = 6;
+const T_WANT_SECRET: u8 = 7;
+const T_SECRET: u8 = 8;
+
+/// The message type byte of a frame (the second byte), or `None` for a frame that is too
+/// short. The agent uses it to route membership, address and secret messages before the
+/// engine sees a frame.
+pub fn frame_type(frame: &[u8]) -> Option<FrameType> {
+    Some(match *frame.get(1)? {
+        T_HELLO => FrameType::Hello,
+        T_MEMBERSHIP => FrameType::Membership,
+        T_ADDR => FrameType::AddrUpdate,
+        T_WANT_SECRET | T_SECRET => FrameType::Secret,
+        T_REMOVED => FrameType::Removed,
+        _ => FrameType::Clip,
+    })
+}
+
+/// Coarse frame classes, for routing in the agent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameType {
+    /// `Hello`.
+    Hello,
+    /// `Membership`.
+    Membership,
+    /// `AddrUpdate`.
+    AddrUpdate,
+    /// `WantSecret` or `Secret`.
+    Secret,
+    /// `Removed`.
+    Removed,
+    /// `Latest`, `Clip`, `Want` and unknown types: the engine's business.
+    Clip,
+}
 
 #[derive(Serialize, Deserialize)]
 struct MembershipBody {
@@ -174,6 +224,15 @@ struct ClipBody {
 #[derive(Serialize, Deserialize)]
 struct WantBody {
     id: ClipId,
+}
+#[derive(Serialize, Deserialize)]
+struct WantSecretBody {
+    epoch: u32,
+}
+#[derive(Serialize, Deserialize)]
+struct SecretBody {
+    epoch: u32,
+    secret: [u8; 32],
 }
 
 /// Why a frame could not be decoded.
@@ -243,6 +302,14 @@ pub fn encode_with_version(version: u8, msg: &Message) -> Vec<u8> {
         ),
         Message::Want { id } => (T_WANT, body(&WantBody { id: *id })),
         Message::Removed => (T_REMOVED, Vec::new()),
+        Message::WantSecret { epoch } => (T_WANT_SECRET, body(&WantSecretBody { epoch: *epoch })),
+        Message::Secret { epoch, secret } => (
+            T_SECRET,
+            body(&SecretBody {
+                epoch: *epoch,
+                secret: *secret,
+            }),
+        ),
     };
     let mut out = Vec::with_capacity(2 + payload.len());
     out.push(version);
@@ -294,6 +361,17 @@ pub fn decode(frame: &[u8]) -> Result<Option<Message>, CodecError> {
             Message::Want { id: b.id }
         }
         T_REMOVED => Message::Removed,
+        T_WANT_SECRET => {
+            let b: WantSecretBody = parse(rest)?;
+            Message::WantSecret { epoch: b.epoch }
+        }
+        T_SECRET => {
+            let b: SecretBody = parse(rest)?;
+            Message::Secret {
+                epoch: b.epoch,
+                secret: b.secret,
+            }
+        }
         _ => return Ok(None),
     };
     Ok(Some(msg))
@@ -366,23 +444,27 @@ mod tests {
                 any::<bool>(),
                 vec(arb_id(), 0..3),
                 any::<u64>(),
-                any::<u64>()
+                any::<u64>(),
+                arb_id()
             )
-                .prop_map(|(p, av, id, name, kind, full, heads, epoch, wall)| {
-                    Message::Hello(Hello {
-                        protocol: p,
-                        app_version: av,
-                        device: DeviceRecord {
-                            id: DeviceId(id),
-                            name,
-                            kind,
-                        },
-                        role: if full { Role::Full } else { Role::PullOnly },
-                        chain_heads: heads,
-                        epoch,
-                        wall_ms: wall,
-                    })
-                }),
+                .prop_map(
+                    |(p, av, id, name, kind, full, heads, epoch, wall, group)| {
+                        Message::Hello(Hello {
+                            protocol: p,
+                            app_version: av,
+                            device: DeviceRecord {
+                                id: DeviceId(id),
+                                name,
+                                kind,
+                            },
+                            role: if full { Role::Full } else { Role::PullOnly },
+                            chain_heads: heads,
+                            epoch,
+                            wall_ms: wall,
+                            group,
+                        })
+                    }
+                ),
             vec(bytes(), 0..4).prop_map(|changes| Message::Membership { changes }),
             bytes().prop_map(|signed| Message::AddrUpdate { signed }),
             proptest::option::of(arb_header()).prop_map(|header| Message::Latest { header }),
@@ -390,6 +472,8 @@ mod tests {
                 .prop_map(|(header, data)| Message::Clip { header, data }),
             arb_id().prop_map(|id| Message::Want { id: ClipId(id) }),
             Just(Message::Removed),
+            any::<u32>().prop_map(|epoch| Message::WantSecret { epoch }),
+            (any::<u32>(), arb_id()).prop_map(|(epoch, secret)| Message::Secret { epoch, secret }),
         ]
     }
 
@@ -407,7 +491,7 @@ mod tests {
         }
 
         #[test]
-        fn random_bodies_with_valid_prefix_never_panic(tag in 0u8..8, b in vec(any::<u8>(), 0..512)) {
+        fn random_bodies_with_valid_prefix_never_panic(tag in 0u8..10, b in vec(any::<u8>(), 0..512)) {
             let mut f = vec![PROTOCOL_VERSION, tag];
             f.extend(b);
             let _ = decode(&f);

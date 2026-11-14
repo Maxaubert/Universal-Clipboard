@@ -69,6 +69,14 @@ pub struct Config {
     pub push_max: usize,
     /// "Sync images" setting.
     pub sync_images: bool,
+    /// Largest image part that is sent, in bytes (setting `image-limit-mb`; at most
+    /// [`caps::IMAGE_MAX`]).
+    pub image_max: usize,
+    /// macOS: pass on clips that came through Apple's Universal Clipboard (plan decision 8).
+    /// Off by default (M7: decision 8 is still open, off is the safer choice).
+    pub forward_remote: bool,
+    /// Group ID sent in `Hello` (protocol 5.9).
+    pub group: [u8; 32],
 }
 
 impl Config {
@@ -84,6 +92,9 @@ impl Config {
             future_limit_ms: FUTURE_LIMIT_MS,
             push_max: caps::PUSH_MAX,
             sync_images: true,
+            image_max: caps::IMAGE_MAX,
+            forward_remote: false,
+            group: [0; 32],
         }
     }
 }
@@ -107,6 +118,9 @@ pub enum SkipReason {
     Private,
     /// It holds copied files.
     Files,
+    /// macOS: it came from another Apple device through Apple's Universal Clipboard, and
+    /// passing such clips on is off (plan decision 8).
+    Remote,
     /// No synced format on the clipboard (or only images with "Sync images" off).
     Empty,
     /// Every part was over its cap.
@@ -320,6 +334,33 @@ impl Engine {
         self.cfg.sync_images = on;
     }
 
+    /// Change the largest image that is sent (capped at [`caps::IMAGE_MAX`]).
+    pub fn set_image_max(&mut self, bytes: usize) {
+        self.cfg.image_max = bytes.min(caps::IMAGE_MAX);
+    }
+
+    /// Change plan decision 8 (pass on Apple Universal Clipboard clips).
+    pub fn set_forward_remote(&mut self, on: bool) {
+        self.cfg.forward_remote = on;
+    }
+
+    /// Update the membership values sent in `Hello`.
+    pub fn set_group(&mut self, group: [u8; 32], heads: Vec<[u8; 32]>, epoch: u64) {
+        self.cfg.group = group;
+        self.cfg.chain_heads = heads;
+        self.cfg.epoch = epoch;
+    }
+
+    /// This device's record (name and kind), as sent in `Hello`.
+    pub fn set_device(&mut self, device: DeviceRecord) {
+        self.cfg.device = device;
+    }
+
+    /// The settings in use.
+    pub fn config(&self) -> &Config {
+        &self.cfg
+    }
+
     /// A connection to a peer is up. Sends `Hello` and `Latest`. A second connection with the
     /// same peer replaces the first.
     pub fn connect(&mut self, link: Box<dyn Peer>, now_ms: u64) -> Vec<Event> {
@@ -341,6 +382,7 @@ impl Engine {
             chain_heads: self.cfg.chain_heads.clone(),
             epoch: self.cfg.epoch,
             wall_ms: now_ms,
+            group: self.cfg.group,
         });
         self.send(id, &hello, &mut out);
         let latest = self.latest_msg();
@@ -385,6 +427,10 @@ impl Engine {
             out.push(Event::Skipped(SkipReason::Files));
             return out;
         }
+        if snap.remote && !self.cfg.forward_remote {
+            out.push(Event::Skipped(SkipReason::Remote));
+            return out;
+        }
         let mut parts: Vec<RawPart> = Vec::with_capacity(snap.parts.len());
         for (format, data) in snap.parts {
             if parts.iter().any(|(f, _)| *f == format) {
@@ -399,6 +445,12 @@ impl Engine {
                     }
                 },
                 Format::ImagePng if !self.cfg.sync_images => {}
+                Format::ImagePng if data.len() > self.cfg.image_max => {
+                    out.push(Event::PartDropped(Dropped {
+                        format,
+                        size: data.len(),
+                    }));
+                }
                 Format::ImagePng => parts.push((format, data)),
             }
         }
@@ -500,6 +552,8 @@ impl Engine {
                 }
             }
             Message::Removed => out.push(Event::Removed { by: from }),
+            // The agent routes these before the engine (protocol 5.8).
+            Message::WantSecret { .. } | Message::Secret { .. } => {}
             Message::Membership { changes } => out.push(Event::Membership {
                 peer: from,
                 changes,
