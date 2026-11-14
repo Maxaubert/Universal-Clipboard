@@ -5,6 +5,13 @@
 //! the host name is the tag too, so no device name ever goes out. The desktop implementation
 //! ([`MdnsSd`], crate `mdns-sd`) sends and listens only on the physical interfaces: every other
 //! interface (VPN, virtual, loopback) is disabled in the daemon.
+//!
+//! Interfaces are given to `mdns-sd` by **OS index**, never by name: on Windows our
+//! [`Interface::name`] is the adapter GUID (from `netdev`), while `mdns-sd` (through
+//! `if-addrs`) names an interface by its friendly name, so a name never matched there and
+//! mDNS ran on no interface at all (found 2026-11-14). The index is the same number in
+//! both crates on every OS (`IfIndex` / `Ipv6IfIndex` on Windows, `if_nametoindex` on
+//! Linux and macOS).
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;
@@ -96,12 +103,44 @@ pub struct MdnsSd {
 #[derive(Default)]
 struct MdnsState {
     advertised: Option<String>,
-    enabled: Vec<String>,
+    /// OS indexes of the interfaces enabled in the daemon, sorted.
+    enabled: Vec<u32>,
     pair_advertised: Option<String>,
     pair_browse: Option<mdns_sd::Receiver<mdns_sd::ServiceEvent>>,
 }
 
+/// The OS indexes of the interfaces mDNS should run on: the usable (physical, up, with an
+/// address) ones, sorted, without duplicates. Index 0 means "unknown" and is skipped.
+pub fn mdns_indexes(ifaces: &[Interface]) -> Vec<u32> {
+    let mut v: Vec<u32> = ifaces
+        .iter()
+        .filter(|i| i.usable() && i.index != 0)
+        .map(|i| i.index)
+        .collect();
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// The `mdns-sd` selectors for these interface indexes: IPv4 and IPv6 for each.
+pub fn mdns_if_kinds(indexes: &[u32]) -> Vec<mdns_sd::IfKind> {
+    indexes
+        .iter()
+        .flat_map(|&i| [mdns_sd::IfKind::IndexV4(i), mdns_sd::IfKind::IndexV6(i)])
+        .collect()
+}
+
+/// What the daemon must never use, whatever an index selector says.
+fn always_off() -> Vec<mdns_sd::IfKind> {
+    vec![mdns_sd::IfKind::LoopbackV4, mdns_sd::IfKind::LoopbackV6]
+}
+
 impl MdnsSd {
+    /// The underlying daemon, for diagnostics (`examples/mdns-check.rs`).
+    pub fn daemon(&self) -> &mdns_sd::ServiceDaemon {
+        &self.daemon
+    }
+
     /// Start the daemon with every interface disabled. Call [`Discovery::set_interfaces`] next.
     pub fn new() -> Result<Self, DiscoveryError> {
         let e = |x: mdns_sd::Error| DiscoveryError(x.to_string());
@@ -135,31 +174,35 @@ impl Discovery for MdnsSd {
             .state
             .lock()
             .map_err(|_| DiscoveryError("lock".into()))?;
-        let want: Vec<String> = ifaces
-            .iter()
-            .filter(|i| i.usable())
-            .map(|i| i.name.clone())
-            .collect();
+        let want = mdns_indexes(ifaces);
         if want == st.enabled {
             return Ok(());
         }
-        let off: Vec<mdns_sd::IfKind> = st
+        let off: Vec<u32> = st
             .enabled
             .iter()
+            .copied()
             .filter(|n| !want.contains(n))
-            .map(|n| mdns_sd::IfKind::Name(n.clone()))
             .collect();
         if !off.is_empty() {
-            self.daemon.disable_interface(off).map_err(e)?;
+            self.daemon
+                .disable_interface(mdns_if_kinds(&off))
+                .map_err(e)?;
         }
-        let on: Vec<mdns_sd::IfKind> = want
+        let on: Vec<u32> = want
             .iter()
+            .copied()
             .filter(|n| !st.enabled.contains(n))
-            .map(|n| mdns_sd::IfKind::Name(n.clone()))
             .collect();
         if !on.is_empty() {
-            self.daemon.enable_interface(on).map_err(e)?;
+            self.daemon
+                .enable_interface(mdns_if_kinds(&on))
+                .map_err(e)?;
+            // The daemon applies selections in order and the last match wins: keep loopback
+            // off even if an index ever pointed at it.
+            self.daemon.disable_interface(always_off()).map_err(e)?;
         }
+        tracing::debug!(indexes = ?want, "mDNS interfaces");
         st.enabled = want;
         Ok(())
     }
@@ -189,12 +232,7 @@ impl Discovery for MdnsSd {
         // The instance name is a per-device HMAC tag, unique by construction: skip the
         // 750 ms name probe (RFC 6762 8.1) so a new device is found faster.
         info.set_requires_probe(false);
-        info.set_interfaces(
-            st.enabled
-                .iter()
-                .map(|n| mdns_sd::IfKind::Name(n.clone()))
-                .collect(),
-        );
+        info.set_interfaces(mdns_if_kinds(&st.enabled));
         let full = info.get_fullname().to_string();
         if st.advertised.as_deref() == Some(full.as_str()) {
             return Ok(());
@@ -235,12 +273,7 @@ impl Discovery for MdnsSd {
         .map_err(e)?
         .enable_addr_auto();
         info.set_requires_probe(false);
-        info.set_interfaces(
-            st.enabled
-                .iter()
-                .map(|n| mdns_sd::IfKind::Name(n.clone()))
-                .collect(),
-        );
+        info.set_interfaces(mdns_if_kinds(&st.enabled));
         let full = info.get_fullname().to_string();
         if let Some(old) = st.pair_advertised.take() {
             let _ = self.daemon.unregister(&old);
@@ -394,5 +427,72 @@ impl Discovery for FakeMdns {
                 port: *p,
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ifaces::{IfAddr, Kind};
+
+    fn iface(name: &str, index: u32, kind: Kind, up: bool, addr: Option<&str>) -> Interface {
+        Interface {
+            name: name.into(),
+            index,
+            description: String::new(),
+            kind,
+            up,
+            addrs: addr
+                .map(|a| IfAddr {
+                    ip: a.parse().unwrap(),
+                    prefix: 24,
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn indexes_are_the_usable_interfaces() {
+        let l = [
+            // The Windows case of 2026-11-14: a GUID name that mdns-sd never sees.
+            iface(
+                "{C5C4BEC5-0000-0000-0000-000000000000}",
+                17,
+                Kind::Physical,
+                true,
+                Some("192.168.0.139"),
+            ),
+            iface("en0", 4, Kind::Physical, true, Some("192.168.0.47")),
+            iface("en0-dup", 4, Kind::Physical, true, Some("fe80::1")),
+            iface("lo", 1, Kind::Loopback, true, Some("127.0.0.1")),
+            iface(
+                "vEthernet (WSL)",
+                30,
+                Kind::Virtual,
+                true,
+                Some("172.20.0.1"),
+            ),
+            iface("wg0", 9, Kind::Vpn, true, Some("10.0.0.2")),
+            iface("eth1", 5, Kind::Physical, false, Some("192.168.1.2")),
+            iface("eth2", 6, Kind::Physical, true, None),
+            iface("eth3", 0, Kind::Physical, true, Some("192.168.2.2")),
+        ];
+        assert_eq!(mdns_indexes(&l), vec![4, 17]);
+    }
+
+    #[test]
+    fn selectors_are_by_index_for_both_families() {
+        let k: Vec<String> = mdns_if_kinds(&[4, 17])
+            .iter()
+            .map(|k| format!("{k:?}"))
+            .collect();
+        assert_eq!(
+            k,
+            ["IndexV4(4)", "IndexV6(4)", "IndexV4(17)", "IndexV6(17)"]
+        );
+        assert!(mdns_if_kinds(&[]).is_empty());
+        let off: Vec<String> = always_off().iter().map(|k| format!("{k:?}")).collect();
+        assert_eq!(off, ["LoopbackV4", "LoopbackV6"]);
     }
 }

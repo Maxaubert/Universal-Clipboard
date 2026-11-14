@@ -16,6 +16,21 @@
 
   onMount(() => input?.focus());
 
+  // The real text caret (the one the OS reports and magnifiers such as Wind follow) must sit
+  // in the box that takes the next digit. The input is invisible and covers the row. Each
+  // character advances exactly one box pitch (monospace, letter-spacing = pitch - 1ch), and
+  // the left padding puts the caret after n characters in the middle of box n (after the 3rd
+  // box the row has a 10 px split plus one more gap). After 6 digits the caret sits in the
+  // right part of the last box, after its digit.
+  const BOX = 52;
+  const PITCH = 60; // box width + 8 px gap
+  const SPLIT = 18; // the split span plus its extra gap
+  function caretX(n: number): number {
+    if (n >= 6) return 5 * PITCH + SPLIT + BOX - 6;
+    return n * PITCH + (n >= 3 ? SPLIT : 0) + BOX / 2;
+  }
+  const caretPad = $derived(caretX(digits.length) - digits.length * PITCH);
+
   function onInput(e: Event) {
     const el = e.target as HTMLInputElement;
     digits = el.value.replace(/\D/g, '').slice(0, 6);
@@ -70,7 +85,7 @@
         value={digits}
         oninput={onInput}
         onkeydown={(e) => e.key === 'Enter' && digits.length === 6 && !busy && join(false)}
-        style="position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; cursor: text; font-size: 16px;"
+        style={`position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; margin: 0; padding: 0 0 0 ${caretPad}px; opacity: 0; border: 0; outline: none; background: transparent; cursor: text; font-family: ui-monospace, Menlo, Consolas, 'DejaVu Sans Mono', monospace; font-size: 30px; font-variant-numeric: tabular-nums; letter-spacing: calc(${PITCH}px - 1ch); text-indent: 0; text-align: left;`}
       />
     </div>
     {#if error}<div class="err" role="alert" style="max-width: 360px; margin-top: -22px;">{error}</div>{/if}

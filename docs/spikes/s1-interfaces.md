@@ -60,6 +60,11 @@ fresh nodes find each other and connect about 1.3 s after start with the RFC 676
 the probe is now skipped (the names are per-device HMAC tags, unique by construction), and
 the full mesh is up 0.54 to 0.80 s after start.
 
+**2026-11-14, Max's PC:** "enabled by name" never matched on Windows (our name is the adapter
+GUID from `netdev`, `mdns-sd`/`if-addrs` uses the friendly name), so mDNS ran on no interface
+and pairing said "Cannot find the other device". Now by OS index (`IfKind::IndexV4/V6`);
+`cargo run -p uc-net --example mdns-check` found the Mac's `_uclip-pair._udp` and `_uclip._udp`.
+
 ## 4. Network rows (plan 6.3), WSL network namespaces, kernel 6.18
 
 All 10 rows pass (`tools/netsim/run-wsl.sh`, `crates/uc-net/tests/netns.rs`). Each test builds

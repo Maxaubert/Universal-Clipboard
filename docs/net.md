@@ -102,6 +102,17 @@ addresses, nothing listens.
    slots. The device key is in the HMAC so two members never clash, and a member knows which
    member it saw. Recognised: current and previous secret, slots -1, 0, +1. The name probe is
    skipped (the names are unique by construction).
+   **Interfaces go to `mdns-sd` by OS index, never by name** (2026-11-14, Max's PC): on
+   Windows `Interface.name` is the adapter GUID (netdev) but `mdns-sd` (via `if-addrs`) names
+   interfaces by friendly name (`vEthernet (uc-lan)`), so no interface was ever enabled and
+   the PC never found the Mac ("Cannot find the other device"). `discovery::mdns_indexes` and
+   `mdns_if_kinds` give `IfKind::IndexV4(i)` and `IndexV6(i)`; loopback is disabled again
+   after each enable. `tests/mdns_index.rs` checks on each CI OS that every usable address has
+   the same index in `if-addrs`. Real check, headless, listen only:
+   `cargo run -p uc-net --example mdns-check [-- --secs 5]` prints the interfaces, what
+   `mdns-sd` enabled and the `_uclip-pair._udp` / `_uclip._udp` instances it found.
+   Other name uses were checked: the socket tie uses the index on Windows and macOS and the
+   kernel name on Linux (`SO_BINDTODEVICE`, same as netdev), IPv6 scope IDs use the index.
 
 ## Links and reconnect
 

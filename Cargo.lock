@@ -2457,6 +2457,7 @@ version = "0.0.1"
 dependencies = [
  "ed25519-dalek",
  "hmac",
+ "if-addrs",
  "mdns-sd",
  "netdev",
  "postcard",
