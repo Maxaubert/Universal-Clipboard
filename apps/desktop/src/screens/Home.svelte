@@ -427,6 +427,8 @@
   .uc-s { margin: 0; font-size: 14px; line-height: 1.4; color: #5E5B56; }
   .uc-acts { display: flex; gap: 10px; padding-left: 54px; }
   .btn.sm { height: 38px; padding: 0 16px; font-size: 14px; width: auto; box-sizing: border-box; }
-  [data-m='tiles'] { position: relative; z-index: 0; }
+  /* With the card, the tiles can scroll under it; no scrollbar strip on any OS (it would squeeze
+     the tiles on Windows and Linux, and the designs have none). The cut tile shows there is more. */
+  [data-m='tiles'] { position: relative; z-index: 0; scrollbar-width: none; }
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 </style>
