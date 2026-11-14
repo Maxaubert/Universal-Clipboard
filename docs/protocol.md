@@ -340,7 +340,7 @@ The inviter, after it checked `conf_b`:
 | `n_changes` | 2 | |
 | `n_changes` times | `u16 length`, then `body || signature` | the whole graph, in canonical order (5.3) |
 | `addr_len` | 2 | at most 4,096 |
-| `addr_book` | `addr_len` | remembered addresses of the members, in the format that `uc-net` defines |
+| `addr_book` | `addr_len` | remembered addresses of the members, in the format that `uc-net` defines (`docs/net.md`: the members' signed address announcements) |
 
 6. Wait up to 10 seconds for `PairDone`. Then, with or without it, keep the change and spread it
    to the connected members. (If the joiner did not store the state, the user pairs again and

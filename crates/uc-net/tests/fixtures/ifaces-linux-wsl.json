@@ -1,0 +1,48 @@
+[
+  {
+    "name": "lo",
+    "index": 1,
+    "description": "",
+    "link": "Loopback",
+    "up": true,
+    "point_to_point": false,
+    "has_device": false,
+    "devtype": null,
+    "arphrd": 772,
+    "addrs": [
+      {
+        "ip": "127.0.0.1",
+        "prefix": 8
+      },
+      {
+        "ip": "10.255.255.254",
+        "prefix": 32
+      },
+      {
+        "ip": "::1",
+        "prefix": 128
+      }
+    ]
+  },
+  {
+    "name": "eth0",
+    "index": 2,
+    "description": "",
+    "link": "Ethernet",
+    "up": true,
+    "point_to_point": false,
+    "has_device": true,
+    "devtype": null,
+    "arphrd": 1,
+    "addrs": [
+      {
+        "ip": "172.17.29.79",
+        "prefix": 20
+      },
+      {
+        "ip": "fe80::1002",
+        "prefix": 64
+      }
+    ]
+  }
+]
