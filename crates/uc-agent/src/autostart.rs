@@ -28,6 +28,12 @@ pub struct Autostart {
 /// The LaunchAgent label.
 pub const MAC_LABEL: &str = "io.github.maxaubert.uclip.agent";
 
+/// True when launchd started this process as our LaunchAgent (it sets `XPC_SERVICE_NAME` to
+/// the job label; a shell or the window leaves it at "0" or unset).
+pub fn started_by_launchd() -> bool {
+    std::env::var("XPC_SERVICE_NAME").is_ok_and(|n| n.starts_with(MAC_LABEL))
+}
+
 impl Autostart {
     /// For this profile, starting `exe`.
     pub fn new(profile: &Profile, exe: PathBuf, state_dir: &Path) -> Autostart {
@@ -145,6 +151,12 @@ impl Autostart {
         }
         #[cfg(target_os = "macos")]
         if self.in_bundle() {
+            // The login item would point into the disk image or a translocated copy.
+            if crate::launch::app_location_problem().is_some() {
+                return Err(std::io::Error::other(
+                    "Move Universal Clipboard to the Applications folder and open it from there first.",
+                ));
+            }
             return sm::register();
         }
         #[cfg(windows)]

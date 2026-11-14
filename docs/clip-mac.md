@@ -55,11 +55,17 @@ Date: 2026-11-14. Crate: `uc-clip-mac`. Plan: sections 3.8, 3.9, 3.10, 6.4, mile
   marker type with empty data.
 - Text that is not UTF-8 is refused (`ClipboardError::Other("text-not-utf8")`).
 - Returns `changeCount` after the write (echo layer 2).
+- HTML without a charset gets `<meta charset="utf-8">` in front (`types::with_charset_meta`):
+  AppKit (TextEdit, Mail, Notes) reads HTML with no charset as Latin-1. A read removes that exact
+  prefix again (2026-11-14, found in the Mac review).
 
 ## Privacy setting (macOS 15.4 and later)
 - `access_behavior()` returns the "Paste from Other Apps" setting, or `None` on older macOS.
 - A named pasteboard always allows access. The general pasteboard may ask. The on-purpose first
   read and the settings row are agent work (M7) and need spike S2.
+- On the general pasteboard, when the setting is Ask or Deny, `read` returns the types only, no
+  content, so a background copy never shows a macOS alert. The agent shows its "paste-access"
+  row instead. Default is still read (the first read is the one prompt).
 
 ## Tests
 - Pure tests (every OS): poll timing, type sorting, HTML decoding.

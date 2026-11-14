@@ -158,6 +158,16 @@ impl MacClipboard {
         if kinds.skip_content() || (kinds.remote && !self.read_remote_content) {
             return Ok(snap);
         }
+        // "Paste from Other Apps" set to Ask or Deny: a content read would show a macOS alert
+        // on every copy (or fail). Read nothing; the agent shows the "paste-access" row.
+        if self.is_general()
+            && matches!(
+                self.access_behavior(),
+                Some(AccessBehavior::Ask | AccessBehavior::AlwaysDeny)
+            )
+        {
+            return Ok(snap);
+        }
         let has = |t: &str| types.iter().any(|x| x == t);
         // `stringForType` also turns older text types (UTF-16, `NSStringPboardType`) into a
         // string, so it is asked even if the UTF-8 type is not listed.
@@ -166,7 +176,10 @@ impl MacClipboard {
                 .push((Format::TextPlain, s.to_string().into_bytes()));
         }
         if has(types::HTML)
-            && let Some(html) = self.data(types::HTML).and_then(|b| types::html_to_utf8(&b))
+            && let Some(html) = self
+                .data(types::HTML)
+                .and_then(|b| types::html_to_utf8(&b))
+                .map(types::strip_charset_meta)
         {
             snap.parts.push((Format::TextHtml, html));
         }
@@ -209,7 +222,9 @@ impl Clipboard for MacClipboard {
                             &NSString::from_str(types::TEXT),
                         )
                     }
-                    Format::TextHtml => self.set_data(types::HTML, bytes),
+                    Format::TextHtml => {
+                        self.set_data(types::HTML, &types::with_charset_meta(bytes))
+                    }
                     Format::ImagePng => {
                         // Many Mac apps only paste TIFF, so a TIFF copy goes next to the PNG.
                         let tiff_ok = match png_to_tiff(bytes) {

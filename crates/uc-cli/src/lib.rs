@@ -320,7 +320,7 @@ pub async fn connect(p: &Profile) -> Result<Client, Fail> {
 }
 
 fn start_agent(p: &Profile) {
-    let Ok(me) = std::env::current_exe() else {
+    let Ok(me) = uc_agent::install::real_exe() else {
         return;
     };
     let name = if cfg!(windows) {
@@ -332,22 +332,13 @@ fn start_agent(p: &Profile) {
     if !exe.exists() {
         return;
     }
-    let mut c = std::process::Command::new(exe);
-    if p.is_test() {
-        c.args(["--profile", &p.name]);
+    // An update is swapping the files: the helper starts the new agent itself.
+    if uc_agent::launch::update_in_progress(p) {
+        return;
     }
-    c.stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // DETACHED_PROCESS | CREATE_NO_WINDOW: no console, nothing on screen.
-        c.creation_flags(0x0000_0008 | 0x0800_0000);
-        // The agent must not hold our output pipe ("uc status | ..." would never end).
-        uc_agent::win::no_inherit_std_handles();
-    }
-    let _ = c.spawn();
+    // Detached, no console, no inherited pipes ("uc status | ..." must end); on macOS through
+    // launchd, so the agent and not this terminal or the window owns its permissions.
+    let _ = uc_agent::launch::start(p, &exe);
 }
 
 async fn call(c: &mut Client, name: &str, params: Value) -> Result<Value, Fail> {
@@ -707,7 +698,7 @@ async fn setup(c: &mut Client, p: &Profile, j: bool, all_yes: bool) -> Result<()
     // Linux; a dragged app has no install step.
     if cfg!(target_os = "macos")
         && !p.is_test()
-        && let Ok(me) = std::env::current_exe()
+        && let Ok(me) = uc_agent::install::real_exe()
         && me.to_string_lossy().contains(".app/Contents/MacOS/")
     {
         let o = std::process::Command::new(me.with_file_name("uc-agent"))
@@ -733,7 +724,7 @@ fn firewall_rule(p: &Profile, j: bool) -> bool {
     if p.is_test() || !uc_agent::firewall::needs_helper() {
         return true;
     }
-    let agent = std::env::current_exe()
+    let agent = uc_agent::install::real_exe()
         .map(|e| {
             e.with_file_name(if cfg!(windows) {
                 "uc-agent.exe"

@@ -23,6 +23,7 @@ pub mod clip;
 pub mod firewall;
 pub mod install;
 pub mod ipc;
+pub mod launch;
 pub mod log;
 pub mod pairing;
 pub mod profile;

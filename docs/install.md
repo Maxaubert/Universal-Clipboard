@@ -2,8 +2,9 @@
 
 Date: 2026-11-14. Plan: sections 2.1, 3.2, 3.13, 4.1, 7 (M9), 8. Spike: `docs/spikes/s8-msix.md`.
 
-Everything is **unsigned** for now: no Windows code signing, no Apple Developer ID. Only the
-update manifest is signed (with our own updater key). Nothing in this milestone was installed
+Windows builds are **unsigned**. macOS builds are ad hoc by default and can be signed with
+Max's Developer ID (see "Signing and notarization"). The update manifest is signed with our own
+updater key. Nothing in this milestone was installed
 on Max's PC or Mac: install and uninstall tests run on CI runners and in Docker.
 
 ## What is built
@@ -68,6 +69,34 @@ The installer names the CLI `uclip` when a `uc` command already exists, and says
 | Windows MSIX | Windows removes the package, the startup task, the firewall rule and the package data. The Credential Manager entry stays (plan 8.5). | CI (install and remove) |
 | macOS | Drag the app to the Trash; macOS drops the login item. The help text says to use "Remove this device and forget everything" first. | not testable without a VM |
 | Linux | `apt remove`: files and links go, `postrm` prints what stays (autostart entry, state, keyring) and how to clean up. The supervisor of a running agent ends when the binary is gone. | Docker |
+
+## How the agent is started on macOS (2026-11-14, Mac review)
+
+Code: `crates/uc-agent/src/launch.rs`. Checked on the Mac mini (macOS 27.2).
+
+- **Always a launchd job** (real profile, inside the bundle). `uc`, the window and the update
+  helper never start `uc-agent` as their own child: macOS would give the Local Network and
+  "Paste from Other Apps" permissions to the terminal or the window. The agent always runs as
+  the session-only job `io.github.maxaubert.uclip.agent.run`, loaded from `<state>/launchd/`
+  (gone after logout): `kickstart` when it is loaded with the same program, else `bootstrap`
+  (`bootout` first only when the app moved). An agent that holds `agent.lock` is never
+  touched. Test profiles, Windows and Linux start a detached child as before.
+- **The login item is only a launcher.** Started by `SMAppService` (`XPC_SERVICE_NAME` is the
+  label), `uc-agent` starts the session job and exits 0. So turning start at login off
+  (unregister) never ends the running agent. Registering it runs it once at once.
+- **"Already running" under launchd exits 0**, so `KeepAlive {SuccessfulExit=false}` does not
+  restart a second agent every 10 s.
+- **Update marker** `<state>/update/applying` (holds the helper's PID): the helper writes it
+  when it stops the old agent and removes it when the new files are in place, right before it
+  starts the new agent (also on rollback). While it is there, `uc` and the window start nothing
+  and an agent that launchd restarts exits 0. It is stale (and removed) when the helper is gone
+  or after 15 min. The window refreshes when its event stream reconnects, so it leaves "agent
+  is down" by itself. Remove this device (`--uninstall-hook`) also unloads the session job.
+- **App location:** run from a read-only volume under `/Volumes` (the DMG) or App
+  Translocation (another drive is fine), the agent refuses
+  start at login, the `uc` link and self-update, and the status is "Needs attention"
+  (`app-location`): move the app to Applications. The helper also checks that the bundle can
+  be written before it stops the agent.
 
 ## Firewall helper (Windows exe build)
 
@@ -141,16 +170,18 @@ updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the la
 - Local signing, if ever needed: `uc-release manifest --key <file> --version V --rollout 10
   --base-url URL --out latest.json windows-x86_64:nsis:<setup.exe> macos-aarch64:tar:<app.tar.gz>`.
 
-## Signing and notarization (documented, not done)
+## Signing and notarization
 
-- **macOS (needs Max's Developer ID, not used tonight):**
-  1. `codesign --force --options runtime --timestamp --sign "Developer ID Application: <name> (<team>)"`
-     each of `Contents/MacOS/*`, then the bundle.
-  2. `xcrun notarytool submit <dmg> --keychain-profile <profile> --wait`
-     (profile made once with `xcrun notarytool store-credentials`).
-  3. `xcrun stapler staple <dmg>` (and the app).
-  In CI the certificate and an App Store Connect API key would be secrets of the `release`
-  environment.
+- **macOS:** `build-app.sh` signs ad hoc unless told otherwise (checked on the Mac mini 2026-11-14):
+  `SIGN_IDENTITY="Developer ID Application: MAX AUBERT (WV7BY8CUM8)"` signs every program and
+  the bundle with hardened runtime and a secure timestamp (and the DMG). `NOTARY_PROFILE=notary`
+  also notarizes and staples the app (before the update archive and the DMG are made) and the
+  DMG. The profile is made once: `xcrun notarytool store-credentials notary --apple-id <id>
+  --team-id WV7BY8CUM8`. The certificate is in the Mac mini's login keychain. Without
+  notarization, `spctl` says "Unnotarized Developer ID" and a downloaded copy is blocked.
+  A Developer ID also keeps Keychain access and privacy grants across updates (an ad-hoc
+  signature changes with every build). CI does not sign yet: the certificate and an App Store
+  Connect API key would be secrets of the `release` environment.
 - **Windows:** the exe stays unsigned until SignPath Foundation (or Certum) accepts the project
   (plan 8.1). The Store signs the MSIX on submit; its `Publisher` must then be the one Partner
   Center gives (`build.ps1 -Publisher`).

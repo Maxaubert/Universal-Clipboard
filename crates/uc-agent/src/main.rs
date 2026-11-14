@@ -113,10 +113,31 @@ fn main() {
         }
         std::process::exit(uc_agent::supervise::supervise(&exe, &child_args, None));
     }
+    // The login item only starts the session job (launch.rs), so turning start at login off
+    // never ends the running agent.
+    if !profile.is_test() && uc_agent::launch::started_as_login_item() {
+        if let Ok(exe) = uc_agent::install::real_exe()
+            && !uc_agent::launch::update_in_progress(&profile)
+        {
+            let _ = uc_agent::launch::start(&profile, &exe);
+        }
+        std::process::exit(0);
+    }
+    if uc_agent::launch::update_in_progress(&profile) {
+        // The update helper is swapping the files and starts the new agent itself. Exit 0 so
+        // launchd's KeepAlive does not restart the old one.
+        eprintln!("uc-agent: an update is being installed");
+        std::process::exit(0);
+    }
     match agent::run(profile) {
         Ok(()) => {}
         Err(e) if e.0 == "already running" => {
             eprintln!("uc-agent: already running for this user");
+            // Started by the login item (launchd) while the window or `uc` already runs an
+            // agent: exit 0, or KeepAlive {SuccessfulExit=false} restarts it every 10 s.
+            if cfg!(target_os = "macos") && uc_agent::autostart::started_by_launchd() {
+                std::process::exit(0);
+            }
             std::process::exit(EXIT_ALREADY_RUNNING);
         }
         Err(e) => {

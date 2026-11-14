@@ -17,7 +17,9 @@
 //! be) and `test-broken` (this copy exits at once, like a broken release).
 
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
+
+use crate::launch::detach;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -49,14 +51,14 @@ pub fn plays_broken(p: &Profile) -> bool {
 }
 
 fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe()
+    crate::install::real_exe()
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
 }
 
 /// The folder that an update replaces: the `.app` bundle on macOS, else the binary's folder.
 pub fn install_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
+    let exe = crate::install::real_exe().ok()?;
     let dir = exe.parent()?.to_path_buf();
     if cfg!(target_os = "macos")
         && dir.file_name().is_some_and(|n| n == "MacOS")
@@ -191,6 +193,11 @@ impl Updater {
         }
         if self.rx.is_none() && self.staged.is_none() && Instant::now() >= self.next {
             self.next = Instant::now() + self.cfg.every;
+            // Run from the disk image or a translocated copy: the bundle cannot be replaced.
+            if !self.profile.is_test() && crate::launch::app_location_problem().is_some() {
+                self.last = Some("not checked: the app is not in the Applications folder".into());
+                return;
+            }
             let (tx, rx) = mpsc::channel();
             self.rx = Some(rx);
             let cfg = self.cfg.clone();
@@ -247,8 +254,9 @@ fn kind_word(k: Kind) -> &'static str {
 /// detached, in its own process group (so stopping the agent, or launchd ending its job,
 /// does not end the helper).
 fn launch_helper(p: &Profile, s: &Staged) -> std::io::Result<()> {
-    let me = std::env::current_exe()?;
+    let me = crate::install::real_exe()?;
     let install = install_dir().ok_or_else(|| std::io::Error::other("no install folder"))?;
+    writable(&install)?;
     let rel = me
         .strip_prefix(&install)
         .map_err(|_| std::io::Error::other("binary outside the install folder"))?
@@ -276,24 +284,6 @@ fn launch_helper(p: &Profile, s: &Staged) -> std::io::Result<()> {
     }
     detach(&mut c);
     c.spawn().map(|_| ())
-}
-
-fn detach(c: &mut Command) {
-    c.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
-        c.creation_flags(0x0000_0008 | 0x0000_0200 | 0x0800_0000);
-        crate::win::no_inherit_std_handles();
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        c.process_group(0);
-    }
 }
 
 /// The helper's arguments.
@@ -329,6 +319,16 @@ impl HelperArgs {
             agent_rel: get("--agent-rel")?.into(),
         })
     }
+}
+
+/// Fail early when the install folder cannot be replaced (root-owned, read-only volume), so
+/// the helper never stops the agent for an update it cannot install.
+fn writable(dir: &Path) -> std::io::Result<()> {
+    let probe = dir.join(format!(".uc-update-probe-{}", std::process::id()));
+    std::fs::write(&probe, b"")
+        .map_err(|e| std::io::Error::other(format!("the app folder cannot be written: {e}")))?;
+    let _ = std::fs::remove_file(&probe);
+    Ok(())
 }
 
 /// The agent steps through IPC and processes.
@@ -385,6 +385,8 @@ impl AgentCtl for IpcAgent {
     }
 
     fn stop(&mut self) -> std::io::Result<()> {
+        // From here until start(): `uc`, the window and launchd do not start the old agent.
+        crate::launch::set_update_marker(&self.profile, true);
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
@@ -410,12 +412,11 @@ impl AgentCtl for IpcAgent {
     }
 
     fn start(&mut self) -> std::io::Result<()> {
-        let mut c = Command::new(&self.exe);
-        if self.profile.is_test() {
-            c.args(["--profile", &self.profile.name]);
-        }
-        detach(&mut c);
-        self.child = Some(c.spawn()?);
+        // The files are in place: whoever starts the agent now starts this version.
+        crate::launch::set_update_marker(&self.profile, false);
+        // macOS bundle: through launchd (the login item if it is on), so the new agent is not
+        // a child of the helper and keeps its own permissions.
+        self.child = crate::launch::start(&self.profile, &self.exe)?;
         Ok(())
     }
 
@@ -501,6 +502,7 @@ pub fn run_helper(p: &Profile, args: &[String]) -> i32 {
     };
     let mut st = UpdateState::load(&cfg.dir);
     let o = apply(&mut *files, &mut agent, &mut st, &a.version, cfg.health);
+    crate::launch::set_update_marker(p, false);
     let _ = st.save(&cfg.dir);
     let line = format!(
         "{} update to {}: {o:?}\n",
