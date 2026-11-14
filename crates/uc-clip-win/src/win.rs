@@ -559,6 +559,7 @@ impl Clipboard for WinClipboard {
             has_marker,
             private,
             has_files,
+            remote: false,
         })
     }
 
