@@ -230,6 +230,12 @@ pub struct Core {
     shutdown: bool,
     started: Instant,
     dirty: bool,
+    /// Self-update (Windows exe and macOS dmg builds; test feeds in test profiles).
+    updater: Option<crate::update::Updater>,
+    /// Last clipboard activity (the updater waits for 60 s of quiet).
+    last_clip: Instant,
+    /// The version this agent reports.
+    version: String,
 }
 
 /// Why the agent could not start.
@@ -295,6 +301,7 @@ impl Core {
         pair_tx: mpsc::UnboundedSender<PairMsg>,
         wake_tx: mpsc::UnboundedSender<Wake>,
     ) -> Result<Core, StartError> {
+        let profile_for_update = profile.clone();
         let store = uc_keys::open_store(profile.keystore_name(), &dir);
         let key = DeviceKey::load_or_create(&*store)
             .map_err(|e| StartError(format!("key store: {e}")))?;
@@ -400,6 +407,10 @@ impl Core {
             shutdown: false,
             started: Instant::now(),
             dirty: false,
+            updater: crate::update::UpdateCfg::from_profile(&profile_for_update)
+                .map(|c| crate::update::Updater::new(c, profile_for_update.clone())),
+            last_clip: Instant::now(),
+            version: crate::update::current_version(&profile_for_update),
         };
         core.reset_engine();
         core.apply_settings();
@@ -706,6 +717,11 @@ impl Core {
             self.on_resume();
         }
         self.last_tick = (now, wall);
+        let me = self.key.public();
+        let idle = self.last_clip.elapsed();
+        if let Some(u) = &mut self.updater {
+            u.tick(me, idle);
+        }
         // Pause for a time ends.
         if let Pause::Until(t) = self.state.pause
             && wall >= t
@@ -780,6 +796,7 @@ impl Core {
     // ------------------------------------------------------------ clipboard
 
     fn on_local_change(&mut self) {
+        self.last_clip = Instant::now();
         if self.clip_error.is_some() {
             return;
         }
@@ -788,6 +805,9 @@ impl Core {
     }
 
     fn on_engine(&mut self, evs: Vec<EngineEvent>) {
+        if !evs.is_empty() {
+            self.last_clip = Instant::now();
+        }
         for e in evs {
             match e {
                 EngineEvent::Sent { kind, peers, .. } => {
@@ -864,7 +884,7 @@ impl Core {
         let (epoch, _) = g.current_secret();
         Some(Message::Hello(Hello {
             protocol: msg::PROTOCOL_VERSION,
-            app_version: env!("CARGO_PKG_VERSION").into(),
+            app_version: self.version.clone(),
             device: DeviceRecord {
                 id: self.me(),
                 name: self.own_name(),
@@ -1404,6 +1424,7 @@ impl Core {
         let p = req.params.clone();
         let call = req.call.as_str();
         if !ipc::CALLS.contains(&call)
+            && !ipc::SERVICE_CALLS.contains(&call)
             && !(self.profile.is_test() && ipc::DEBUG_CALLS.contains(&call))
         {
             let _ = reply.send(Reply::from_result(
@@ -1421,7 +1442,12 @@ impl Core {
                 self.subscribers.push(events);
                 Ok(json!({"subscribed": true}))
             }
-            "version" => Ok(json!({"version": env!("CARGO_PKG_VERSION")})),
+            "version" => Ok(json!({"version": self.version})),
+            "quit" => {
+                tracing::info!("asked to quit");
+                self.shutdown = true;
+                Ok(json!({"quitting": true}))
+            }
             "status" => Ok(self.status_json().await),
             "devices.list" => Ok(self.devices_json()),
             "devices.rename" => self.rename(&p),
@@ -1858,8 +1884,9 @@ impl Core {
         let yes = p.get("answer").and_then(Value::as_bool).unwrap_or(false);
         match row {
             "firewall" if cfg!(windows) => {
-                // M7 records the answer. The firewall rule itself (one UAC prompt, or the
-                // Store package) is added by the installer's helper in M9.
+                // The caller adds the rule first ("uc setup" and the window run
+                // `uc-agent --firewall add`, one UAC prompt; the Store package has it), and
+                // sends "no" when the user refused the prompt (outbound-only mode).
                 self.state.firewall = if yes {
                     Firewall::Allowed
                 } else {
@@ -1947,6 +1974,14 @@ impl Core {
                     .into(),
             ));
         }
+        if self.updater.as_ref().is_some_and(|u| u.state().gave_up()) {
+            return Some((
+                "update-failed",
+                "The app could not update itself.".into(),
+                "Download the newest version: https://github.com/Maxaubert/Universal-Clipboard/releases"
+                    .into(),
+            ));
+        }
         if self.clock_ahead {
             return Some((
                 "clock",
@@ -2015,7 +2050,7 @@ impl Core {
             "port": port,
             "profile": self.profile.name,
             "pid": std::process::id(),
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": self.version,
             "activity": self.state.activity.iter().rev().take(5).collect::<Vec<_>>(),
         })
     }
@@ -2061,7 +2096,7 @@ impl Core {
             None => None,
         };
         let mut lines = vec![
-            format!("Universal Clipboard {}", env!("CARGO_PKG_VERSION")),
+            format!("Universal Clipboard {}", self.version),
             format!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH),
             format!(
                 "Profile: {}",
@@ -2090,6 +2125,25 @@ impl Core {
         }
         if cfg!(windows) {
             lines.push(format!("Firewall row: {:?}", self.state.firewall));
+        }
+        match &self.updater {
+            Some(u) => {
+                let st = u.state();
+                lines.push(format!(
+                    "Updates: on; last: {}; failures in a row: {}; bad versions: {}",
+                    u.last
+                        .as_deref()
+                        .or(st.last_result.as_deref())
+                        .unwrap_or("none yet"),
+                    st.failures_in_row,
+                    if st.bad.is_empty() {
+                        "none".to_string()
+                    } else {
+                        st.bad.join(", ")
+                    }
+                ));
+            }
+            None => lines.push("Updates: by the store or the package manager".into()),
         }
         match &self.net_error {
             Some(e) => lines.push(format!("Network: off ({e})")),

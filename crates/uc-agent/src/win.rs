@@ -333,6 +333,158 @@ pub fn watch_resume(tx: tokio::sync::mpsc::UnboundedSender<()>) -> io::Result<()
     })
 }
 
+/// Read a string value (`REG_SZ` or `REG_EXPAND_SZ`) under `HKCU\<path>`, with its type.
+pub fn reg_get(path: &str, name: &str) -> io::Result<Option<(String, u32)>> {
+    let Some(k) = open_key(path)? else {
+        return Ok(None);
+    };
+    let n = wide(name);
+    let mut ty = 0u32;
+    let mut len = 0u32;
+    // SAFETY: size query only.
+    let r = unsafe {
+        RegQueryValueExW(
+            k.0,
+            n.as_ptr(),
+            std::ptr::null(),
+            &mut ty,
+            std::ptr::null_mut(),
+            &mut len,
+        )
+    };
+    if r == 2 {
+        return Ok(None);
+    }
+    check(r)?;
+    let mut buf = vec![0u16; (len as usize).div_ceil(2) + 1];
+    let mut len2 = (buf.len() * 2) as u32;
+    // SAFETY: `buf` has `len2` bytes.
+    check(unsafe {
+        RegQueryValueExW(
+            k.0,
+            n.as_ptr(),
+            std::ptr::null(),
+            &mut ty,
+            buf.as_mut_ptr().cast(),
+            &mut len2,
+        )
+    })?;
+    let chars = (len2 as usize / 2).min(buf.len());
+    let s = String::from_utf16_lossy(&buf[..chars]);
+    Ok(Some((s.trim_end_matches('\0').to_string(), ty)))
+}
+
+/// Set a string value of type `ty` (`REG_SZ` 1 or `REG_EXPAND_SZ` 2) under `HKCU\<path>`.
+pub fn reg_set_typed(path: &str, name: &str, value: &str, ty: u32) -> io::Result<()> {
+    let k = create_key(path)?;
+    let n = wide(name);
+    let v = wide(value);
+    // SAFETY: `v` is a NUL-terminated UTF-16 buffer of the given byte length.
+    check(unsafe {
+        RegSetValueExW(
+            k.0,
+            n.as_ptr(),
+            0,
+            ty,
+            v.as_ptr().cast(),
+            (v.len() * 2) as u32,
+        )
+    })
+}
+
+/// Tell running programs (Explorer) that the environment of the user changed, so new
+/// terminals see the new PATH. Waits at most 2 s.
+pub fn broadcast_env_change() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_BROADCAST, SMTO_ABORTIFHUNG, SendMessageTimeoutW, WM_SETTINGCHANGE,
+    };
+    let s = wide("Environment");
+    let mut out = 0usize;
+    // SAFETY: plain call with a NUL-terminated string.
+    unsafe {
+        SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            s.as_ptr() as isize,
+            SMTO_ABORTIFHUNG,
+            2000,
+            &mut out,
+        )
+    };
+}
+
+/// True if this process runs elevated (as administrator).
+pub fn is_elevated() -> bool {
+    use windows_sys::Win32::Security::{TOKEN_ELEVATION, TokenElevation};
+    let mut token: HANDLE = std::ptr::null_mut();
+    // SAFETY: our own process token, closed below.
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        return false;
+    }
+    let mut e = TOKEN_ELEVATION { TokenIsElevated: 0 };
+    let mut len = 0u32;
+    // SAFETY: `e` has the size passed.
+    let ok = unsafe {
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            (&mut e as *mut TOKEN_ELEVATION).cast(),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut len,
+        )
+    };
+    // SAFETY: opened above.
+    unsafe { CloseHandle(token) };
+    ok != 0 && e.TokenIsElevated != 0
+}
+
+/// Run `exe args` elevated: Windows shows one UAC prompt. Waits for it and returns its exit
+/// code. A "No" in the prompt is an error (`ERROR_CANCELLED`, 1223).
+pub fn run_elevated(exe: &std::path::Path, args: &str) -> io::Result<u32> {
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, INFINITE, WaitForSingleObject,
+    };
+    use windows_sys::Win32::UI::Shell::{
+        SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW,
+    };
+    let verb = wide("runas");
+    let file = wide(&exe.display().to_string());
+    let params = wide(args);
+    // SAFETY: zeroed is a valid SHELLEXECUTEINFOW; we fill the fields we use.
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = file.as_ptr();
+    info.lpParameters = params.as_ptr();
+    info.nShow = 0; // SW_HIDE
+    // SAFETY: `info` and the strings live through the call.
+    if unsafe { ShellExecuteExW(&mut info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if info.hProcess.is_null() {
+        return Err(io::Error::other("no process"));
+    }
+    let mut code = 0u32;
+    // SAFETY: the process handle we asked for; closed below.
+    unsafe {
+        WaitForSingleObject(info.hProcess, INFINITE);
+        GetExitCodeProcess(info.hProcess, &mut code);
+        CloseHandle(info.hProcess);
+    }
+    Ok(code)
+}
+
+/// True if this process runs from an MSIX package (the Microsoft Store build).
+pub fn is_packaged() -> bool {
+    use windows_sys::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
+    let mut len = 0u32;
+    // SAFETY: size query; APPMODEL_ERROR_NO_PACKAGE (15700) means not packaged.
+    let r = unsafe { GetCurrentPackageFullName(&mut len, std::ptr::null_mut()) };
+    r != 15700
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Put the CLI on PATH (plan 3.2): /usr/bin/uc, or /usr/bin/uclip when another "uc" exists.
+set -e
+LIB=/usr/lib/universal-clipboard
+
+if [ "$1" = "configure" ]; then
+  name=uc
+  for d in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+    f="$d/uc"
+    if [ -e "$f" ] || [ -L "$f" ]; then
+      if [ "$(readlink -f "$f")" != "$LIB/uc" ]; then
+        name=uclip
+      fi
+    fi
+  done
+  ln -sfn "$LIB/uc" "/usr/bin/$name"
+  echo "$name" > "$LIB/cli-name"
+  if [ "$name" = "uclip" ]; then
+    echo "A \"uc\" command already exists on this computer, so the command line tool is named \"uclip\"."
+  else
+    echo "The command line tool is \"uc\". Run \"uc setup\" to start."
+  fi
+fi
+exit 0

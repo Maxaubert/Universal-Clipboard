@@ -45,6 +45,9 @@ pub const CALLS: &[&str] = &[
     "version",
 ];
 
+/// Calls for the installers and the updater (not window actions, so no `uc` command).
+pub const SERVICE_CALLS: &[&str] = &["quit"];
+
 /// Calls that exist only in test profiles (the real app refuses them).
 pub const DEBUG_CALLS: &[&str] = &[
     "debug.copy",

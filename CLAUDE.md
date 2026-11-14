@@ -11,6 +11,7 @@ Pairing and membership protocol (signed off, M3 implements it word for word): `d
 Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 macOS clipboard backend (M5): `docs/clip-mac.md`.
 Agent, IPC and the `uc` CLI (M7), test switches, measurements: `docs/agent.md`.
+Installers, firewall helper, self-update, keys and releases (M9): `docs/install.md`.
 
 ## Rules
 - Code goes on a branch and a PR. Never push code to main. `docs/*.md` may go to main.
@@ -24,10 +25,11 @@ Agent, IPC and the `uc` CLI (M7), test switches, measurements: `docs/agent.md`.
 - Unit: `cargo nextest run --workspace --no-tests=pass` (or `cargo test --workspace`)
 - Network lab (plan 6.3, Linux root, WSL): `wsl -d Ubuntu -u root -- bash tools/netsim/run-wsl.sh`
 - Real Windows clipboard tests: `crates/uc-clip-win/tests/real.rs`, run by nextest inside a private window station (winhost).
-- E2E (headless): multi-agent tests `cargo nextest run -p uc-cli` (real agents on loopback, paired through `uc`; one in winhost on Windows). Linux live agents: `sh crates/uc-clip-linux/live/docker.sh`. Cross-OS runner `tools/e2e/cross-os.ps1` is PENDING (no lab VMs). Run when: apps/desktop/**, crates/uc-agent/**, crates/uc-cli/**
-- Build / package: `cargo build --workspace`   Artifact: n/a (installer tool not chosen yet, ask first)
+- E2E (headless): multi-agent tests `cargo nextest run -p uc-cli` (real agents on loopback, paired through `uc`; one in winhost on Windows; `tests/update.rs` = N, broken N+1, rollback). Linux live agents: `sh crates/uc-clip-linux/live/docker.sh`. Cross-OS runner `tools/e2e/cross-os.ps1` is PENDING (no lab VMs). Run when: apps/desktop/**, crates/uc-agent/**, crates/uc-cli/**
+- Build / package: `cargo build --release -p uc-agent -p uc-cli`, then `pwsh packaging/windows/build.ps1 -Version X -Bin <target>/release -Out dist` (NSIS + MSIX), `sh packaging/macos/build-app.sh X <bin> dist` (on the Mac: `SKIP_DMG=1`), `wsl -d Ubuntu -- sh packaging/linux/wsl-build.sh X` (.deb, built `--no-default-features`)   Artifact: `dist/` (`*-setup.exe`, `*.msix`, `*.dmg`, `*.app.tar.gz`, `*.deb`)
+- Install tests: CI only (`package.yml`: `packaging/windows/test-install.ps1`, DMG mount check) and Docker for the .deb (`packaging/linux/test-deb.sh`). Never install on Max's PC or Mac.
 - Known failures to tolerate: none
-- Version source: `Cargo.toml` (`workspace.package.version`)   Release: release.yml on push to main (not added yet)
-- Install locally after merge: n/a (no app yet)   Confirm version: n/a
+- Version source: `Cargo.toml` (`workspace.package.version`)   Release: push a tag `vX.Y.Z` (must match Cargo.toml): `release.yml` builds, waits for approval in environment `release`, signs `latest.json` at 10%, makes a DRAFT release. `rollout.yml` raises the rollout.
+- Install locally after merge: not yet (no window until M8b; ask Max first)   Confirm version: `uc --version`, `uc status --json` (`version`)
 - Deploy: none
-- Signing: unsigned
+- Signing: OS signing none yet (Windows exe unsigned, macOS ad-hoc, notarization steps in `docs/install.md`). Update manifests: minisign-format updater key, secret outside the repo (`~/.config/uclip-release/updater.key`, and the `release` environment secret `UCLIP_UPDATER_KEY`).
