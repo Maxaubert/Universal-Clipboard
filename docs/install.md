@@ -315,6 +315,14 @@ updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the la
   (plan 8.1). The Store signs the MSIX on submit; its `Publisher` must then be the one Partner
   Center gives (`build.ps1 -Publisher`).
 
+## App icon (2026-11-15)
+
+"Paper Layers", given by Max (made with Codex). Sources, derived masters and the render script:
+`packaging/assets/icon/README.md`. Contact sheet: `docs/design/icon/contact-sheet.png`.
+Windows `.ico` and MSIX logos (with `resources.pri` from makepri), the macOS iconset (icon grid,
+not full-bleed), Linux hicolor 16 to 512 plus scalable SVG, and the Tauri icons all come from it.
+16 to 32 px use simpler two-layer art.
+
 ## Not done here
 
 - The signed check that the pipe server is our agent (plan 3.2) needs code signing; the SID
@@ -322,5 +330,3 @@ updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the la
 - The apt repository and its key.
 - Real-VM tests (`win-b`, `mac-b`, `lin-kde`): install with only the expected warnings, the
   update N to N+1 with no user action, the macOS uninstall table row.
-- Icons are placeholders (`packaging/assets`, made with ImageMagick): replace them with the
-  real ones from the design work.

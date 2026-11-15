@@ -47,16 +47,9 @@ else
   UI_ELEMENT=true
 fi
 
-# The icon.
-ICONSET=$(mktemp -d)/AppIcon.iconset
-mkdir -p "$ICONSET"
-for s in 16 32 128 256 512; do
-  sips -z $s $s "$ROOT/packaging/assets/icon-512.png" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-  d=$((s * 2))
-  [ $d -le 512 ] && sips -z $d $d "$ROOT/packaging/assets/icon-512.png" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
-done
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
-rm -rf "$(dirname "$ICONSET")"
+# The icon. The iconset is rendered from the SVG (packaging/assets/icon/render.mjs) on the
+# macOS grid: 824 body, continuous corners, soft shadow, and simpler art at 16 and 32 px.
+iconutil -c icns "$ROOT/packaging/assets/macos/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@MAIN@/$MAIN/g" -e "s/@UI_ELEMENT@/$UI_ELEMENT/g" \
   "$HERE/Info.plist.in" > "$APP/Contents/Info.plist"

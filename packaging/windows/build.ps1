@@ -71,9 +71,10 @@ if (-not $NoMsix) {
   if (Test-Path $layout) { Remove-Item -Recurse -Force $layout }
   New-Item -ItemType Directory $layout, (Join-Path $layout "Assets") | Out-Null
   Copy-Item (Join-Path $stage "*") $layout
-  Copy-Item (Join-Path $assets "icon-50.png") (Join-Path $layout "Assets\StoreLogo.png")
-  Copy-Item (Join-Path $assets "icon-150.png") (Join-Path $layout "Assets\Square150x150Logo.png")
-  Copy-Item (Join-Path $assets "icon-44.png") (Join-Path $layout "Assets\Square44x44Logo.png")
+  # Logo assets with scale and targetsize (plated and unplated) qualifiers, rendered from the
+  # SVG (packaging/assets/icon/render.mjs). resources.pri (makepri, below) maps the manifest's
+  # "Assets\X.png" names to them.
+  Copy-Item (Join-Path $assets "msix\*.png") (Join-Path $layout "Assets")
   $settingsApp = ""
   if ($hasUi) {
     $settingsApp = @'
@@ -87,6 +88,28 @@ if (-not $NoMsix) {
   $m = $m.Replace("@VERSION@", "$Version.0").Replace("@ARCH@", $Arch).Replace("@PUBLISHER@", $Publisher)
   $m = $m.Replace("@PUBLISHER_NAME@", $PublisherName).Replace("@SETTINGS_APP@", $settingsApp)
   Set-Content -Path (Join-Path $layout "AppxManifest.xml") -Value $m -Encoding utf8
+  $makepri = Join-Path (Split-Path $makeappx) "makepri.exe"
+  if (-not (Test-Path $makepri)) { throw "makepri not found next to makeappx (Windows SDK)" }
+  # One resources.pri with every scale (no <packaging> split: this is one package, not a bundle).
+  $priConfig = Join-Path $Out "priconfig.xml"
+  Set-Content -Path $priConfig -Encoding utf8 -Value @'
+<?xml version="1.0" encoding="UTF-8"?>
+<resources targetOsVersion="10.0.0" majorVersion="1">
+  <index root="\" startIndexAt="\">
+    <default>
+      <qualifier name="Language" value="en-US"/>
+      <qualifier name="Contrast" value="standard"/>
+      <qualifier name="Scale" value="100"/>
+      <qualifier name="TargetSize" value="256"/>
+      <qualifier name="Theme" value="dark"/>
+      <qualifier name="AlternateForm" value=""/>
+    </default>
+    <indexer-config type="folder" foldernameAsQualifier="true" filenameAsQualifier="true" qualifierDelimiter="."/>
+  </index>
+</resources>
+'@
+  & $makepri new /pr $layout /cf $priConfig /mn (Join-Path $layout "AppxManifest.xml") /of (Join-Path $layout "resources.pri") /o | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "makepri new failed" }
   $msix = Join-Path $Out "UniversalClipboard-$Version-windows-$Arch.msix"
   & $makeappx pack /o /h SHA256 /d $layout /p $msix
   if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
