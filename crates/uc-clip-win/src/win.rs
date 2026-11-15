@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -34,6 +34,11 @@ use crate::{dib, formats, html};
 const MAX_FORMAT_BYTES: usize = 512 << 20;
 
 const CLASS_NAME: &str = "UniversalClipboard.Listener";
+
+/// A read that takes longer gives up (the reader thread keeps waiting on its own). A program
+/// that offers a format but does not render it (delayed rendering, hung) can block
+/// `GetClipboardData` for a long time; the agent must not wait with it.
+pub const READ_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -82,6 +87,7 @@ struct Ids {
     html: u32,
     origin: u32,
     exclude: u32,
+    viewer_ignore: u32,
     history: u32,
     cloud: u32,
     file_group: u32,
@@ -94,6 +100,7 @@ impl Ids {
             html: register_format(formats::HTML)?,
             origin: register_format(formats::ORIGIN)?,
             exclude: register_format(formats::EXCLUDE_MONITOR)?,
+            viewer_ignore: register_format(formats::VIEWER_IGNORE)?,
             history: register_format(formats::CAN_INCLUDE_IN_HISTORY)?,
             cloud: register_format(formats::CAN_UPLOAD_TO_CLOUD)?,
             file_group: register_format(formats::FILE_GROUP_DESCRIPTOR)?,
@@ -113,6 +120,11 @@ pub struct WinClipboard {
     retry: Retry,
     changes: Receiver<u64>,
     thread: Option<JoinHandle<()>>,
+    /// Asks the reader thread for one read. Dropped on drop, which ends that thread.
+    read_jobs: Option<Sender<()>>,
+    read_results: Receiver<Result<Raw, ClipboardError>>,
+    /// The reader thread still works on a read that timed out.
+    reader_stuck: bool,
 }
 
 impl std::fmt::Debug for WinClipboard {
@@ -348,12 +360,27 @@ impl WinClipboard {
         let hwnd = ready_rx
             .recv()
             .map_err(|_| ClipboardError::Other("window-thread".into()))??;
+        let (job_tx, job_rx) = mpsc::channel::<()>();
+        let (res_tx, read_results) = mpsc::channel();
+        thread::Builder::new()
+            .name("uc-clip-read".into())
+            .spawn(move || {
+                while job_rx.recv().is_ok() {
+                    if res_tx.send(read_raw_state(hwnd, ids, retry)).is_err() {
+                        return;
+                    }
+                }
+            })
+            .map_err(|_| ClipboardError::Other("spawn".into()))?;
         Ok(WinClipboard {
             hwnd,
             ids,
             retry,
             changes,
             thread: Some(thread),
+            read_jobs: Some(job_tx),
+            read_results,
+            reader_stuck: false,
         })
     }
 
@@ -377,16 +404,36 @@ impl WinClipboard {
     }
 
     fn open(&self) -> Result<Open, ClipboardError> {
-        for i in 0..self.retry.tries.max(1) {
-            if i > 0 {
-                thread::sleep(self.retry.wait);
-            }
-            // SAFETY: `hwnd` is our live window (the thread runs until drop).
-            if unsafe { OpenClipboard(self.hwnd as HWND) } != 0 {
-                return Ok(Open(std::marker::PhantomData));
+        open_clipboard(self.hwnd, self.retry)
+    }
+
+    /// Read on the reader thread, waiting at most [`READ_TIMEOUT`]. While an earlier read is
+    /// still stuck, give up at once with `Busy`.
+    fn read_raw_timed(&mut self) -> Result<Raw, ClipboardError> {
+        if self.reader_stuck {
+            match self.read_results.try_recv() {
+                // The stuck read finished; its result is old.
+                Ok(_) => self.reader_stuck = false,
+                Err(TryRecvError::Empty) => return Err(ClipboardError::Busy),
+                Err(TryRecvError::Disconnected) => {
+                    return Err(ClipboardError::Other("reader-gone".into()));
+                }
             }
         }
-        Err(ClipboardError::Busy)
+        let jobs = self
+            .read_jobs
+            .as_ref()
+            .ok_or_else(|| ClipboardError::Other("reader-gone".into()))?;
+        jobs.send(())
+            .map_err(|_| ClipboardError::Other("reader-gone".into()))?;
+        match self.read_results.recv_timeout(READ_TIMEOUT) {
+            Ok(r) => r,
+            Err(RecvTimeoutError::Timeout) => {
+                self.reader_stuck = true;
+                Err(ClipboardError::Other("read-timeout".into()))
+            }
+            Err(RecvTimeoutError::Disconnected) => Err(ClipboardError::Other("reader-gone".into())),
+        }
     }
 
     /// Keep the clipboard open until the guard is dropped, like a slow program would. For
@@ -452,69 +499,82 @@ impl WinClipboard {
         }
         Ok(Self::sequence_number())
     }
+}
 
-    /// Copy what we need out of the clipboard in one short open. Conversion happens later.
-    fn read_raw_state(&self) -> Result<Raw, ClipboardError> {
-        let ids = self.ids;
-        let _open = self.open()?;
-        let seq = Self::sequence_number();
-        let formats: HashSet<u32> = enum_formats().into_iter().collect();
-        let dword = |id: u32| {
-            if formats.contains(&id) {
-                formats::Dword::from_bytes(get_bytes(id).ok().as_deref())
-            } else {
-                formats::Dword::Absent
-            }
-        };
-        let history = dword(ids.history);
-        let cloud = dword(ids.cloud);
-        let mut raw = Raw {
-            seq,
-            history,
-            cloud,
-            text: None,
-            html: None,
-            png: None,
-            dibv5: None,
-            dib: None,
-            formats,
-        };
-        let private = formats::is_private(
-            raw.formats.contains(&ids.exclude),
-            raw.history,
-            raw.cloud,
-            raw.formats.contains(&ids.origin),
-        );
-        let files =
-            raw.formats.contains(&formats::CF_HDROP) || raw.formats.contains(&ids.file_group);
-        if private || files {
-            // Never read the content of a private or file copy.
-            return Ok(raw);
+/// Open the clipboard for `hwnd`, retrying while another program holds it.
+fn open_clipboard(hwnd: usize, retry: Retry) -> Result<Open, ClipboardError> {
+    for i in 0..retry.tries.max(1) {
+        if i > 0 {
+            thread::sleep(retry.wait);
         }
-        if raw.formats.contains(&formats::CF_UNICODETEXT) {
-            // A listed text that cannot be read (a delayed-render owner that failed) must not
-            // lose an image that reads fine: read on without it.
-            raw.text = get_bytes(formats::CF_UNICODETEXT).ok();
-            if raw.text.is_some() && raw.formats.contains(&ids.html) {
-                raw.html = get_bytes(ids.html).ok();
-            }
+        // SAFETY: `hwnd` is our live window (the window thread runs until drop).
+        if unsafe { OpenClipboard(hwnd as HWND) } != 0 {
+            return Ok(Open(std::marker::PhantomData));
         }
-        if raw.formats.contains(&ids.png) {
-            // A "PNG" that is not a PNG must not hide the DIB fallback.
-            raw.png = get_bytes(ids.png)
-                .ok()
-                .filter(|b| png_signature(dib::trim_png(b)));
-        }
-        if raw.png.is_none() {
-            if raw.formats.contains(&formats::CF_DIBV5) {
-                raw.dibv5 = get_bytes(formats::CF_DIBV5).ok();
-            }
-            if raw.formats.contains(&formats::CF_DIB) {
-                raw.dib = get_bytes(formats::CF_DIB).ok();
-            }
-        }
-        Ok(raw)
     }
+    Err(ClipboardError::Busy)
+}
+
+/// Copy what we need out of the clipboard in one short open. Conversion happens later.
+/// Runs on the reader thread.
+fn read_raw_state(hwnd: usize, ids: Ids, retry: Retry) -> Result<Raw, ClipboardError> {
+    let _open = open_clipboard(hwnd, retry)?;
+    let seq = WinClipboard::sequence_number();
+    let formats: HashSet<u32> = enum_formats().into_iter().collect();
+    let dword = |id: u32| {
+        if formats.contains(&id) {
+            formats::Dword::from_bytes(get_bytes(id).ok().as_deref())
+        } else {
+            formats::Dword::Absent
+        }
+    };
+    let history = dword(ids.history);
+    let cloud = dword(ids.cloud);
+    let mut raw = Raw {
+        seq,
+        history,
+        cloud,
+        text: None,
+        html: None,
+        png: None,
+        dibv5: None,
+        dib: None,
+        formats,
+    };
+    let private = formats::is_private(
+        raw.formats.contains(&ids.exclude) || raw.formats.contains(&ids.viewer_ignore),
+        raw.history,
+        raw.cloud,
+        raw.formats.contains(&ids.origin),
+    );
+    let files = raw.formats.contains(&formats::CF_HDROP) || raw.formats.contains(&ids.file_group);
+    if private || files {
+        // Never read the content of a private or file copy.
+        return Ok(raw);
+    }
+    if raw.formats.contains(&formats::CF_UNICODETEXT) {
+        // A listed text that cannot be read (a delayed-render owner that failed) must not
+        // lose an image that reads fine: read on without it.
+        raw.text = get_bytes(formats::CF_UNICODETEXT).ok();
+        if raw.text.is_some() && raw.formats.contains(&ids.html) {
+            raw.html = get_bytes(ids.html).ok();
+        }
+    }
+    if raw.formats.contains(&ids.png) {
+        // A "PNG" that is not a PNG must not hide the DIB fallback.
+        raw.png = get_bytes(ids.png)
+            .ok()
+            .filter(|b| png_signature(dib::trim_png(b)));
+    }
+    if raw.png.is_none() {
+        if raw.formats.contains(&formats::CF_DIBV5) {
+            raw.dibv5 = get_bytes(formats::CF_DIBV5).ok();
+        }
+        if raw.formats.contains(&formats::CF_DIB) {
+            raw.dib = get_bytes(formats::CF_DIB).ok();
+        }
+    }
+    Ok(raw)
 }
 
 impl Drop for WinClipboard {
@@ -536,11 +596,11 @@ impl Clipboard for WinClipboard {
     /// `PNG` format if present, else `CF_DIBV5`, else `CF_DIB`, converted). File lists and
     /// private copies come back with flags set and no parts.
     fn read(&mut self) -> Result<Snapshot, ClipboardError> {
-        let raw = self.read_raw_state()?;
+        let raw = self.read_raw_timed()?;
         let ids = self.ids;
         let has_marker = raw.formats.contains(&ids.origin);
         let private = formats::is_private(
-            raw.formats.contains(&ids.exclude),
+            raw.formats.contains(&ids.exclude) || raw.formats.contains(&ids.viewer_ignore),
             raw.history,
             raw.cloud,
             has_marker,

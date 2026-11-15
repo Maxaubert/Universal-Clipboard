@@ -4,6 +4,9 @@
 pub const ORIGIN: &str = "UniversalClipboard.Origin";
 /// Private marker: present means "do not record this copy".
 pub const EXCLUDE_MONITOR: &str = "ExcludeClipboardContentFromMonitorProcessing";
+/// Legacy private marker (older password tools such as KeePass 1.x and some clipboard
+/// tools). Present means "do not record this copy", like [`EXCLUDE_MONITOR`].
+pub const VIEWER_IGNORE: &str = "Clipboard Viewer Ignore";
 /// Private marker when its DWORD value is 0. We never set it, so our writes stay in Win+V.
 pub const CAN_INCLUDE_IN_HISTORY: &str = "CanIncludeInClipboardHistory";
 /// Private marker when its DWORD value is 0. Our writes set it to 0 (plan 3.8).

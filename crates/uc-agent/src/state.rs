@@ -123,17 +123,23 @@ impl StateFile {
     /// Load. A missing file gives the defaults; a broken file is kept aside as
     /// `state.json.bad` and the defaults are used (the device then pairs again).
     pub fn load(dir: &Path) -> StateFile {
+        Self::load_checked(dir).0
+    }
+
+    /// Like [`StateFile::load`], and also says whether the file was there but broken (it is
+    /// then set aside as `state.json.bad`), so the user can be told.
+    pub fn load_checked(dir: &Path) -> (StateFile, bool) {
         let p = Self::path(dir);
         match std::fs::read(&p) {
             Ok(b) => match serde_json::from_slice(&b) {
-                Ok(s) => s,
+                Ok(s) => (s, false),
                 Err(e) => {
                     tracing::warn!(error = %e, "state file broken, starting fresh");
                     let _ = std::fs::rename(&p, dir.join("state.json.bad"));
-                    StateFile::default()
+                    (StateFile::default(), true)
                 }
             },
-            Err(_) => StateFile::default(),
+            Err(_) => (StateFile::default(), false),
         }
     }
 
@@ -242,5 +248,19 @@ mod tests {
         }
         assert_eq!(s.activity.len(), ACTIVITY_MAX);
         assert_eq!(s.activity.last().unwrap().time_ms, 49);
+    }
+
+    #[test]
+    fn a_broken_file_is_reported_and_set_aside() {
+        let dir = std::env::temp_dir().join(format!("uc-state-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(StateFile::load_checked(&dir), (StateFile::default(), false));
+        std::fs::write(dir.join("state.json"), b"{ not json").unwrap();
+        let (s, broken) = StateFile::load_checked(&dir);
+        assert!(broken);
+        assert_eq!(s, StateFile::default());
+        assert!(dir.join("state.json.bad").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

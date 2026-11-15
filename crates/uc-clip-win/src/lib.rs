@@ -23,4 +23,4 @@ pub mod html;
 mod win;
 
 #[cfg(windows)]
-pub use win::{RawFormat, Retry, WinClipboard, format_name, register_format};
+pub use win::{READ_TIMEOUT, RawFormat, Retry, WinClipboard, format_name, register_format};
