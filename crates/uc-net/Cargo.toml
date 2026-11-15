@@ -24,7 +24,7 @@ sha2 = "0.10"
 socket2 = { version = "0.6.5", features = ["all"] }
 tokio = { version = "1.54.1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
 tracing = "0.1.44"
-uc-core = { version = "0.1.0", path = "../uc-core" }
+uc-core = { version = "0.1.1", path = "../uc-core" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Networking_WinSock"] }
@@ -33,5 +33,5 @@ windows-sys = { version = "0.61.2", features = ["Win32_Networking_WinSock"] }
 if-addrs = "0.15.0"
 proptest = "1.12.0"
 serde_json = "1.0.154"
-uc-clip = { version = "0.1.0", path = "../uc-clip" }
-uc-testkit = { version = "0.1.0", path = "../uc-testkit" }
+uc-clip = { version = "0.1.1", path = "../uc-clip" }
+uc-testkit = { version = "0.1.1", path = "../uc-testkit" }

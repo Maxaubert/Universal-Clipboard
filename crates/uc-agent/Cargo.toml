@@ -33,21 +33,21 @@ serde_json = "1.0.154"
 tokio = { version = "1.54.1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros", "io-util", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
-uc-clip = { version = "0.1.0", path = "../uc-clip" }
-uc-clip-linux = { version = "0.1.0", path = "../uc-clip-linux" }
-uc-core = { version = "0.1.0", path = "../uc-core" }
-uc-keys = { version = "0.1.0", path = "../uc-keys" }
-uc-net = { version = "0.1.0", path = "../uc-net" }
-uc-pair = { version = "0.1.0", path = "../uc-pair" }
-uc-update = { version = "0.1.0", path = "../uc-update" }
+uc-clip = { version = "0.1.1", path = "../uc-clip" }
+uc-clip-linux = { version = "0.1.1", path = "../uc-clip-linux" }
+uc-core = { version = "0.1.1", path = "../uc-core" }
+uc-keys = { version = "0.1.1", path = "../uc-keys" }
+uc-net = { version = "0.1.1", path = "../uc-net" }
+uc-pair = { version = "0.1.1", path = "../uc-pair" }
+uc-update = { version = "0.1.1", path = "../uc-update" }
 zeroize = "1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
 
 [target.'cfg(windows)'.dependencies]
-uc-clip-win = { version = "0.1.0", path = "../uc-clip-win" }
-uc-winhost = { version = "0.1.0", path = "../../tools/winhost" }
+uc-clip-win = { version = "0.1.1", path = "../uc-clip-win" }
+uc-winhost = { version = "0.1.1", path = "../../tools/winhost" }
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
   "Win32_Security",
@@ -63,7 +63,7 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-uc-clip-mac = { version = "0.1.0", path = "../uc-clip-mac" }
+uc-clip-mac = { version = "0.1.1", path = "../uc-clip-mac" }
 objc2 = "0.6.5"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSError"] }
 objc2-service-management = { version = "0.3.2", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }

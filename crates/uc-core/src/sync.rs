@@ -29,7 +29,6 @@ use crate::clip::{Clip, ClipError, ClipKind};
 use crate::hlc::{FUTURE_LIMIT_MS, Hlc, Stamp};
 use crate::ids::{ClipId, ContentHash, DeviceId};
 use crate::msg::{self, ClipHeader, CodecError, DeviceRecord, Hello, Message, Role};
-use crate::recent::{RECENT, Recent};
 use crate::text;
 
 /// Automatic apply limit: 1 hour.
@@ -110,9 +109,10 @@ pub enum SkipReason {
     Marker,
     /// Echo layer 2: the change counter is the one of our own write.
     OwnWrite,
-    /// Echo layer 3: this wire ID was received or sent before.
+    /// Echo layer 3: these exact bytes are the current clip (the one held, sent or received).
     SeenId,
-    /// Echo layer 4: this content was applied or sent in the last 64 clips.
+    /// Echo layer 4: this content is the current clip, re-encoded (for example by a clipboard
+    /// manager). An older clip copied again is a new copy and is sent.
     SeenContent,
     /// The source marked it as private (password manager).
     Private,
@@ -255,6 +255,8 @@ struct PeerState {
 struct Held {
     clip: Clip,
     header: ClipHeader,
+    /// `clip.content_hash()`, kept so each local change hashes only the new clip.
+    content: ContentHash,
 }
 
 /// The sync state machine of one device.
@@ -264,8 +266,6 @@ pub struct Engine {
     held: Option<Held>,
     applied: Option<ClipId>,
     peers: BTreeMap<DeviceId, PeerState>,
-    recent_ids: Recent<ClipId>,
-    recent_content: Recent<ContentHash>,
     last_write_seq: Option<u64>,
     explicit: BTreeSet<ClipId>,
     paused: bool,
@@ -281,8 +281,6 @@ impl Engine {
             held: None,
             applied: None,
             peers: BTreeMap::new(),
-            recent_ids: Recent::new(RECENT),
-            recent_content: Recent::new(RECENT),
             last_write_seq: None,
             explicit: BTreeSet::new(),
             paused: false,
@@ -471,13 +469,16 @@ impl Engine {
                 return out;
             }
         };
-        // Layer 3: never send a wire ID that was received (or already sent).
-        if self.recent_ids.contains(&clip.id()) || self.held_id() == Some(clip.id()) {
+        // Layers 3 and 4 compare with the current clip only. A clip received (or sent) and then
+        // seen again on this clipboard, as is or re-encoded, is never sent back. An older clip
+        // that the user copies again is a new copy: it is sent, so the other devices get it
+        // (bug 2026-11-15: a link copied a second time never reached the Mac).
+        if self.held_id() == Some(clip.id()) {
             out.push(Event::Skipped(SkipReason::SeenId));
             return out;
         }
-        // Layer 4: never send content that was applied or sent recently.
-        if self.recent_content.contains(&clip.content_hash()) {
+        let content = clip.content_hash();
+        if self.held.as_ref().is_some_and(|h| h.content == content) {
             out.push(Event::Skipped(SkipReason::SeenContent));
             return out;
         }
@@ -489,11 +490,13 @@ impl Engine {
             stamp,
             parts: clip.metas().to_vec(),
         };
-        self.recent_ids.push(clip.id());
-        self.recent_content.push(clip.content_hash());
         self.applied = Some(clip.id());
         let (id, kind, size) = (clip.id(), clip.kind(), clip.size());
-        self.held = Some(Held { clip, header });
+        self.held = Some(Held {
+            clip,
+            header,
+            content,
+        });
 
         let targets: Vec<DeviceId> = self.peers.keys().copied().collect();
         if self.cfg.role == Role::PullOnly && !self.has_full_peer() {
@@ -664,12 +667,12 @@ impl Engine {
             || self.age_ms(stamp, now_ms) < self.cfg.auto_apply_max_age_ms
     }
 
+    /// Only the stamp decides. The same bytes copied again carry the same wire ID but a newer
+    /// stamp, and must be applied. A clip already held (or older) never has a newer stamp.
     fn is_newer(&self, h: &ClipHeader) -> bool {
-        !self.recent_ids.contains(&h.id)
-            && self
-                .held
-                .as_ref()
-                .is_none_or(|held| h.stamp > held.header.stamp)
+        self.held
+            .as_ref()
+            .is_none_or(|held| h.stamp > held.header.stamp)
     }
 
     fn on_hello(&mut self, from: DeviceId, h: Hello, now_ms: u64, out: &mut Vec<Event>) {
@@ -749,7 +752,7 @@ impl Engine {
             out.push(Event::RefusedFutureStamp { peer: from });
             return;
         }
-        // Layer 3: never apply a wire ID we already hold or had.
+        // Layer 3: never apply a clip we already hold, or one older than it.
         if !self.is_newer(&header) {
             // Still move the clock: the stamp is valid.
             let _ = self.hlc.observe(&header.stamp, now_ms);
@@ -772,8 +775,12 @@ impl Engine {
             .get(&from)
             .is_some_and(|p| p.role == Role::PullOnly);
         let stamp = header.stamp;
-        self.recent_ids.push(header.id);
-        self.held = Some(Held { clip, header });
+        let content = clip.content_hash();
+        self.held = Some(Held {
+            clip,
+            header,
+            content,
+        });
 
         if self.paused || !(explicit || self.auto_apply_allowed(&stamp, now_ms)) {
             out.push(Event::HeldOnly {
@@ -815,17 +822,11 @@ impl Engine {
                 Format::ImagePng => (*f, d.clone()),
             })
             .collect();
-        let (id, kind, origin, content) = (
-            held.header.id,
-            held.clip.kind(),
-            held.header.origin,
-            held.clip.content_hash(),
-        );
+        let (id, kind, origin) = (held.header.id, held.clip.kind(), held.header.origin);
         match cb.write(&native) {
             Ok(seq) => {
                 self.last_write_seq = Some(seq);
                 self.applied = Some(id);
-                self.recent_content.push(content);
                 out.push(Event::Applied { id, kind, origin });
             }
             Err(_) => out.push(Event::WriteFailed),

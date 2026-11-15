@@ -622,12 +622,13 @@ behind does no harm: the hybrid clock never goes below the highest stamp it has 
    `application/x-uclip-origin` on Linux). A change that carries the marker is never sent.
 2. It also records the clipboard sequence number (Windows), `changeCount` (macOS) or its own
    selection ownership (Linux) of that write, and skips that event.
-3. Protocol level: a device never sends a wire ID that it received, and never applies one it
-   already holds. A small list of the last 64 IDs backs this up.
+3. Protocol level: a device never sends back the clip it holds (same wire ID), and never applies
+   a clip that is not newer (by stamp) than the one it holds.
 4. **Content level:** a clipboard manager can rewrite a clip (it drops our marker and re-encodes
-   the bytes), which gives a new wire ID. So the agent also keeps the content hashes of the last
-   64 clips it applied or sent, and never sends a clip whose content hash is in that list. Without
-   this, two devices with clipboard managers could send the same clip back and forth for ever.
+   the bytes), which gives a new wire ID. So the agent never sends a clip whose content hash
+   equals the held clip's. Without this, two devices with clipboard managers could send the same
+   clip back and forth for ever. (Changed 2026-11-15: layers 3 and 4 first blocked the last 64
+   clips, so an older item copied again never synced. See `docs/core.md`.)
 
 **Copied files:** if the clipboard holds a file reference (`CF_HDROP` on Windows, `public.file-url`
 on macOS, `text/uri-list` with `file://` on Linux), the whole clip is skipped. The file name text
