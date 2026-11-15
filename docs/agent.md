@@ -23,7 +23,7 @@ This page lists where the plan left room, and the choice M7 made.
 | State (`state.json`) | Windows `%LOCALAPPDATA%\UniversalClipboard[-profile]`, macOS `~/Library/Application Support/uclip[-profile]`, Linux `~/.local/share/uclip[-profile]` |
 | Device key | key store entry `device-key` |
 | Group secret | key store entries `group-secret` and `group-secret-prev` (4-byte epoch + 32 bytes) |
-| Log | `agent.log` in the state folder, rotates at 256 KB to `agent.log.1` |
+| Log | `agent.log` in the state folder, rotates at 256 KB to `agent.log.1`. Level: `UCLIP_LOG` (`trace`/`debug`/`info`/`warn`/`error`, any case; default `info`). At `info`: start (version, OS), link up/down and path changes (4-byte device ID prefix only), every skipped copy with its reason (own echoes stay at `debug`), parts not sent, panics, start failures, a dead clipboard watcher. The diagnostic report takes the last 100 lines across both files. Review 2026-11-15: `research/universal-clipboard/2026-11-15-copy-cases-and-network-review.md`. |
 | IPC | Windows `\\.\pipe\uclip-<SID>[-profile]`; macOS `<state>/agent.sock`; Linux `$XDG_RUNTIME_DIR/uclip[-profile]/agent.sock` |
 | Single agent | lock file `agent.lock` (held for the whole run) plus the first-instance pipe or the socket check. A second agent exits with code 3. |
 

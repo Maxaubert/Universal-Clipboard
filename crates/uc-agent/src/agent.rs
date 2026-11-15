@@ -60,6 +60,11 @@ fn hex(b: &[u8]) -> String {
     HEXLOWER.encode(b)
 }
 
+/// A short device ID for log lines: the first 4 bytes in hex. Never a name or an address.
+fn short_id(id: &[u8; 32]) -> String {
+    hex(&id[..4])
+}
+
 /// The OS device type of protocol 4.7.
 pub fn own_device_type() -> u8 {
     if cfg!(windows) {
@@ -243,6 +248,8 @@ pub struct Core {
     shutdown: bool,
     started: Instant,
     dirty: bool,
+    /// Save the address book at the next tick (a link came up).
+    book_due: bool,
     /// Self-update (Windows exe and macOS dmg builds; test feeds in test profiles). It checks
     /// once, shortly after start, and never installs without the user.
     updater: Option<crate::update::Updater>,
@@ -292,7 +299,12 @@ pub fn run(profile: Profile) -> Result<(), StartError> {
             }
             Err(e) => return Err(StartError(e.to_string())),
         };
-        tracing::info!(ipc = %listener.name(), profile = %profile.name, "agent starting");
+        tracing::info!(
+            version = env!("CARGO_PKG_VERSION"),
+            os = std::env::consts::OS,
+            profile = %profile.name,
+            "agent starting"
+        );
         let (tx, rx) = mpsc::channel(64);
         tokio::spawn(listener.run(tx));
         let (pair_tx, pair_rx) = mpsc::unbounded_channel();
@@ -301,6 +313,11 @@ pub fn run(profile: Profile) -> Result<(), StartError> {
         core.main(rx, pair_rx, wake_rx).await;
         Ok(())
     });
+    match &r {
+        Err(e) if e.0 == "already running" => tracing::info!("another agent already runs"),
+        Err(e) => tracing::error!(error = %e.0, "agent could not start"),
+        Ok(()) => {}
+    }
     rt.shutdown_timeout(Duration::from_secs(2));
     drop(lock);
     r
@@ -341,9 +358,14 @@ impl Core {
                     .spawn(move || {
                         while rx.recv().is_ok() {
                             if tx.send(Wake::ClipChanged).is_err() {
-                                break;
+                                // The agent is stopping.
+                                return;
                             }
                         }
+                        // The clipboard watcher ended while the agent still runs.
+                        tracing::error!(
+                            "clipboard watching stopped; local copies will not sync until a restart"
+                        );
                     })
                     .map_err(|e| StartError(format!("thread: {e}")))?;
             }
@@ -422,6 +444,7 @@ impl Core {
             shutdown: false,
             started: Instant::now(),
             dirty: false,
+            book_due: false,
             updater: crate::update::UpdateCfg::from_profile(&profile_for_update)
                 .map(|c| crate::update::Updater::new(c, profile_for_update.clone())),
             version: crate::update::current_version(&profile_for_update),
@@ -854,7 +877,10 @@ impl Core {
         if self.dirty {
             self.save();
         }
-        if self.started.elapsed() > Duration::from_secs(2) && wall % 60_000 < 1000 {
+        if self.book_due
+            || (self.started.elapsed() > Duration::from_secs(2) && wall % 60_000 < 1000)
+        {
+            self.book_due = false;
             // About once a minute: keep remembered addresses on disk.
             self.save_book().await;
         }
@@ -883,7 +909,15 @@ impl Core {
                     self.activity(kind_text(kind), "received", Some(name), None);
                 }
                 EngineEvent::PartDropped(d) => {
-                    if d.format == uc_clip::Format::ImagePng {
+                    tracing::info!(format = ?d.format, size = d.size, "part not sent");
+                    if d.format == uc_clip::Format::TextPlain {
+                        self.activity(
+                            "Text",
+                            "not sent",
+                            None,
+                            Some("Text was too large to sync (limit 1 MB).".into()),
+                        );
+                    } else if d.format == uc_clip::Format::ImagePng {
                         let note = format!(
                             "Image was too large to sync (limit {} MB).",
                             self.state.settings.image_limit_mb
@@ -892,6 +926,7 @@ impl Core {
                     }
                 }
                 EngineEvent::Skipped(SkipReason::TooLarge) => {
+                    tracing::info!(reason = "TooLarge", "skipped");
                     self.activity(
                         "Copy",
                         "not sent",
@@ -899,7 +934,19 @@ impl Core {
                         Some("It was too large to sync.".into()),
                     );
                 }
-                EngineEvent::Skipped(r) => tracing::debug!(reason = ?r, "skipped"),
+                // Our own echoes are routine: debug. Every other skip explains a copy that did
+                // not sync, so it is in the default log (reason only, never content).
+                EngineEvent::Skipped(
+                    r @ (SkipReason::OwnWrite
+                    | SkipReason::Marker
+                    | SkipReason::SeenId
+                    | SkipReason::SeenContent
+                    | SkipReason::Paused),
+                ) => tracing::debug!(reason = ?r, "skipped"),
+                EngineEvent::Skipped(r @ (SkipReason::ReadFailed | SkipReason::Invalid(_))) => {
+                    tracing::warn!(reason = ?r, "skipped")
+                }
+                EngineEvent::Skipped(r) => tracing::info!(reason = ?r, "skipped"),
                 EngineEvent::OwnClockAhead { .. } => self.clock_ahead = true,
                 EngineEvent::BadFrame { peer, .. } => {
                     tracing::warn!("bad frame, closing link");
@@ -918,12 +965,16 @@ impl Core {
         match ev {
             NetEvent::Up(link) => self.on_up(link),
             NetEvent::Down { peer } => {
+                tracing::info!(peer = %short_id(&peer.0), "link down");
                 self.peers.remove(&peer);
                 self.engine.disconnect(peer);
                 self.emit("devices", json!({}));
             }
             NetEvent::Frame { peer, frame } => self.on_frame(peer, frame),
             NetEvent::Path { peer, state } => {
+                if self.paths.get(&peer) != Some(&state) {
+                    tracing::info!(peer = %short_id(&peer.0), state = ?state, "path");
+                }
                 self.paths.insert(peer, state);
                 self.emit("devices", json!({}));
             }
@@ -968,6 +1019,10 @@ impl Core {
 
     fn on_up(&mut self, link: Link) {
         let peer = link.peer;
+        tracing::info!(peer = %short_id(&peer.0), "link up");
+        // Keep the address that worked on disk soon, not only once a minute, so a crash
+        // right after pairing or an address change can still dial on the next start.
+        self.book_due = true;
         let Some(g) = &self.graph else {
             link.close(2, b"no group");
             return;
@@ -2367,7 +2422,7 @@ impl Core {
         }
         lines.push(String::new());
         lines.push("Log (last lines):".into());
-        lines.extend(crate::log::tail(&self.dir, 40));
+        lines.extend(crate::log::tail(&self.dir, 100));
         let text = lines.join("\n");
         json!({ "report": text })
     }

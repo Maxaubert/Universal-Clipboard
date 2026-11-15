@@ -32,9 +32,12 @@ pub const ALPN_PAIR: &[u8] = b"uclip-pair/1";
 /// Timers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Timing {
-    /// QUIC keep-alive (plan 3.3: 15 s).
+    /// QUIC keep-alive. 5 s (plan 3.3 said 15 s; changed 2026-11-15, see `idle_timeout`).
     pub keep_alive: Duration,
-    /// Idle timeout: a dead path is found within this time (plan 3.3: under 30 s).
+    /// Idle timeout. The idle clock starts at the last packet received, which can be up to one
+    /// keep-alive before the peer died, so a dead peer is found within `keep_alive +
+    /// idle_timeout` (5 + 24 = 29 s, plan 3.3: under 30 s). With 15 + 29 it took up to 44 s.
+    /// 24 s also lets four keep-alives in a row get lost on bad Wi-Fi before the link drops.
     pub idle_timeout: Duration,
     /// Limit for one dial or one handshake.
     pub handshake_timeout: Duration,
@@ -43,8 +46,8 @@ pub struct Timing {
 impl Default for Timing {
     fn default() -> Self {
         Self {
-            keep_alive: Duration::from_secs(15),
-            idle_timeout: Duration::from_secs(29),
+            keep_alive: Duration::from_secs(5),
+            idle_timeout: Duration::from_secs(24),
             handshake_timeout: Duration::from_secs(5),
         }
     }

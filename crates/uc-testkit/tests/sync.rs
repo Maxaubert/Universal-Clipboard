@@ -97,6 +97,42 @@ fn an_older_clip_copied_again_syncs_again() {
 }
 
 #[test]
+fn empty_text_is_not_sent() {
+    let mut net = FakeNet::full_mesh(2);
+    net.copy_text(0, "keep me");
+    net.run();
+    // An app sets empty text (only a NUL): it must not wipe the other clipboard.
+    net.copy(0, vec![(Format::TextPlain, b"\0".to_vec())]);
+    assert!(has(&net, 0, |e| *e == Event::Skipped(SkipReason::Empty)));
+    assert_eq!(net.in_flight(), 0);
+    assert_eq!(net.text(1).as_deref(), Some("keep me"));
+}
+
+#[test]
+fn html_that_is_not_utf8_still_sends_the_text() {
+    let mut net = FakeNet::full_mesh(2);
+    // UTF-16 HTML next to good text (some Linux apps): the text must still sync.
+    net.copy(
+        0,
+        vec![
+            (Format::TextPlain, b"plain".to_vec()),
+            (Format::TextHtml, vec![0xff, 0xfe, b'<', 0, b'b', 0]),
+        ],
+    );
+    net.run();
+    assert_eq!(net.text(1).as_deref(), Some("plain"));
+}
+
+#[test]
+fn html_without_text_is_empty_not_too_large() {
+    let mut net = FakeNet::full_mesh(2);
+    net.copy(0, vec![(Format::TextHtml, b"<b>x</b>".to_vec())]);
+    assert!(has(&net, 0, |e| *e == Event::Skipped(SkipReason::Empty)));
+    assert!(!has(&net, 0, |e| *e == Event::Skipped(SkipReason::TooLarge)));
+    assert_eq!(net.in_flight(), 0);
+}
+
+#[test]
 fn the_current_clip_copied_again_is_not_sent() {
     let mut net = FakeNet::full_mesh(2);
     net.copy_text(0, "same");

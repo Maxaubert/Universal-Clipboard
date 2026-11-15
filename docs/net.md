@@ -124,7 +124,9 @@ addresses, nothing listens.
 - Backoff 0.25 s doubling to 30 s per peer; reset on a new address, an interface change and on
   wake. Wake is `Net::wake()` from the OS, or found by the loop itself (a tick late by more than
   5 s, or the wall clock jumping): rescan, redial at once.
-- Keep-alive 15 s, idle timeout 29 s: a dead path is found in under 30 s (plan 3.3).
+- Keep-alive 5 s, idle timeout 24 s: a dead path is found in under 30 s (plan 3.3). The worst
+  case is keep-alive + idle timeout, because the idle clock starts at the last packet received.
+  (Was 15 s + 29 s until 2026-11-15, which measured up to 44 s for a hard-killed peer.)
 
 ## Path state and the VPN rule
 
