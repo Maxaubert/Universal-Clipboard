@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone errors</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: errors. */
+  :root { --bad-bg: rgba(180, 35, 24, 0.10); --ok-bg: rgba(30, 122, 70, 0.12); }
+  html.dark { --bad-bg: rgba(255, 107, 94, 0.16); --ok-bg: rgba(63, 181, 110, 0.18); }
+  .hid { opacity: 0; }
+  .st { stroke: var(--label); }
+  .fl { fill: var(--cell); }
+  .lg-fill { fill: var(--label); }
+  .badst { stroke: var(--bad); }
+  .badfl { fill: var(--bad); }
+  .okst { stroke: var(--ok); }
+  .mutest { stroke: var(--label-3); }
+
+  /* Home (H3 "You are here" + A3 "Ticker"). */
+  .lt { position: relative; height: 41px; overflow: hidden; }
+  .lt > span { position: absolute; left: 0; right: 0; top: 0; white-space: nowrap; }
+  .tk { position: relative; height: 40px; margin-top: 4px; }
+  .tk > span { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: flex-start; gap: 8px; font-size: 15px; line-height: 20px; letter-spacing: -0.23px; color: var(--label-2); }
+  .tk > span svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+  .tk > span .dt { margin-top: 6px; }
+  .tk > span.bad { color: var(--label); }
+  .hbody { position: relative; flex: none; }
+  .fixg { position: absolute; left: 0; right: 0; top: 0; }
+  .fixc { position: relative; height: 124px; }
+  .fixc > div { position: absolute; inset: 0; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; }
+  .fixc .fx-t { display: flex; gap: 12px; align-items: flex-start; }
+  .fixc .fx-t svg { width: 22px; height: 22px; flex: none; color: var(--bad); margin-top: -1px; }
+  .sbtn { height: 36px; border: 0; border-radius: 18px; padding: 0 18px; background: var(--tint); color: var(--on-tint); font: 600 15px/20px var(--sf); letter-spacing: -0.23px; align-self: flex-start; margin-left: 34px; }
+  .stw { position: relative; height: 20px; }
+  .stw > span { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 15px; line-height: 20px; letter-spacing: -0.23px; color: var(--label-2); }
+  .row.dev { min-height: 62px; }
+  .me {
+    position: absolute; z-index: 3; left: 16px; right: 16px; bottom: 46px; height: 72px; border-radius: 26px;
+    background: var(--dark-bar); color: var(--on-dark); display: flex; align-items: center; gap: 14px; padding: 0 20px; box-sizing: border-box;
+  }
+  .me .dlogo { background: var(--dark-bar-2); color: var(--on-dark); }
+  .me .t-foot { color: var(--on-dark-2); }
+
+  /* Code screen (E1 "Shake, then clear" from the desktop). */
+  .pin { transform: translateX(393px); }
+  html.reduce .pin { transform: none; opacity: 0; }
+  .cd-top { position: absolute; left: 24px; right: 24px; top: 128px; text-align: center; display: flex; flex-direction: column; gap: 8px; }
+  .cd-dig { position: absolute; left: 0; right: 0; top: 222px; }
+  .pd > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 14px; }
+  .pd .rg { box-shadow: inset 0 0 0 2px var(--bad); opacity: 0; }
+  .pd .gr { box-shadow: inset 0 0 0 1.5px var(--fill-2); opacity: 0; }
+  .cd-msg { position: absolute; left: 28px; right: 28px; top: 300px; height: 44px; }
+  .cd-msg p { position: absolute; left: 0; right: 0; top: 0; text-align: center; color: var(--bad); font-size: 15px; line-height: 20px; letter-spacing: -0.23px; }
+  .cbtn { position: absolute; left: 20px; right: 20px; top: 526px; width: auto; }
+  .cbtn > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .numpad .del { background: transparent; box-shadow: none; }
+  html.dark .numpad span.blank, html.dark .numpad span.del { background: transparent; box-shadow: none; }
+  .numpad .del svg { width: 26px; height: 26px; }
+
+  /* E2 full screen. */
+  .app.full { z-index: 5; }
+  .fs-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 30px; }
+  .fs-txt { position: relative; width: 100%; height: 150px; margin-top: 34px; }
+  .fs-txt > div { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; }
+  .fs-btn { position: relative; }
+  .fs-btn > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+  /* E3 sheet. */
+  .esheet { padding: 0 24px 24px; align-items: center; text-align: center; }
+  .esheet .eic { width: 60px; height: 60px; border-radius: 30px; background: var(--bad-bg); color: var(--bad); display: flex; align-items: center; justify-content: center; margin-top: 22px; }
+  .esheet .eic svg { width: 30px; height: 30px; }
+  .esheet h2 { margin: 16px 0 6px; }
+  .esheet p { margin-bottom: 22px; }
+  .rise { transform: translateY(110%); }
+  html.reduce .rise { transform: none; opacity: 0; }
+  .touch { position: absolute; z-index: 40; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(120, 112, 104, 0.35); box-shadow: 0 0 0 1px rgba(255,255,255,0.5); opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>Errors: three ways</h1>
+    <p class="gal-note">The code screen is the same in all three and follows the desktop's E1 "Shake, then clear": a wrong code gives one soft shake and red outlines, then the boxes empty one by one. The options differ in how the other problems show: no computer on this network, Local Network turned off, and a VPN that blocks the local network. Each problem is one sentence and one button. Each story ends on the code screen.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="e1" data-loop="15500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>E1</b> Inline</div>
+      <p class="opt-desc">Home stays on screen. The title turns to "Needs attention", the line under it rolls to the problem with a red dot, and one card with one button opens above the devices. Shows no computer, then Local Network, then a wrong code.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="e2" data-loop="18000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>E2</b> Full screen</div>
+      <p class="opt-desc">Each problem takes the whole screen, calm, with the desktop drawing: computer, red dashed link, iPhone. Try again turns the link grey while it looks, then green when it works. Shows no computer, then the VPN, then a wrong code and an old code.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="e3" data-loop="15500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>E3</b> Sheet</div>
+      <p class="opt-desc">Home stays behind; a short sheet rises with one sentence and one button. A swipe down puts it away. Shows Local Network (swiped away), then the VPN (fixed with Try again), then a wrong code.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="../desktop/motion/art.js"></script>
+<script src="ios.js"></script>
+<script src="../desktop/motion/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const A = window.UC_ART, I = IOS.ic;
+  const LOG = (k, x, y, s) => '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')" class="lg-fill">' + A[k] + '</g>';
+
+  /* Copy. */
+  const T = {
+    noc: 'No computer is on right now on this network.',
+    noc2: 'Phones can only sync while one of your computers is on.',
+    ln: 'Turn on Local Network',
+    ln2: 'Settings › Universal Clipboard › Local Network',
+    vpn: 'Your VPN may be blocking your local network.',
+    vpn2: 'Turn on Local network sharing in your VPN.',
+    again: 'Try again', open: 'Open Settings',
+    last: 'Text, from Max\'s PC, just now',
+  };
+  const dotBad = '<span class="dt bad"></span>';
+
+  /* ---------- Home ---------- */
+  const devs = [['Max\'s PC', 'windows', 1], ['Mac mini', 'apple', 1], ['Ubuntu laptop', 'linux', 1], ['Max\'s iPad', 'apple', 0]];
+  const devRow = ([n, lg, on], i) =>
+    '<div class="row ic dev d' + i + '"><div class="dlogo"><i data-logo="' + lg + '"></i></div>' +
+    '<div class="rt"><b>' + n + '</b><div class="stw">' +
+    (on ? '<span class="s-ok"><span class="dt ok"></span>Connected</span><span class="s-w hid"><span class="dt ring"></span>Waiting</span>'
+        : '<span><span class="dt ring"></span>Asleep</span>') +
+    '</div></div></div>';
+  // ticks: [[class, html, bad?], ...]; fix: inner HTML for the E1 card (or '').
+  const home = (ticks, fix) =>
+    '<div class="app safe layer L-home">' +
+    '<div class="nav"><span></span><div class="bbs"><button class="bb b-plus">' + I.plus + '</button><button class="bb">' + I.gear + '</button></div></div>' +
+    '<div class="largetitle"><div class="lt t-large"><span class="lt0">Working</span><span class="lt1 hid">Needs attention</span></div>' +
+    '<div class="tk">' + ticks.map(([k, h, bad], i) => '<span class="' + k + (bad ? ' bad' : '') + (i ? ' hid' : '') + '">' + h + '</span>').join('') + '</div></div>' +
+    '<div class="gap s"></div>' +
+    '<div class="hbody">' + (fix ? '<div class="fixg hid"><div class="list fixc">' + fix + '</div></div>' : '') +
+    '<div class="devs"><div class="lhead">Devices</div><div class="list">' + devs.map(devRow).join('') + '</div></div></div>' +
+    '<div class="me"><div class="dlogo"><i data-logo="apple"></i></div><div style="display:flex;flex-direction:column;gap:1px"><span class="t-head">Max\'s iPhone</span><span class="t-foot">This iPhone</span></div></div>' +
+    '</div>';
+  const tkLast = ['tk-last', I.down + '<span>' + T.last + '</span>'];
+
+  /* ---------- Code screen ---------- */
+  const DIG0 = [4, 1, 8, 2, 0, 3], DIG1 = [5, 0, 6, 9, 1, 4];
+  const pd = (i) => '<div class="pd p' + i + '"><span class="gr"></span><span class="rg"></span><span class="g0">' + DIG0[i] + '</span><span class="g1 hid">' + DIG1[i] + '</span></div>';
+  const keys = [['1', ''], ['2', 'ABC'], ['3', 'DEF'], ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'], ['7', 'PQRS'], ['8', 'TUV'], ['9', 'WXYZ']];
+  const numpad = '<div class="numpad">' + keys.map(([d, s]) => '<span class="k' + d + '">' + d + (s ? '<small>' + s + '</small>' : '<small>&nbsp;</small>') + '</span>').join('') +
+    '<span class="blank"></span><span class="k0">0</span><span class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h10.5A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></svg></span></div>';
+  const code = () =>
+    '<div class="app layer L-code pin" style="z-index:6">' +
+    '<div class="nav" style="margin-top:59px"><button class="bb">' + I.back + '</button></div>' +
+    '<div class="cd-top"><h1 class="t-title1">Enter the code</h1><p class="t-body c2">It is on your computer.</p></div>' +
+    '<div class="cd-dig"><div class="pdigits">' + pd(0) + pd(1) + pd(2) + '<span class="sp"></span>' + pd(3) + pd(4) + pd(5) + '</div></div>' +
+    '<div class="cd-msg"><p class="m1 hid">That code is not right. Check it and try again.</p><p class="m2 hid">This code no longer works. Make a new code on the computer.</p></div>' +
+    '<button class="pbtn cbtn"><span class="lb0">Connect</span><span class="lb1 hid">Connecting...</span><span class="lb2 hid">Enter a new code</span></button>' +
+    numpad + '</div>';
+
+  /* ---------- E2 drawing: computer, red dashed link, iPhone, red ! circle ---------- */
+  const draw =
+    '<svg width="330" height="150" viewBox="0 0 330 150" fill="none" aria-hidden="true" style="display:block">' +
+    '<path class="badst ln-bad" d="M138 70H168M212 70H244" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 7"/>' +
+    '<path class="mutest ln-look hid" d="M138 70H168M212 70H244" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 7"/>' +
+    '<path class="okst ln-ok" d="M138 70H244" stroke-width="2.5" stroke-linecap="round" pathLength="1" stroke-dasharray="1 1" stroke-dashoffset="1"/>' +
+    '<rect class="fl st" x="12" y="28" width="126" height="84" rx="8" stroke-width="2"/>' +
+    '<path class="st" d="M75 112v12M56 126h38" stroke-width="2" stroke-linecap="round"/>' + LOG('logoWindows', 61, 56, 1.15) +
+    '<rect class="fl st" x="244" y="8" width="70" height="128" rx="15" stroke-width="2"/>' +
+    '<rect class="lg-fill" x="267" y="16" width="24" height="7" rx="3.5"/>' + LOG('logoApple', 266, 58, 1.1) +
+    '<g class="c-bad"><circle class="fl badst" cx="190" cy="70" r="20" stroke-width="2.5"/>' +
+    '<g class="g-ex"><path class="badst" d="M190 60v11" stroke-width="3" stroke-linecap="round"/><circle class="badfl" cx="190" cy="78.5" r="1.9"/></g>' +
+    '<g class="g-sh hid"><path class="badst" d="M190 59.5l7.5 3v5.5c0 4.3-3.1 7.7-7.5 8.9-4.4-1.2-7.5-4.6-7.5-8.9v-5.5z" stroke-width="2.2" stroke-linejoin="round"/></g></g>' +
+    '<g class="c-ok hid"><circle class="fl okst" cx="190" cy="70" r="20" stroke-width="2.5"/><path class="okst" d="M181.5 70.5l5.5 5.5 10-11" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>' +
+    '</svg>';
+  const fsTxt = (k, h, p) => '<div class="' + k + '"><h1 class="t-title2">' + h + '</h1><p class="t-body c2">' + p + '</p></div>';
+  const full = () =>
+    '<div class="app safe layer full L-full">' +
+    '<div class="fs-col">' + draw +
+    '<div class="fs-txt">' + fsTxt('x-noc', T.noc, T.noc2) + fsTxt('x-look hid', 'Looking for your computers...', 'This takes a few seconds.') + fsTxt('x-vpn hid', T.vpn, T.vpn2) + fsTxt('x-ok hid', 'Max\'s PC is here', 'Your latest copy is on this iPhone.') + '</div></div>' +
+    '<div class="foot-actions"><button class="pbtn fs-btn">' + '<span>' + T.again + '</span></button><div style="height:24px"></div></div>' +
+    '</div>';
+
+  /* ---------- E3 sheets ---------- */
+  const sheet = (k, icon, h, p, b) =>
+    '<div class="sheet float esheet rise ' + k + '"><div class="grab"></div>' +
+    '<div class="eic">' + I[icon] + '</div><h2 class="t-title3">' + h + '</h2><p class="t-sub c2">' + p + '</p>' +
+    '<button class="pbtn">' + b + '</button></div>';
+
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = '<div class="phone"><div class="screen">' + html + '</div></div>'; };
+
+  // E1: inline.
+  fill('e1',
+    home([tkLast, ['tk-noc', dotBad + '<span>' + T.noc + '</span>', 1], ['tk-look', '<span class="dt ring"></span><span>Looking for your computers...</span>'],
+      ['tk-ln', dotBad + '<span>' + T.ln + '</span>', 1], ['tk-last2', I.down + '<span>' + T.last + '</span>']],
+      '<div class="fx-noc"><div class="fx-t">' + I.laptop + '<span class="t-sub">' + T.noc2 + '</span></div><button class="sbtn">' + T.again + '</button></div>' +
+      '<div class="fx-ln hid"><div class="fx-t">' + I.wifi + '<span class="t-sub">' + T.ln2 + '</span></div><button class="sbtn">' + T.open + '</button></div>') +
+    code());
+
+  // E2: full screen.
+  fill('e2', home([tkLast]) + full() + code());
+
+  // E3: sheet.
+  fill('e3',
+    home([tkLast, ['tk-wait', '<span class="dt ring"></span><span>Looking for your computers...</span>'], ['tk-last2', I.down + '<span>' + T.last + '</span>']]) +
+    '<div class="dimmer hid"></div>' +
+    sheet('s-ln', 'wifi', T.ln, T.ln2, T.open) + sheet('s-vpn', 'shield', T.vpn, T.vpn2, T.again) +
+    '<div class="touch"></div>' + code());
+
+  IOS.decorate(document);
+
+  /* ---------- helpers ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const PUSH = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const fadeTo = (c, el, from, to, at, d) => an(c, el, [{ opacity: from }, { opacity: to }], { delay: at, duration: d || 300, easing: EIO });
+  const press = (c, el, at) => { if (!c.reduced) an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(0.96)', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: 260, easing: EIO, fill: 'none' }); };
+  // A3 roll: the old line leaves upward, the new one comes up from below.
+  const roll = (c, out, inn, at) => {
+    const R = c.reduced, d = R ? 240 : 380;
+    an(c, out, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: R ? 'none' : 'translateY(-12px)' }], { delay: at, duration: R ? 200 : 240, easing: EIN });
+    an(c, inn, [{ opacity: 0, transform: R ? 'none' : 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { delay: at + 160, duration: d, easing: EOUT });
+  };
+  // A4 hush: a slow wave down the device list. on=false: logos go grey, dots drain to Waiting.
+  const hush = (c, at, on) => {
+    [0, 1, 2].forEach((i) => {
+      const t = at + i * 180;
+      fadeTo(c, c.$('.d' + i + ' .dlogo svg'), on ? 0.4 : 1, on ? 1 : 0.4, t, 600);
+      if (on) roll(c, c.$('.d' + i + ' .s-w'), c.$('.d' + i + ' .s-ok'), t);
+      else roll(c, c.$('.d' + i + ' .s-ok'), c.$('.d' + i + ' .s-w'), t);
+    });
+  };
+  // Push the code screen over Home.
+  const pushCode = (c, at) => {
+    const home = c.$('.L-home'), cd = c.$('.L-code');
+    if (c.reduced) { fadeTo(c, cd, 0, 1, at, 260); return; }
+    an(c, cd, [{ transform: 'translateX(393px)', boxShadow: '-10px 0 30px rgba(0,0,0,0.12)' }, { transform: 'none', boxShadow: '-10px 0 30px rgba(0,0,0,0)' }], { delay: at, duration: 560, easing: PUSH });
+    an(c, home, [{ transform: 'none', filter: 'brightness(1)' }, { transform: 'translateX(-118px)', filter: 'brightness(0.9)' }], { delay: at, duration: 560, easing: PUSH });
+  };
+  const btnLabel = (c, from, to, at) => { fadeTo(c, c.$('.L-code .' + from), 1, 0, at, 140); fadeTo(c, c.$('.L-code .' + to), 0, 1, at + 120, 220); };
+  const key = (c, d, at) => an(c, c.$('.L-code .k' + d), [{ filter: 'brightness(1)' }, { filter: 'brightness(0.82)', offset: 0.3 }, { filter: 'brightness(1)' }], { delay: at, duration: 260, fill: 'none' });
+
+  /* The fixed code error (desktop E1 "Shake, then clear"). Starts with six digits in. old: also the old-code wave. */
+  function codeStory(c, t, old) {
+    const R = c.reduced, L = c.$('.L-code'), b = c.$('.cbtn');
+    const boxes = Array.from(L.querySelectorAll('.pd'));
+    press(c, b, t); btnLabel(c, 'lb0', 'lb1', t + 150);
+    // Wrong: one damped shake, 7 pt at most, and red outlines.
+    const w = t + 1150;
+    if (!R) {
+      const x = (v, o) => ({ transform: 'translateX(' + v + 'px)', offset: o });
+      an(c, L.querySelector('.pdigits'), [x(0, 0), x(-7, 0.18), x(6, 0.38), x(-4, 0.58), x(2, 0.78), x(0, 1)], { delay: w, duration: 560, easing: EIO, fill: 'none' });
+    }
+    boxes.forEach((p) => fadeTo(c, p.querySelector('.rg'), 0, 1, w, 220));
+    btnLabel(c, 'lb1', 'lb0', w);
+    fadeTo(c, L.querySelector('.m1'), 0, 1, w + 150, 360);
+    // The boxes empty one by one, right to left. The button greys while they are empty.
+    boxes.forEach((p, i) => {
+      const ci = w + 900 + (5 - i) * 130;
+      an(c, p.querySelector('.g0'), [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: R ? 'none' : 'translateY(6px)' }], { delay: ci, duration: 240, easing: EIN });
+      fadeTo(c, p.querySelector('.rg'), 1, 0, ci + 260, 360);
+    });
+    const empty = w + 900 + 6 * 130 + 100;
+    an(c, b, [{ backgroundColor: 'var(--tint)', color: 'var(--on-tint)' }, { backgroundColor: 'var(--fill)', color: 'var(--label-3)' }], { delay: w + 1000, duration: 320 });
+    c.after(empty, () => boxes[0].classList.add('cur'));
+    if (!old) return;
+    // Type a newer code, then it turns out to be old: a slow grey wave.
+    const t2 = empty + 500;
+    fadeTo(c, L.querySelector('.m1'), 1, 0, t2, 260);
+    DIG1.forEach((d, i) => {
+      const ti = t2 + i * 210;
+      key(c, d, ti);
+      an(c, boxes[i].querySelector('.g1'), [{ opacity: 0, transform: R ? 'none' : 'scale(0.86)' }, { opacity: 1, transform: 'none' }], { delay: ti + 40, duration: 240, easing: EOUT });
+      c.after(ti + 60, () => { boxes[i].classList.remove('cur'); if (boxes[i + 1]) boxes[i + 1].classList.add('cur'); });
+    });
+    const full6 = t2 + 6 * 210;
+    an(c, b, [{ backgroundColor: 'var(--fill)', color: 'var(--label-3)' }, { backgroundColor: 'var(--tint)', color: 'var(--on-tint)' }], { delay: full6, duration: 320 });
+    const t3 = full6 + 500;
+    press(c, b, t3); btnLabel(c, 'lb0', 'lb1', t3 + 150);
+    const dw = t3 + 1100;
+    boxes.forEach((p, i) => {
+      const di = dw + i * 140;
+      an(c, p, [{ backgroundColor: 'var(--fill)' }, { backgroundColor: 'rgba(0,0,0,0)' }], { delay: di, duration: 800, easing: EIO });
+      fadeTo(c, p.querySelector('.gr'), 0, 1, di, 800);
+      an(c, p.querySelector('.g1'), [{ color: 'var(--label)' }, { color: 'var(--label-3)' }], { delay: di, duration: 800, easing: EIO });
+    });
+    fadeTo(c, L.querySelector('.m2'), 0, 1, dw + 300, 420);
+    btnLabel(c, 'lb1', 'lb2', dw + 400);
+  }
+
+  /* ---------- E1 Inline ---------- */
+  Kit.register('#e1', (c) => {
+    const fix = c.$('.fixg'), dv = c.$('.devs');
+    // 1. No computer.
+    roll(c, c.$('.lt0'), c.$('.lt1'), 1200);
+    roll(c, c.$('.tk-last'), c.$('.tk-noc'), 1300);
+    hush(c, 1300, false);
+    if (!c.reduced) an(c, dv, [{ transform: 'none' }, { transform: 'translateY(140px)' }], { delay: 1500, duration: 560, easing: PUSH });
+    else c.after(1500, () => { dv.style.transform = 'translateY(140px)'; });
+    an(c, fix, [{ opacity: 0, transform: c.reduced ? 'none' : 'translateY(-8px)' }, { opacity: 1, transform: 'none' }], { delay: 1750, duration: 420, easing: EOUT });
+    // Try again: looking, then Local Network.
+    press(c, c.$('.fx-noc .sbtn'), 4300);
+    roll(c, c.$('.tk-noc'), c.$('.tk-look'), 4500);
+    fadeTo(c, c.$('.fx-noc .sbtn'), 1, 0.4, 4500, 240);
+    roll(c, c.$('.tk-look'), c.$('.tk-ln'), 5700);
+    fadeTo(c, c.$('.fx-noc'), 1, 0, 5700, 240);
+    fadeTo(c, c.$('.fx-ln'), 0, 1, 5900, 360);
+    // Open Settings, back again: all well.
+    press(c, c.$('.fx-ln .sbtn'), 7900);
+    roll(c, c.$('.lt1'), c.$('.lt0'), 8300);
+    roll(c, c.$('.tk-ln'), c.$('.tk-last2'), 8400);
+    an(c, fix, [{ opacity: 1 }, { opacity: 0 }], { delay: 8300, duration: 260, easing: EIN });
+    if (!c.reduced) an(c, dv, [{ transform: 'translateY(140px)' }, { transform: 'none' }], { delay: 8500, duration: 560, easing: PUSH });
+    else c.after(8500, () => { dv.style.transform = 'none'; });
+    hush(c, 8600, true);
+    // Add a computer: the code screen.
+    press(c, c.$('.b-plus'), 9800);
+    pushCode(c, 10000);
+    codeStory(c, 11000, false);
+  });
+
+  /* ---------- E2 Full screen ---------- */
+  Kit.register('#e2', (c) => {
+    const R = c.reduced;
+    // The app opens on the problem.
+    if (!R) an(c, c.$('.c-bad'), [{ transform: 'scale(0.6)', transformOrigin: '190px 70px', opacity: 0 }, { transform: 'scale(1)', transformOrigin: '190px 70px', opacity: 1 }], { delay: 300, duration: 520, easing: EOUT });
+    // Try again: the link turns grey and drifts while it looks.
+    press(c, c.$('.fs-btn'), 2600);
+    fadeTo(c, c.$('.x-noc'), 1, 0, 2800, 240); fadeTo(c, c.$('.x-look'), 0, 1, 3000, 320);
+    fadeTo(c, c.$('.ln-bad'), 1, 0, 2800, 300); fadeTo(c, c.$('.ln-look'), 0, 1, 2800, 300);
+    fadeTo(c, c.$('.fs-btn'), 1, 0.35, 2800, 240);
+    if (!R) an(c, c.$('.ln-look'), [{ strokeDashoffset: 0 }, { strokeDashoffset: -18 }], { delay: 2800, duration: 1000, iterations: 2, easing: 'linear', fill: 'none' });
+    // Found the network, but the VPN blocks it.
+    fadeTo(c, c.$('.ln-look'), 1, 0, 4800, 300); fadeTo(c, c.$('.ln-bad'), 0, 1, 4800, 300);
+    fadeTo(c, c.$('.g-ex'), 1, 0, 4800, 260); fadeTo(c, c.$('.g-sh'), 0, 1, 4950, 360);
+    fadeTo(c, c.$('.x-look'), 1, 0, 4800, 240); fadeTo(c, c.$('.x-vpn'), 0, 1, 5000, 360);
+    fadeTo(c, c.$('.fs-btn'), 0.35, 1, 5000, 300);
+    // Try again: it works. The link draws green.
+    press(c, c.$('.fs-btn'), 6900);
+    fadeTo(c, c.$('.ln-bad'), 1, 0, 7100, 300);
+    an(c, c.$('.ln-ok'), [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { delay: 7200, duration: R ? 1 : 700, easing: EIO });
+    fadeTo(c, c.$('.c-bad'), 1, 0, 7600, 260); fadeTo(c, c.$('.c-ok'), 0, 1, 7600, 360);
+    fadeTo(c, c.$('.x-vpn'), 1, 0, 7600, 240); fadeTo(c, c.$('.x-ok'), 0, 1, 7800, 360);
+    fadeTo(c, c.$('.fs-btn'), 1, 0, 7600, 240);
+    // Then a computer is added with a code.
+    if (R) fadeTo(c, c.$('.L-code'), 0, 1, 8900, 260);
+    else an(c, c.$('.L-code'), [{ transform: 'translateX(393px)' }, { transform: 'none' }], { delay: 8900, duration: 560, easing: PUSH });
+    codeStory(c, 9700, true);
+  });
+
+  /* ---------- E3 Sheet ---------- */
+  Kit.register('#e3', (c) => {
+    const R = c.reduced, dim = c.$('.dimmer'), s1 = c.$('.s-ln'), s2 = c.$('.s-vpn'), tch = c.$('.touch');
+    const up = (s, at) => { if (R) fadeTo(c, s, 0, 1, at, 280); else an(c, s, [{ transform: 'translateY(110%)' }, { transform: 'none' }], { delay: at, duration: 560, easing: PUSH }); };
+    const down = (s, at, from) => { if (R) fadeTo(c, s, 1, 0, at, 240); else an(c, s, [{ transform: from || 'none' }, { transform: 'translateY(110%)' }], { delay: at, duration: 380, easing: EIN }); };
+    // Local Network is off.
+    roll(c, c.$('.tk-last'), c.$('.tk-wait'), 900);
+    hush(c, 900, false);
+    fadeTo(c, dim, 0, 1, 1300, 320); up(s1, 1300);
+    // Swipe it away: a finger on the grabber pulls the sheet down.
+    c.after(3600, () => { const g = s1.getBoundingClientRect(), sc = c.$('.screen').getBoundingClientRect(), k = sc.width / 393; tch.style.left = ((g.left + g.width / 2 - sc.left) / k) + 'px'; tch.style.top = ((g.top - sc.top) / k + 26) + 'px'; });
+    fadeTo(c, tch, 0, 1, 3650, 200);
+    if (!R) {
+      an(c, tch, [{ transform: 'none' }, { transform: 'translateY(90px)' }], { delay: 3900, duration: 420, easing: EIO });
+      an(c, s1, [{ transform: 'none' }, { transform: 'translateY(90px)' }], { delay: 3900, duration: 420, easing: EIO });
+      down(s1, 4320, 'translateY(90px)');
+    } else down(s1, 4100);
+    fadeTo(c, tch, 1, 0, 4300, 200);
+    fadeTo(c, dim, 1, 0, 4320, 320);
+    // Later: the VPN blocks the local network.
+    fadeTo(c, dim, 0, 1, 5400, 320); up(s2, 5400);
+    press(c, c.$('.s-vpn .pbtn'), 7900);
+    down(s2, 8150); fadeTo(c, dim, 1, 0, 8150, 320);
+    roll(c, c.$('.tk-wait'), c.$('.tk-last2'), 8600);
+    hush(c, 8600, true);
+    // Add a computer: the code screen.
+    press(c, c.$('.b-plus'), 9800);
+    pushCode(c, 10000);
+    codeStory(c, 11000, false);
+  });
+})();
+</script>
+</body>
+</html>

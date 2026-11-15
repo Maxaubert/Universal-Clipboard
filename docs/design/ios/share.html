@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone Share sheet</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: the Share sheet entry. */
+  :root {
+    --ph-sky: #E6E1DA; --ph-sun: #D6CEC3; --ph-h1: #CAC3B9; --ph-h2: #B7AFA4;
+    --selc: rgba(52, 120, 246, 0.22); --selh: #3478F6;
+  }
+  html.dark {
+    --ph-sky: #2C2A27; --ph-sun: #403C37; --ph-h1: #36332F; --ph-h2: #47423C;
+    --selc: rgba(90, 155, 255, 0.34); --selh: #5A9BFF;
+  }
+  .o0 { opacity: 0; }
+  .ab { position: absolute; }
+  /* The other app: neutral placeholder, no real content. */
+  .oa .bar { position: absolute; border-radius: 6px; background: var(--fill-2); }
+  .oa .bar.m { background: var(--fill); }
+  .oa .bar.t { height: 26px; border-radius: 9px; }
+  .oa .pic { position: absolute; overflow: hidden; }
+  .oa .pic svg { display: block; width: 100%; height: 100%; }
+  .ph-sky { fill: var(--ph-sky); } .ph-sun { fill: var(--ph-sun); } .ph-h1 { fill: var(--ph-h1); } .ph-h2 { fill: var(--ph-h2); }
+  .tbar { position: absolute; left: 16px; right: 16px; top: 766px; display: flex; justify-content: space-between; z-index: 5; }
+  /* Text selection with handles. */
+  .sel { position: absolute; z-index: 4; }
+  .sel i { position: absolute; background: var(--selc); border-radius: 3px; }
+  .sel b { position: absolute; width: 2px; height: 24px; background: var(--selh); border-radius: 1px; }
+  .sel b::after { content: ''; position: absolute; left: -4px; width: 10px; height: 10px; border-radius: 5px; background: var(--selh); }
+  .sel b.h1::after { top: -9px; }
+  .sel b.h2::after { bottom: -9px; }
+  /* Edit menu (iOS 26 glass capsule). */
+  .emenu {
+    position: absolute; z-index: 12; top: 366px; left: 50%; width: 264px; margin-left: -132px; height: 44px; border-radius: 22px;
+    background: var(--alert); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8);
+    box-shadow: 0 0 0 0.5px var(--sep), 0 8px 24px rgba(0,0,0,0.16); display: flex; align-items: center; font-size: 15px; letter-spacing: -0.23px;
+  }
+  .emenu span { flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .emenu span + span::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 0.5px; background: var(--sep); }
+  .emenu svg { width: 8px; height: 14px; }
+  /* Touch marker: a soft round shadow where the finger lands. */
+  .tap { position: absolute; z-index: 50; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 23px; background: rgba(120, 112, 104, 0.30); box-shadow: 0 0 0 1px rgba(120, 112, 104, 0.25); opacity: 0; pointer-events: none; }
+  html.dark .tap { background: rgba(235, 228, 220, 0.24); }
+  /* Share sheet (system). */
+  .ssheet { top: 424px; }
+  .down { transform: translateY(105%); }
+  html.reduce .down { transform: none; opacity: 0; }
+  .shead { height: 72px; flex: none; display: flex; align-items: center; gap: 12px; padding: 4px 20px 0; position: relative; }
+  .shead::after { content: ''; position: absolute; left: 20px; right: 20px; bottom: 0; height: 0.5px; background: var(--sep); }
+  .thumb { width: 44px; height: 44px; border-radius: 10px; background: var(--fill); flex: none; overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--label-2); }
+  .thumb svg { width: 100%; height: 100%; display: block; }
+  .thumb.tx svg { width: 24px; height: 24px; }
+  .sx { width: 36px; height: 36px; border-radius: 18px; background: var(--fill); color: var(--label-2); display: flex; align-items: center; justify-content: center; flex: none; }
+  .sx svg { width: 16px; height: 16px; }
+  .share .appi .lbar { width: 42px; height: 8px; border-radius: 4px; background: var(--fill-2); margin-top: 3px; }
+  .share .appi .ai.g2 { background: var(--fill); }
+  .share .apps { padding-top: 16px; }
+  .share .acts .row { justify-content: space-between; padding: 0 18px 0 20px; }
+  .share .acts .row svg { width: 22px; height: 22px; color: var(--label); }
+  .ucwrap { position: relative; }
+  /* Ticker (X3): one line that rolls. */
+  .tkr { position: relative; flex: 1; height: 28px; overflow: hidden; }
+  .tk-i { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .tk-i.n { opacity: 0; transform: translateY(100%); }
+  html.reduce .tk-i.n { transform: none; }
+  .tk-i svg { width: 20px; height: 20px; flex: none; }
+  /* X1: the floating card. */
+  .qcard {
+    position: absolute; z-index: 40; left: 50%; top: 318px; width: 244px; margin-left: -122px; padding: 26px 20px 22px; box-sizing: border-box;
+    border-radius: 32px; background: var(--alert); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8);
+    box-shadow: 0 0 0 0.5px var(--sep), 0 16px 48px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
+  }
+  .qic { position: relative; width: 60px; height: 60px; margin-bottom: 12px; }
+  .qic svg { position: absolute; inset: 0; width: 60px; height: 60px; }
+  .qspin { stroke: var(--label-2); transform-origin: 30px 30px; }
+  .qring { stroke: var(--fill-2); }
+  .qok { opacity: 0; }
+  .qok circle { fill: var(--ok); }
+  .ckp { stroke-dasharray: 26; stroke-dashoffset: 26; }
+  .qtx { position: relative; width: 100%; height: 22px; }
+  .qtx span { position: absolute; inset: 0; }
+  /* X2: devices sheet. */
+  .dsheet { top: 372px; background: var(--bg); }
+  .dhead { display: flex; align-items: center; gap: 14px; padding: 6px 24px 18px; }
+  .dhead .uc-icon { width: 48px; height: 48px; border-radius: 12px; }
+  .dhead .uc-icon svg { width: 30px; height: 30px; }
+  .dst { position: relative; height: 20px; }
+  .dst span { position: absolute; left: 0; top: 0; white-space: nowrap; }
+  .drow { min-height: 60px; }
+  .drow .rt { padding: 9px 0; }
+  .rst { position: relative; height: 18px; }
+  .rst span { position: absolute; left: 0; top: 0; white-space: nowrap; }
+  .ddot { position: relative; width: 14px; height: 14px; flex: none; border-radius: 7px; box-sizing: border-box; border: 1.5px solid var(--label-3); }
+  .ddot i { position: absolute; inset: -1.5px; border-radius: 7px; background: var(--ok); opacity: 0; }
+  .ddot.sl { border-color: var(--mute-ic); }
+  .drow.sl .dlogo { color: var(--label-3); }
+  .dfail { position: absolute; left: 16px; right: 16px; top: 158px; background: var(--cell); border-radius: 26px; padding: 26px 22px 20px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+  .wic { width: 52px; height: 52px; border-radius: 26px; background: var(--fill); color: var(--bad); display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+  .wic svg { width: 28px; height: 28px; }
+  .dfail .pbtn { margin-top: 14px; }
+  html.dark .dsheet { background: var(--sheet); }
+  html.dark .dsheet .list, html.dark .dfail { background: var(--cell-hi); }
+  html.dark .uc-icon { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
+  .bb.word.on { background: var(--tint); color: var(--on-tint); }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>Share sheet: three ways</h1>
+    <p class="gal-note">Sending a copy from another app while Universal Clipboard is closed. The other app is a grey placeholder. The person picks something, taps Share, then taps Universal Clipboard in the system Share sheet. Our part only ever says facts, "Text" or "Image", never what was copied. Three devices get it; Max's iPad is asleep and gets nothing until it opens the app. X2 also plays the failure: no computer is on.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="x1" data-loop="12500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>X1</b> Quick</div>
+      <p class="opt-desc">The Share sheet steps aside and a small card floats in the middle: "Sending...", then a green check and "Sent to 3 devices". It closes itself a second later, with nothing to tap.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="x2" data-loop="16500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>X2</b> Devices</div>
+      <p class="opt-desc">A half sheet lists your other devices. Each dot fills green as that device gets the copy; the iPad says "Asleep" and keeps an empty dot. Done closes it. The second share shows the failure: no computer is on, with Try again.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="x3" data-loop="12500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>X3</b> Ticker</div>
+      <p class="opt-desc">No new screen at all. The top line of the Share sheet rolls like the desktop ticker: an arrow up and "Sending...", then a green arrow and "Image, sent to 3 devices". Then the whole sheet goes down.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="../desktop/motion/art.js"></script>
+<script src="ios.js"></script>
+<script src="../desktop/motion/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const I = IOS.ic;
+  const S = (d) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+  const icCopy = S('<rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 8.5V6a2.5 2.5 0 0 0-2.5-2.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"/>');
+  const icFolder = S('<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2.5h7A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/>');
+  const icPrint = S('<path d="M7 9V3.5h10V9"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v6.5H7z"/>');
+
+  // A neutral photo: sky, sun, two hills. No real content.
+  const photo = (cls) => '<svg viewBox="0 0 100 60" preserveAspectRatio="xMidYMid slice" aria-hidden="true"' + (cls ? ' class="' + cls + '"' : '') + '>' +
+    '<rect class="ph-sky" width="100" height="60"/><circle class="ph-sun" cx="72" cy="18" r="8"/>' +
+    '<path class="ph-h1" d="M0 44 C18 30 34 30 52 42 S84 36 100 30 V60 H0z"/><path class="ph-h2" d="M0 52 C22 42 40 46 60 52 S90 50 100 46 V60 H0z"/></svg>';
+
+  const bar = (x, y, w, cls) => '<div class="bar' + (cls ? ' ' + cls : '') + '" style="left:' + x + 'px;top:' + y + 'px;width:' + w + 'px;height:' + (cls === 't' ? 26 : 12) + 'px"></div>';
+
+  // The other app, a reading page: title, photo, lines of text. Line n sits at 404 + 24n.
+  const LINES = [353, 336, 349, 300, 353, 220, 330, 286, 340];
+  const textApp = () => {
+    let h = '<div class="app safe layer oa"><div class="nav"><button class="bb">' + I.back + '</button><button class="bb">' + I.ellipsis + '</button></div>' +
+      bar(20, 118, 222, 't') + bar(20, 156, 132, 'm') +
+      '<div class="pic" style="left:20px;top:184px;width:353px;height:196px;border-radius:22px">' + photo() + '</div>';
+    LINES.forEach((w, i) => { h += bar(20, 404 + 24 * i, w); });
+    h += '<div class="tbar"><button class="bb">' + I.share + '</button><span class="bbs"><button class="bb">' + I.pencil + '</button><button class="bb">' + I.trash + '</button></span></div></div>';
+    return h;
+  };
+  // Lines 2 to 4 selected, with the two handles and the edit menu above.
+  const selection = () =>
+    '<div class="sel o0"><i style="left:16px;top:424px;width:344px;height:20px"></i><i style="left:16px;top:448px;width:357px;height:20px"></i><i style="left:16px;top:472px;width:308px;height:20px"></i>' +
+    '<b class="h1" style="left:15px;top:422px"></b><b class="h2" style="left:323px;top:470px"></b></div>' +
+    '<div class="emenu o0"><span>Copy</span><span class="em-share">Share</span><span>Look Up</span><span>' + I.chev + '</span></div>';
+  // The other app, a photo viewer.
+  const photoApp = () =>
+    '<div class="app safe layer oa"><div class="nav"><button class="bb">' + I.back + '</button><button class="bb word">Edit</button></div>' +
+    '<div class="pic" style="left:0;top:250px;width:393px;height:236px">' + photo() + '</div>' +
+    bar(126, 514, 140, 'm') +
+    '<div class="tbar"><button class="bb">' + I.share + '</button><button class="bb">' + I.info + '</button><button class="bb">' + I.trash + '</button></div></div>';
+
+  // The system Share sheet. head: the HTML of the top line.
+  const shareSheet = (thumb, head) =>
+    '<div class="sheet share ssheet down"><div class="grab"></div>' +
+    '<div class="shead">' + thumb + head + '<span class="sx">' + I.x + '</span></div>' +
+    '<div class="apps">' +
+    '<div class="appi ucwrap"><div class="uc-icon">' + I.app + '</div><span>Universal Clipboard</span></div>' +
+    '<div class="appi"><div class="ai"></div><span class="lbar"></span></div>' +
+    '<div class="appi"><div class="ai g2"></div><span class="lbar"></span></div>' +
+    '<div class="appi"><div class="ai"></div><span class="lbar"></span></div>' +
+    '<div class="appi"><div class="ai g2"></div><span class="lbar"></span></div></div>' +
+    '<div class="acts"><div class="row"><span>Copy</span>' + icCopy + '</div><div class="row"><span>Save to Files</span>' + icFolder + '</div><div class="row"><span>Print</span>' + icPrint + '</div></div></div>';
+  const thumbText = '<div class="thumb tx">' + I.text + '</div>';
+  const thumbPhoto = '<div class="thumb">' + photo() + '</div>';
+  const plainHead = (word) => '<span class="t-head" style="flex:1">' + word + '</span>';
+
+  const tap = (cls, x, y) => '<div class="tap ' + cls + '" style="left:' + x + 'px;top:' + y + 'px"></div>';
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = '<div class="phone"><div class="screen">' + html + '</div></div>'; };
+
+  /* ---------- X1 Quick ---------- */
+  fill('x1',
+    textApp() + selection() +
+    '<div class="dimmer o0"></div>' +
+    shareSheet(thumbText, plainHead('Text')) +
+    '<div class="qcard o0"><div class="qic">' +
+    '<svg viewBox="0 0 60 60" fill="none" class="qwait"><circle class="qring" cx="30" cy="30" r="24" stroke-width="4"/><circle class="qspin" cx="30" cy="30" r="24" stroke-width="4" stroke-linecap="round" stroke-dasharray="38 113"/></svg>' +
+    '<svg viewBox="0 0 60 60" fill="none" class="qok"><circle cx="30" cy="30" r="28"/><path class="ckp" d="M19 31l7 7 15-16" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>' +
+    '<div class="qtx t-head"><span class="q1">Sending...</span><span class="q2 o0">Sent to 3 devices</span></div>' +
+    '<span class="t-sub c2">Text</span></div>' +
+    tap('k1', 197, 388) + tap('k2', 52, 498));
+
+  /* ---------- X2 Devices ---------- */
+  const drow = (cls, logo, name, st1, st2, sleep) =>
+    '<div class="row ic drow ' + cls + (sleep ? ' sl' : '') + '"><span class="dlogo"><i data-logo="' + logo + '"></i></span>' +
+    '<span class="rt"><b>' + name + '</b><span class="rst t-foot c2"><span class="r1">' + st1 + '</span>' + (st2 ? '<span class="r2 o0 cok">' + st2 + '</span>' : '') + '</span></span>' +
+    '<span class="ddot' + (sleep ? ' sl' : '') + '"><i></i></span></div>';
+  const devList = () =>
+    '<div class="list">' +
+    drow('d1', 'windows', 'Max\'s PC', 'Sending...', 'Got it') +
+    drow('d2', 'apple', 'Mac mini', 'Sending...', 'Got it') +
+    drow('d3', 'linux', 'Ubuntu laptop', 'Sending...', 'Got it') +
+    drow('d4', 'ipad', 'Max\'s iPad', 'Asleep', '', true) + '</div>';
+  const dsheet = (cls, st2, fail) =>
+    '<div class="sheet dsheet down ' + cls + '"><div class="grab"></div>' +
+    '<div class="nav"><span style="width:44px"></span><span class="nav-title">Universal Clipboard</span><button class="bb word dn">Done</button></div>' +
+    '<div class="dhead"><div class="uc-icon">' + I.app + '</div><div style="display:flex;flex-direction:column;gap:2px"><span class="t-head">Text</span>' +
+    '<span class="dst t-sub c2"><span class="h1">Sending...</span><span class="h2 o0 ' + (fail ? 'cbad' : 'cok') + '">' + st2 + '</span></span></div></div>' +
+    '<div style="position:relative">' + '<div class="dl">' + devList() + '</div>' +
+    (fail ? '' : '') + '</div>' +
+    (fail ? '<div class="dfail o0"><div class="wic">' + I.warn + '</div><span class="t-head">No computer is on right now.</span>' +
+      '<span class="t-sub c2">Phones can only sync while one of your computers is on.</span><button class="pbtn auto">Try again</button></div>' : '') +
+    '</div>';
+  fill('x2',
+    textApp() + selection() +
+    '<div class="dimmer o0"></div>' +
+    shareSheet(thumbText, plainHead('Text')) +
+    dsheet('sA', 'Sent to 3 devices', false) + dsheet('sB', 'Not sent', true) +
+    tap('k1', 197, 388) + tap('k2', 52, 498) + tap('k3', 330, 409) + tap('k4', 197, 388) + tap('k5', 52, 498));
+
+  /* ---------- X3 Ticker ---------- */
+  const tick =
+    '<div class="tkr"><span class="tk-i t0 t-head">Image</span>' +
+    '<span class="tk-i t1 n t-head">' + I.up + 'Sending...</span>' +
+    '<span class="tk-i t2 n t-head cok">' + I.up + 'Image, sent to 3 devices</span></div>';
+  fill('x3',
+    photoApp() +
+    '<div class="dimmer o0"></div>' +
+    shareSheet(thumbPhoto, tick) +
+    tap('k1', 38, 788) + tap('k2', 52, 498));
+
+  IOS.decorate(document);
+
+  /* ---------- helpers ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const PUSH = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const fin = (c, el, at, d) => an(c, el, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: d || 300, easing: EOUT });
+  const fout = (c, el, at, d) => an(c, el, [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: d || 240, easing: EIN });
+  const press = (c, el, at) => an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(0.92)', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: c.reduced ? 1 : 320, easing: EIO, fill: 'none' });
+  const touch = (c, el, at) => an(c, el, [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.8)' }, { opacity: 1, transform: 'none', offset: 0.35 }, { opacity: 0, transform: 'none' }], { delay: at, duration: 700, easing: EIO, fill: 'none' });
+  const up = (c, el, at) => c.reduced ? fin(c, el, at, 260)
+    : an(c, el, [{ transform: 'translateY(105%)' }, { transform: 'translateY(0)' }], { delay: at, duration: 560, easing: PUSH });
+  const down = (c, el, at) => c.reduced ? fout(c, el, at, 240)
+    : an(c, el, [{ transform: 'translateY(0)' }, { transform: 'translateY(105%)' }], { delay: at, duration: 420, easing: EIN });
+  const menuIn = (c, el, at) => an(c, el, [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.92)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: 320, easing: EOUT });
+  // Swap two stacked lines: the old one leaves upward, the new one rises in a little later (desktop A3).
+  const roll = (c, from, to, at) => {
+    if (c.reduced) { fout(c, from, at, 200); fin(c, to, at + 220, 260); return; }
+    an(c, from, [{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(-100%)' }], { delay: at, duration: 300, easing: EIN });
+    an(c, to, [{ opacity: 0, transform: 'translateY(100%)' }, { opacity: 1, transform: 'translateY(0)' }], { delay: at + 150, duration: 540, easing: EOUT });
+  };
+  const swap = (c, from, to, at) => { fout(c, from, at, 200); fin(c, to, at + 160, 300); };
+  // Pick something, open the edit menu, tap Share, the Share sheet rises.
+  const openShare = (c, at, k) => {
+    menuIn(c, c.$('.emenu'), at);
+    touch(c, c.$('.' + k), at + 1000);
+    an(c, c.$('.em-share'), [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: 'var(--fill-2)' }, { backgroundColor: 'rgba(0,0,0,0)' }], { delay: at + 1000, duration: 400, fill: 'none' });
+    fout(c, c.$('.emenu'), at + 1250, 200);
+    fin(c, c.$('.dimmer'), at + 1350, 320);
+    up(c, c.$('.ssheet'), at + 1350);
+  };
+
+  /* X1 Quick */
+  Kit.register('#x1', (c) => {
+    fin(c, c.$('.sel'), 800);
+    openShare(c, 1400, 'k1');
+    touch(c, c.$('.k2'), 4500); press(c, c.$('.ucwrap .uc-icon'), 4500);
+    down(c, c.$('.ssheet'), 4850);
+    const card = c.$('.qcard');
+    an(c, card, [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.9)' }, { opacity: 1, transform: 'none' }], { delay: 5000, duration: 420, easing: EOUT });
+    if (!c.reduced) an(c, c.$('.qspin'), [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { delay: 5000, duration: 1100, iterations: 2, easing: 'linear', fill: 'none' });
+    fout(c, c.$('.qwait'), 7000, 200);
+    an(c, c.$('.qok'), [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.7)' }, { opacity: 1, transform: 'none' }], { delay: 7000, duration: 400, easing: EOUT });
+    an(c, c.$('.qcard .ckp'), [{ strokeDashoffset: 26 }, { strokeDashoffset: 0 }], { delay: 7150, duration: c.reduced ? 200 : 460, easing: EOUT });
+    swap(c, c.$('.q1'), c.$('.q2'), 7000);
+    an(c, card, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: c.reduced ? 'none' : 'scale(0.96)' }], { delay: 8500, duration: 320, easing: EIN });
+    fout(c, c.$('.dimmer'), 8500, 360);
+  });
+
+  /* X2 Devices */
+  Kit.register('#x2', (c) => {
+    fin(c, c.$('.sel'), 700);
+    openShare(c, 1300, 'k1');
+    touch(c, c.$('.k2'), 4000); press(c, c.$('.ucwrap .uc-icon'), 4000);
+    down(c, c.$('.ssheet'), 4300);
+    const A = c.$('.sA'), B = c.$('.sB');
+    up(c, A, 4400);
+    ['d1', 'd2', 'd3'].forEach((d, i) => {
+      const at = 5400 + i * 600;
+      an(c, A.querySelector('.' + d + ' .ddot i'), [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.3)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: 420, easing: EOUT });
+      swap(c, A.querySelector('.' + d + ' .r1'), A.querySelector('.' + d + ' .r2'), at);
+    });
+    swap(c, A.querySelector('.h1'), A.querySelector('.h2'), 7000);
+    c.after(7200, () => A.querySelector('.dn').classList.add('on'));
+    touch(c, c.$('.k3'), 8000); press(c, A.querySelector('.dn'), 8000);
+    down(c, A, 8250);
+    // Second share: no computer is on.
+    an(c, c.$('.dimmer'), [{ opacity: 1 }, { opacity: 0 }], { delay: 8250, duration: 300, easing: EIN });
+    openShare(c, 9000, 'k4');
+    touch(c, c.$('.k5'), 11600); press(c, c.$('.ucwrap .uc-icon'), 11600);
+    down(c, c.$('.ssheet'), 11900);
+    up(c, B, 12000);
+    fout(c, B.querySelector('.dl'), 13100, 260);
+    an(c, B.querySelector('.dfail'), [{ opacity: 0, transform: c.reduced ? 'none' : 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { delay: 13250, duration: 420, easing: EOUT });
+    swap(c, B.querySelector('.h1'), B.querySelector('.h2'), 13100);
+    if (!c.reduced) an(c, B.querySelector('.wic'), [{ transform: 'translateX(0)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }], { delay: 13800, duration: 560, easing: EIO, fill: 'none' });
+  });
+
+  /* X3 Ticker */
+  Kit.register('#x3', (c) => {
+    touch(c, c.$('.k1'), 1100); press(c, c.$('.tbar .bb'), 1100);
+    fin(c, c.$('.dimmer'), 1350, 320);
+    up(c, c.$('.ssheet'), 1350);
+    touch(c, c.$('.k2'), 3300); press(c, c.$('.ucwrap .uc-icon'), 3300);
+    roll(c, c.$('.t0'), c.$('.t1'), 3600);
+    an(c, c.$$('.ssheet .apps, .ssheet .acts'), [{ opacity: 1 }, { opacity: 0.4 }], { delay: 3600, duration: 400 });
+    roll(c, c.$('.t1'), c.$('.t2'), 5600);
+    down(c, c.$('.ssheet'), 7600);
+    fout(c, c.$('.dimmer'), 7600, 400);
+  });
+})();
+</script>
+</body>
+</html>

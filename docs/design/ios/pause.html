@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone pause and resume</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: Home with Pause and Resume (desktop A4 Hush on the phone). */
+  .home .nav { justify-content: flex-end; }
+  .tt { position: relative; height: 41px; }
+  .tt > h1 { position: absolute; left: 0; top: 0; margin: 0; white-space: nowrap; }
+  .tt .tt-b { opacity: 0; }
+  .tk { position: relative; height: 22px; margin-top: 4px; overflow: hidden; }
+  .tk > span { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--label-2); }
+  .tk > span svg { width: 15px; height: 15px; flex: none; }
+  .tk .tk-b, .tk .tk-c { opacity: 0; }
+  /* Device rows. */
+  .dv { min-height: 62px; }
+  .dv .rt { gap: 2px; }
+  .stl { display: flex; align-items: center; gap: 7px; }
+  .sx { display: inline-grid; }
+  .sx > span { grid-area: 1 / 1; white-space: nowrap; }
+  .sx .sb { opacity: 0; }
+  /* This iPhone: the dark bar, apart from the list (desktop H3). */
+  .me {
+    position: absolute; z-index: 31; left: 16px; right: 16px; bottom: 46px; height: 68px; border-radius: 34px;
+    background: var(--dark-bar); color: var(--on-dark); display: flex; align-items: center; gap: 12px; padding: 0 22px 0 14px;
+    box-sizing: border-box; box-shadow: 0 6px 22px rgba(30,26,22,0.18);
+  }
+  .me-lg { width: 42px; height: 42px; border-radius: 21px; background: var(--dark-bar-2); display: flex; align-items: center; justify-content: center; flex: none; color: var(--on-dark); }
+  .me-lg svg { width: 21px; height: 21px; fill: currentColor; }
+  .me-t { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .me-t .t-foot { color: var(--on-dark-2); }
+  .me .dt { width: 10px; height: 10px; }
+  .me-more { width: 44px; height: 44px; margin-right: -12px; border-radius: 22px; background: var(--dark-bar-2); color: var(--on-dark); display: flex; align-items: center; justify-content: center; flex: none; }
+  .me-more svg { width: 20px; height: 20px; }
+  /* P1: the round glass Pause button that opens into a Resume capsule. */
+  .pzb { width: 44px; overflow: hidden; }
+  .pzb > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+  .pzb > span svg { width: 18px; height: 18px; }
+  .pzb .rs { opacity: 0; }
+  /* The wave: a soft ring that grows from the control. Grey to pause, green to resume. */
+  .ring {
+    position: absolute; z-index: 9; width: 1800px; height: 1800px; border-radius: 50%; pointer-events: none; opacity: 0;
+    background: radial-gradient(circle, transparent 0 84%, color-mix(in srgb, var(--label) 9%, transparent) 95%, transparent 100%);
+    transform: scale(0.02);
+  }
+  .ring.g { background: radial-gradient(circle, transparent 0 84%, color-mix(in srgb, var(--ok) 16%, transparent) 95%, transparent 100%); }
+  /* Touch marks: where a finger goes. */
+  .tp { position: absolute; z-index: 55; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; pointer-events: none; opacity: 0;
+    background: rgba(120,112,104,0.30); box-shadow: 0 0 0 2px rgba(255,255,255,0.75), 0 2px 10px rgba(0,0,0,0.18); }
+  /* P3: iOS context menu. */
+  .cm-veil { position: absolute; inset: 0; z-index: 30; background: var(--dim); opacity: 0; pointer-events: none; }
+  .cm {
+    position: absolute; z-index: 32; left: 16px; bottom: 126px; width: 240px; border-radius: 26px; padding: 6px 0;
+    background: var(--alert); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.22); opacity: 0; transform-origin: 30% 100%; color: var(--label);
+  }
+  .cm-i { position: relative; height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 17px; }
+  .cm-i + .cm-i::before { content: ''; position: absolute; top: 0; left: 20px; right: 0; height: 0.5px; background: var(--sep); }
+  .cm-i svg { width: 20px; height: 20px; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>Pause and Resume: three ways</h1>
+    <p class="gal-note">Each option plays one story in about 10 seconds: Max pauses, it stays paused for a moment, then he resumes. The wave is desktop A4 "Hush": logos fade to grey and green dots drain, Resume sends a green wave back and the dots fill again. Paused means opening the app does not take or give copies. After Resume the app takes the newest copy, so the line under the title rolls to it.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="p1" data-loop="12500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>P1</b> Bar button</div>
+      <p class="opt-desc">A round Pause button next to Settings at the top right. Tap it and the wave rolls down the list from that corner, while the button opens into a dark "Resume" capsule that stays until you tap it.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p2" data-loop="12500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>P2</b> Switch</div>
+      <p class="opt-desc">A "Sync" switch sits at the top of the list, like a Settings row. Turn it off and the wave runs down the list while the large title softly fades from Working to Paused. Turn it on to resume.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="p3" data-loop="13500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>P3</b> From the bar</div>
+      <p class="opt-desc">No extra button on Home. Press and hold the dark Max's iPhone bar, or tap its More button, for a small menu: Pause and Settings. The wave rises from the bar up to the title.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="../desktop/motion/art.js"></script>
+<script src="ios.js"></script>
+<script src="../desktop/motion/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const I = IOS.ic;
+
+  const dev = (logo, name, asleep) =>
+    '<div class="row dv ic' + (asleep ? ' asleep' : '') + '"><div class="dlogo"><i data-logo="' + logo + '"></i></div>' +
+    '<div class="rt"><span class="t-body nm">' + name + '</span><span class="t-sub c2 stl">' +
+    (asleep ? '<span class="dt ring"></span><span>Asleep</span>'
+            : '<span class="dt ok"></span><span class="sx"><span class="sa">Connected</span><span class="sb">Paused</span></span>') +
+    '</span></div></div>';
+
+  // A simple Home: large title, ticker line, devices, this iPhone apart as a dark bar.
+  const home = (o) =>
+    '<div class="app safe layer home">' +
+    '<div class="nav"><div class="bbs">' +
+    (o.pauseBtn ? '<button class="bb pzb"><span class="pz">' + I.pause + '</span><span class="rs">' + I.play + 'Resume</span></button>' : '') +
+    '<button class="bb gear">' + I.gear + '</button></div></div>' +
+    '<div class="largetitle"><div class="tt"><h1 class="t-large tt-a">Working</h1><h1 class="t-large tt-b">Paused</h1></div>' +
+    '<div class="tk t-sub"><span class="tk-a">' + I.down + 'Text, from Max\'s PC, just now</span>' +
+    '<span class="tk-b">' + I.pause + 'Copies stay on this iPhone.</span>' +
+    '<span class="tk-c">' + I.down + 'Text, from Mac mini, just now</span></div></div>' +
+    '<div class="gap s"></div>' +
+    (o.sync ? '<div class="list"><div class="row"><div class="rt"><span class="t-body">Sync</span></div><div class="sw on"></div></div></div>' +
+      '<div class="lfoot">Copies move when you open this app.</div><div class="gap"></div>' : '') +
+    '<div class="lhead">Your devices</div>' +
+    '<div class="list devs">' + dev('windows', 'Max\'s PC') + dev('apple', 'Mac mini') + dev('linux', 'Ubuntu laptop') + dev('ipad', 'Max\'s iPad', true) + '</div>' +
+    (o.sync ? '' : '<div class="lfoot">Copies move when you open this app.</div>') +
+    '</div>' +
+    '<div class="me"><div class="me-lg"><i data-logo="iphone"></i></div>' +
+    '<div class="me-t"><span class="t-head">Max\'s iPhone</span><span class="t-foot sx"><span class="sa">This iPhone</span><span class="sb">Paused</span></span></div>' +
+    (o.more ? '<span class="me-more">' + I.ellipsis + '</span>' : '<span class="dt ok me-dot"></span>') + '</div>' +
+    '<div class="ring"></div><div class="ring g"></div>' +
+    (o.menu ? '<div class="cm-veil"></div>' +
+      '<div class="cm cm-p"><div class="cm-i i-go"><span>Pause</span>' + I.pause + '</div><div class="cm-i"><span>Settings</span>' + I.gear + '</div></div>' +
+      '<div class="cm cm-r"><div class="cm-i i-go"><span>Resume</span>' + I.play + '</div><div class="cm-i"><span>Settings</span>' + I.gear + '</div></div>' : '');
+
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = '<div class="phone"><div class="screen">' + html + '</div></div>'; };
+  fill('p1', home({ pauseBtn: true }));
+  fill('p2', home({ sync: true }));
+  fill('p3', home({ more: true, menu: true }));
+  IOS.decorate(document);
+
+  /* ---------- helpers ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const box = (c, el) => {
+    const scr = c.$('.screen').getBoundingClientRect(); const k = scr.width / 393; const r = el.getBoundingClientRect();
+    return { x: (r.left - scr.left) / k, y: (r.top - scr.top) / k, w: r.width / k, h: r.height / k, cx: (r.left + r.width / 2 - scr.left) / k, cy: (r.top + r.height / 2 - scr.top) / k };
+  };
+  // A finger mark at (x, y) from `at` for `hold` ms.
+  const touch = (c, x, y, at, hold) => {
+    c.$('.screen').insertAdjacentHTML('beforeend', '<div class="tp" style="left:' + x + 'px;top:' + y + 'px"></div>');
+    const t = c.$$('.tp').pop();
+    an(c, t, [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.7)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: 180, easing: EOUT });
+    an(c, t, [{ opacity: 1 }, { opacity: 0 }], { delay: at + (hold || 260), duration: 260, easing: EIN });
+  };
+  const press = (c, el, at, k) => { if (!c.reduced) an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(' + (k || 0.94) + ')', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: 300, easing: EIO, fill: 'none' }); };
+  const xf = (c, a, b, at, dur) => { an(c, a, [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: dur || 260, easing: EIN }); an(c, b, [{ opacity: 0 }, { opacity: 1 }], { delay: at + 80, duration: dur || 380, easing: EOUT }); };
+  // Roll a line: old one up and out, new one up and in (desktop A3 Ticker).
+  const roll = (c, a, b, at, dy) => {
+    if (c.reduced) return xf(c, a, b, at, 220);
+    dy = dy || 10;
+    an(c, a, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-' + dy + 'px)' }], { delay: at, duration: 260, easing: EIN });
+    an(c, b, [{ opacity: 0, transform: 'translateY(' + dy + 'px)' }, { opacity: 1, transform: 'none' }], { delay: at + 140, duration: 520, easing: EOUT });
+  };
+
+  /* The wave (A4 Hush). Every part changes when the ring reaches it: lag = distance x SP.
+     dir: 'off' (grey) or 'on' (green). origin in screen points. */
+  const SP = 1.5, D = 700;
+  function wave(c, origin, at, dir) {
+    const R = c.reduced, off = dir === 'off';
+    const lag = (el) => { if (R) return 0; const b = box(c, el); return Math.round(Math.hypot(b.cx - origin.x, b.cy - origin.y) * SP); };
+    const col = (el, a, b) => { const d = at + lag(el); an(c, el, off ? [{ color: a }, { color: b }] : [{ color: b }, { color: a }], { delay: d, duration: R ? 240 : D, easing: EIO }); };
+    if (!R) {
+      const ring = c.$(off ? '.ring:not(.g)' : '.ring.g');
+      ring.style.left = (origin.x - 900) + 'px'; ring.style.top = (origin.y - 900) + 'px';
+      an(c, ring, [{ opacity: 1, transform: 'scale(0.02)' }, { opacity: 1, transform: 'scale(0.75)', offset: 0.75 }, { opacity: 0, transform: 'scale(1)' }], { delay: at, duration: 900 * SP, easing: 'linear' });
+    }
+    c.$$('.dv').forEach((row) => {
+      col(row.querySelector('.dlogo'), 'var(--label)', 'var(--mute-ic)');
+      col(row.querySelector('.nm'), 'var(--label)', 'var(--label-2)');
+      const dot = row.querySelector('.dt.ok');
+      if (dot) {
+        const d = at + lag(dot);
+        if (off) an(c, dot, [{ backgroundColor: 'var(--ok)' }, { backgroundColor: 'var(--mute-ic)' }], { delay: d, duration: R ? 240 : D, easing: EIO });
+        else an(c, dot, [{ backgroundColor: 'var(--mute-ic)', transform: 'scale(1)' }, { backgroundColor: 'var(--mute-ic)', transform: R ? 'none' : 'scale(0.55)', offset: 0.25 }, { backgroundColor: 'var(--ok)', transform: 'scale(1)' }], { delay: d, duration: R ? 240 : D + 160, easing: EOUT });
+      }
+      const sx = row.querySelector('.sx');
+      if (sx) { const d = at + lag(sx); off ? xf(c, sx.querySelector('.sa'), sx.querySelector('.sb'), d) : xf(c, sx.querySelector('.sb'), sx.querySelector('.sa'), d); }
+    });
+    // This iPhone, in the dark bar.
+    col(c.$('.me-lg'), 'var(--on-dark)', '#8A857E');
+    const ms = c.$('.me-t .sx'), d = at + lag(ms);
+    off ? xf(c, ms.querySelector('.sa'), ms.querySelector('.sb'), d) : xf(c, ms.querySelector('.sb'), ms.querySelector('.sa'), d);
+    const md = c.$('.me-dot');
+    if (md) {
+      const dd = at + lag(md);
+      an(c, md, off ? [{ backgroundColor: 'var(--ok)' }, { backgroundColor: '#8A857E' }] : [{ backgroundColor: '#8A857E' }, { backgroundColor: 'var(--ok)' }], { delay: dd, duration: R ? 240 : D, easing: EIO });
+    }
+  }
+  // Title and the line under it.
+  const titleOff = (c, at, soft) => { soft ? xf(c, c.$('.tt-a'), c.$('.tt-b'), at, c.reduced ? 240 : 600) : roll(c, c.$('.tt-a'), c.$('.tt-b'), at, 14); roll(c, c.$('.tk-a'), c.$('.tk-b'), at + 120); };
+  const titleOn = (c, at, soft) => { soft ? xf(c, c.$('.tt-b'), c.$('.tt-a'), at, c.reduced ? 240 : 600) : roll(c, c.$('.tt-b'), c.$('.tt-a'), at, 14); };
+  // After Resume the app takes the newest copy: the line rolls to it.
+  const newest = (c, at) => roll(c, c.$('.tk-b'), c.$('.tk-c'), at);
+
+  /* ---------- P1 Bar button ---------- */
+  Kit.register('#p1', (c) => {
+    const b = c.$('.pzb'), g = box(c, b), right = g.x + g.w;
+    const P = 1500, Q = 7300, W = 120;
+    touch(c, g.cx, g.cy, P - 220, 300); press(c, b, P - 200);
+    // Round button opens into the Resume capsule (grows to the left).
+    an(c, b, [{ width: '44px', backgroundColor: 'var(--material)', color: 'var(--tint)' }, { width: W + 'px', backgroundColor: 'var(--tint)', color: 'var(--on-tint)' }], { delay: P, duration: c.reduced ? 240 : 520, easing: EIO });
+    xf(c, c.$('.pzb .pz'), c.$('.pzb .rs'), P + 60, 260);
+    wave(c, { x: g.cx, y: g.cy }, P, 'off');
+    titleOff(c, P + 150);
+    // Resume.
+    touch(c, right - W / 2, g.cy, Q - 220, 300); press(c, b, Q - 200, 0.96);
+    an(c, b, [{ width: W + 'px', backgroundColor: 'var(--tint)', color: 'var(--on-tint)' }, { width: '44px', backgroundColor: 'var(--material)', color: 'var(--tint)' }], { delay: Q, duration: c.reduced ? 240 : 520, easing: EIO });
+    xf(c, c.$('.pzb .rs'), c.$('.pzb .pz'), Q, 260);
+    wave(c, { x: right - 22, y: g.cy }, Q, 'on');
+    titleOn(c, Q + 150);
+    newest(c, Q + 1500);
+  });
+
+  /* ---------- P2 Switch ---------- */
+  Kit.register('#p2', (c) => {
+    const sw = c.$('.sw'), g = box(c, sw);
+    const P = 1500, Q = 7300;
+    touch(c, g.cx, g.cy, P - 260, 320);
+    c.after(P - 120, () => sw.classList.remove('on'));
+    wave(c, { x: g.cx, y: g.cy }, P, 'off');
+    titleOff(c, P + 100, true);
+    touch(c, g.cx, g.cy, Q - 260, 320);
+    c.after(Q - 120, () => sw.classList.add('on'));
+    wave(c, { x: g.cx, y: g.cy }, Q, 'on');
+    titleOn(c, Q + 100, true);
+    newest(c, Q + 1500);
+  });
+
+  /* ---------- P3 From the bar ---------- */
+  Kit.register('#p3', (c) => {
+    const me = c.$('.me'), g = box(c, me), more = box(c, c.$('.me-more'));
+    const veil = c.$('.cm-veil'), mp = c.$('.cm-p'), mr = c.$('.cm-r');
+    const R = c.reduced;
+    const openMenu = (m, at) => {
+      an(c, veil, [{ opacity: 0 }, { opacity: 0.7 }], { delay: at, duration: 300, easing: EOUT });
+      an(c, m, [{ opacity: 0, transform: R ? 'none' : 'scale(0.6)' }, { opacity: 1, transform: 'none' }], { delay: at + 40, duration: R ? 220 : 420, easing: EOUT });
+    };
+    const closeMenu = (m, at) => {
+      an(c, veil, [{ opacity: 0.7 }, { opacity: 0 }], { delay: at, duration: 260, easing: EIN });
+      an(c, m, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: R ? 'none' : 'scale(0.9)' }], { delay: at, duration: 220, easing: EIN });
+    };
+    // Press and hold the bar: it lifts, the menu opens above it.
+    const H = 1200, P = 3300, Q1 = 6900, Q = 8500;
+    touch(c, g.cx - 30, g.cy, H, 700);
+    if (!R) an(c, me, [{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }], { delay: H + 150, duration: 450, easing: EOUT });
+    openMenu(mp, H + 550);
+    const ip = box(c, mp.querySelector('.i-go'));
+    touch(c, ip.x + 60, ip.cy, P - 450, 260);
+    an(c, mp.querySelector('.i-go'), [{ backgroundColor: 'transparent' }, { backgroundColor: 'var(--fill)' }], { delay: P - 420, duration: 160 });
+    closeMenu(mp, P - 160);
+    if (!R) an(c, me, [{ transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { delay: P - 160, duration: 360, easing: EOUT });
+    wave(c, { x: g.cx, y: g.cy }, P, 'off');
+    titleOff(c, P + 650);
+    // Tap More: same menu, now with Resume.
+    touch(c, more.cx, more.cy, Q1 - 200, 260); press(c, c.$('.me-more'), Q1 - 180);
+    openMenu(mr, Q1 + 100);
+    const ir = box(c, mr.querySelector('.i-go'));
+    touch(c, ir.x + 60, ir.cy, Q - 450, 260);
+    an(c, mr.querySelector('.i-go'), [{ backgroundColor: 'transparent' }, { backgroundColor: 'var(--fill)' }], { delay: Q - 420, duration: 160 });
+    closeMenu(mr, Q - 160);
+    wave(c, { x: g.cx, y: g.cy }, Q, 'on');
+    titleOn(c, Q + 650);
+    newest(c, Q + 1700);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone first run</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: first run and pairing. */
+  .off { opacity: 0; pointer-events: none; }
+  .st { stroke: var(--label); }
+  .fl { fill: var(--cell); }
+  .lg-fill { fill: var(--label); }
+  .okst { stroke: var(--ok); }
+  .okfl { fill: var(--ok); }
+  .mutest { stroke: var(--label-3); }
+  .center-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 32px; gap: 10px; }
+  .hero-ic { width: 88px; height: 88px; border-radius: 26px; background: var(--fill); display: flex; align-items: center; justify-content: center; color: var(--label); margin-bottom: 14px; }
+  .hero-ic svg { width: 46px; height: 46px; }
+  .art { display: block; margin: 0 auto; }
+  .slot2 { height: 54px; flex: none; display: flex; align-items: flex-start; }
+  /* F1: the one shape. Absolute in screen points. */
+  .shape {
+    position: absolute; z-index: 20; left: 20px; top: 694px; width: 353px; height: 50px; border-radius: 25px;
+    background: var(--tint); color: var(--on-tint); display: flex; align-items: center; justify-content: center;
+    font: 600 17px/22px var(--sf); letter-spacing: -0.43px; overflow: hidden; box-sizing: border-box;
+  }
+  .shape > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
+  .shape > span svg { width: 20px; height: 20px; }
+  .shape .ck { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; color: #fff; }
+  .shape .ck svg { width: 22px; height: 22px; }
+  .ckp { stroke-dasharray: 24; stroke-dashoffset: 24; }
+  /* Camera scene: a computer screen showing the code, out of focus at the edges. */
+  .cam .room { position: absolute; inset: 0; background: radial-gradient(120% 70% at 50% 45%, #3A3631 0%, #1E1C1A 55%, #0E0D0C 100%); }
+  .cam .mon { position: absolute; left: 36px; top: 214px; width: 321px; height: 356px; border-radius: 14px; background: #EDEBE8; box-shadow: 0 0 0 9px #26231F, 0 30px 80px rgba(0,0,0,0.6); filter: blur(0.4px); }
+  .cam .mon .cb { position: absolute; left: 50%; top: 52px; width: 200px; margin-left: -100px; background: #1D1C1A; border-radius: 14px; padding: 14px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .cam .mon .cb svg.qr { width: 172px; height: 172px; border-radius: 8px; background: #fff; display: block; }
+  .cam .mon .cb b { color: #fff; font: 700 24px/1 var(--sfd); letter-spacing: 2px; }
+  .cam .mon .mt { position: absolute; left: 0; right: 0; top: 20px; text-align: center; font: 700 15px/1 var(--sfd); color: #1D1C1A; }
+  .cam .hint { position: absolute; left: 24px; right: 24px; top: 600px; text-align: center; color: #fff; font: 600 17px/22px var(--sf); text-shadow: 0 1px 8px rgba(0,0,0,0.6); }
+  .cam .glass { position: absolute; background: rgba(40,38,35,0.55); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #fff; border: 0; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.18); }
+  .cam .gx { left: 16px; top: 59px; width: 44px; height: 44px; border-radius: 22px; display: flex; align-items: center; justify-content: center; }
+  .cam .gx svg { width: 20px; height: 20px; }
+  .cam .gtype { left: 50%; transform: translateX(-50%); bottom: 50px; height: 50px; padding: 0 22px; border-radius: 25px; font: 600 17px/22px var(--sf); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .cam .gtype svg { width: 20px; height: 20px; }
+  .cam .vf { position: absolute; left: 71px; top: 268px; width: 250px; height: 250px; }
+  .cam .vf i { position: absolute; width: 46px; height: 46px; border: 5px solid #fff; box-sizing: border-box; }
+  .cam .vf i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 26px; }
+  .cam .vf i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 26px; }
+  .cam .vf i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 26px; }
+  .cam .vf i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 26px; }
+  .cam .chip { position: absolute; left: 50%; top: 226px; transform: translateX(-50%); height: 34px; padding: 0 14px; border-radius: 17px; background: #FFD84D; color: #1D1C1A; font: 600 15px/34px var(--sf); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+  .cam .chip svg { width: 16px; height: 16px; }
+  /* Link art states */
+  .lk-ok { opacity: 0; }
+  /* F2: push transitions need a dimming veil on the page that goes back. */
+  .veil { position: absolute; inset: 0; background: rgba(0,0,0,0.12); opacity: 0; pointer-events: none; z-index: 2; }
+  .sheet .cam { position: absolute; inset: 52px 0 0 0; border-radius: 0; }
+  .sheet .cam .mon { top: 140px; }
+  .sheet .cam .vf { top: 194px; }
+  .sheet .cam .chip { top: 150px; }
+  .sheet .cam .hint { top: 520px; }
+  .sheet .nav { background: var(--sheet); }
+  /* F3: checklist */
+  .steps3 { margin: 0 20px; position: relative; display: flex; flex-direction: column; }
+  .s3row { position: relative; display: flex; gap: 16px; align-items: flex-start; min-height: 96px; }
+  .s3dot { position: relative; z-index: 2; width: 44px; height: 44px; border-radius: 22px; flex: none; background: var(--cell); box-shadow: inset 0 0 0 2px var(--fill-2); display: flex; align-items: center; justify-content: center; color: var(--label-2); }
+  .s3dot svg { width: 22px; height: 22px; }
+  .s3dot .dn { position: absolute; inset: 0; border-radius: 22px; background: var(--ok); color: #fff; display: flex; align-items: center; justify-content: center; opacity: 0; }
+  .s3dot.cur { box-shadow: inset 0 0 0 2px var(--tint); color: var(--label); }
+  .s3txt { flex: 1; padding-top: 1px; display: flex; flex-direction: column; gap: 2px; }
+  .s3txt .pbtn { margin-top: 10px; height: 40px; width: auto; align-self: flex-start; padding: 0 18px; font-size: 15px; border-radius: 20px; }
+  .s3line { position: absolute; left: 21px; width: 2px; background: var(--fill-2); z-index: 1; }
+  .s3line b { position: absolute; inset: 0; background: var(--ok); transform-origin: top; transform: scaleY(0); }
+  .f2in { transform: translateX(393px); }
+  .f2fade { opacity: 0; }
+  html.reduce .f2in { transform: none; opacity: 0; }
+  .f3cam { transform: translateY(100%); }
+  html.reduce .f3cam { transform: none; opacity: 0; }
+  #f3 .b2, #f3 .b3 { opacity: 0.35; }
+  .s3done { position: absolute; left: 0; top: 0; opacity: 0; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>First run and pairing: three ways</h1>
+    <p class="gal-note">Each option plays the whole first run in about 13 seconds: Welcome, Local Network, scan the QR code on a computer, Connected. The iPhone scans the computer's code; typing the 6 digits is the other path (see Errors for that screen). "Max's PC" is the computer in every story.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="f1" data-loop="14500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>F1</b> One shape</div>
+      <p class="opt-desc">S1 on the phone. The black button never leaves: it changes its word on each step, opens into the camera frame, closes to a dot between the two devices and turns green.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="f2" data-loop="15500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>F2</b> Plain iOS</div>
+      <p class="opt-desc">Every step pushes in from the right like Settings. The camera opens in a sheet; the QR code gets the yellow name tag the Camera app uses. The sheet drops away and the check draws.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="f3" data-loop="15000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>F3</b> One page</div>
+      <p class="opt-desc">All of setup on one screen, three steps. Each step turns green when it is done and a green line grows down to the next. The camera covers the page and goes back down.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="../desktop/motion/art.js"></script>
+<script src="ios.js"></script>
+<script src="../desktop/motion/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const A = window.UC_ART, I = IOS.ic;
+  const qr = A.qr.replace('width="256" height="256"', '');
+  const LOG = (k, x, y, s) => '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')" class="lg-fill">' + A[k] + '</g>';
+
+  // Three devices with a green arc (Welcome).
+  const artWelcome =
+    '<svg class="art" width="340" height="230" viewBox="0 0 340 230" fill="none" aria-hidden="true">' +
+    '<path class="okst wa" d="M110 96C130 40 196 28 222 70" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>' +
+    '<path class="okst wa" d="M262 92C292 70 316 92 318 120" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>' +
+    '<rect class="fl st" x="14" y="104" width="150" height="96" rx="9" stroke-width="2"/>' +
+    '<path class="st" d="M89 200v12M66 214h46" stroke-width="2" stroke-linecap="round"/>' + LOG('logoWindows', 75, 138, 1.15) +
+    '<rect class="fl st" x="202" y="70" width="64" height="122" rx="14" stroke-width="2"/>' + LOG('logoApple', 220, 113, 1.15) +
+    '<rect class="fl st" x="290" y="118" width="40" height="76" rx="9" stroke-width="2"/>' + LOG('logoAndroid', 300, 146, 0.85) +
+    '<g class="wclip"><rect class="fl okst" x="140" y="28" width="30" height="36" rx="5" stroke-width="2"/><rect class="fl okst" x="148" y="23" width="14" height="8" rx="2" stroke-width="2"/><path class="okst" d="M147 41h16M147 49h11" stroke-width="2" stroke-linecap="round"/></g>' +
+    '</svg>';
+
+  // Computer, link, iPhone. The link has a waiting (dashed) and a done (green) layer.
+  const artLink =
+    '<svg class="art lart" width="353" height="170" viewBox="0 0 353 170" fill="none" aria-hidden="true">' +
+    '<path class="mutest lk-wait" d="M168 76H252" stroke-width="2.5" stroke-dasharray="3 7" stroke-linecap="round"/>' +
+    '<path class="okst lk-ok" d="M168 76H252" stroke-width="2.5" stroke-linecap="round"/>' +
+    '<rect class="fl st" x="18" y="28" width="150" height="96" rx="9" stroke-width="2"/>' +
+    '<path class="st" d="M93 124v14M68 140h50" stroke-width="2" stroke-linecap="round"/>' + LOG('logoWindows', 79, 62, 1.15) +
+    '<rect class="fl st" x="252" y="16" width="70" height="128" rx="15" stroke-width="2"/>' + LOG('logoApple', 273, 62, 1.15) +
+    '</svg>';
+
+  // A computer showing the dark code box with the QR (Add a computer).
+  const artShow =
+    '<svg class="art" width="300" height="200" viewBox="0 0 300 200" fill="none" aria-hidden="true">' +
+    '<rect class="fl st" x="40" y="10" width="220" height="150" rx="10" stroke-width="2"/>' +
+    '<path class="st" d="M150 160v16M114 178h72" stroke-width="2" stroke-linecap="round"/>' +
+    '<rect x="104" y="26" width="92" height="118" rx="10" fill="#1D1C1A"/>' +
+    '<g transform="translate(112 34) scale(2.303)">' + qr.replace(/<svg[^>]*>/, '').replace('</svg>', '').replace('fill="#1D1C1A"', 'fill="#1D1C1A"') + '</g>' +
+    '<rect x="112" y="34" width="76" height="76" rx="4" fill="#fff" style="mix-blend-mode:normal" opacity="0"/>' +
+    '<path d="M120 128h60" stroke="#BDB8B1" stroke-width="5" stroke-linecap="round" stroke-dasharray="6 5"/>' +
+    '</svg>';
+  // The QR inside artShow: draw it on a white plate.
+  const artShowFixed = artShow.replace('<g transform="translate(112 34) scale(2.303)">', '<rect x="112" y="34" width="76" height="76" rx="5" fill="#fff"/><g transform="translate(112 34) scale(2.303)">');
+
+  const welcome = (cls, btn) =>
+    '<div class="app safe layer L-wel ' + (cls || '') + '">' +
+    '<div class="center-col" style="justify-content:flex-end;padding-bottom:28px">' + artWelcome + '</div>' +
+    '<div style="padding:0 28px 24px;display:flex;flex-direction:column;gap:10px;text-align:center">' +
+    '<h1 class="t-title1">Your latest copy, on every device.</h1><p class="t-body c2">Copy once. Paste anywhere.</p></div>' +
+    '<div class="foot-actions">' + (btn === false ? '<div style="height:50px"></div>' : '<button class="pbtn">Get started</button>') + '<div class="slot2"></div></div></div>';
+
+  const network = (cls, btn) =>
+    '<div class="app safe layer L-net ' + (cls || '') + '">' +
+    '<div class="nav"><button class="bb">' + I.back + '</button></div>' +
+    '<div class="center-col"><div class="hero-ic">' + I.wifi + '</div>' +
+    '<h1 class="t-title1">Find your computers</h1>' +
+    '<p class="t-body c2">This iPhone looks for your other devices on this Wi-Fi. iOS asks you once.</p></div>' +
+    '<div class="foot-actions">' + (btn === false ? '<div style="height:50px"></div>' : '<button class="pbtn">Continue</button>') + '<div class="slot2"></div></div></div>';
+
+  const add = (cls, btn) =>
+    '<div class="app safe layer L-add ' + (cls || '') + '">' +
+    '<div class="nav"><button class="bb">' + I.back + '</button></div>' +
+    '<div class="center-col" style="gap:12px">' + artShowFixed +
+    '<h1 class="t-title1" style="margin-top:12px">Add a computer</h1>' +
+    '<p class="t-body c2">On your computer, open Universal Clipboard and choose Show a code.</p></div>' +
+    '<div class="foot-actions">' + (btn === false ? '<div style="height:50px"></div>' : '<button class="pbtn">' + I.scan + 'Scan the code</button>') +
+    '<div class="slot2"><button class="pbtn ghost">Type the 6 digits</button></div></div></div>';
+
+  const camera = (cls, inSheet) =>
+    '<div class="cam ' + (cls || '') + '">' +
+    '<div class="room"></div>' +
+    '<div class="mon"><div class="mt">Pair a device</div><div class="cb">' + qr + '<b>418 207</b></div></div>' +
+    '<div class="vf"><i></i><i></i><i></i><i></i></div>' +
+    '<div class="chip off">' + I.laptop + 'Max\'s PC</div>' +
+    '<p class="hint">Point at the code on your computer.</p>' +
+    (inSheet ? '' : '<button class="glass gx">' + I.x + '</button>') +
+    '<button class="glass gtype">' + I.keypad + 'Type the 6 digits</button>' +
+    '</div>';
+
+  const link = (cls, withBtn) =>
+    '<div class="app safe layer L-link ' + (cls || '') + '">' +
+    '<div class="center-col" style="gap:14px">' + artLink +
+    '<div style="position:relative;height:84px;width:100%;margin-top:14px">' +
+    '<div class="lk-t1" style="position:absolute;inset:0;display:flex;flex-direction:column;gap:8px"><h1 class="t-title1">Connecting...</h1><p class="t-body c2">Talking to Max\'s PC.</p></div>' +
+    '<div class="lk-t2" style="position:absolute;inset:0;display:flex;flex-direction:column;gap:8px;opacity:0"><h1 class="t-title1">Max\'s PC is added</h1><p class="t-body c2">Your latest copy is on both.</p></div>' +
+    '</div></div>' +
+    '<div class="foot-actions">' + (withBtn ? '<button class="pbtn lk-btn" style="opacity:0">Continue</button>' : '<div style="height:50px"></div>') + '<div class="slot2"></div></div></div>';
+
+  const alertNet =
+    '<div class="dimmer a-dim off"></div><div class="alert a-box off"><h3>"Universal Clipboard" Would Like to Find and Connect to Devices on Your Local Network</h3>' +
+    '<p>This lets the app find your computers on this Wi-Fi.</p><div class="ab"><button>Don\'t Allow</button><button class="def a-allow">Allow</button></div></div>';
+  const alertCam =
+    '<div class="dimmer c-dim off"></div><div class="alert c-box off"><h3>"Universal Clipboard" Would Like to Access the Camera</h3>' +
+    '<p>To scan the code on your computer.</p><div class="ab"><button>Don\'t Allow</button><button class="def c-allow">Allow</button></div></div>';
+
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = '<div class="phone"><div class="screen">' + html + '</div></div>'; };
+
+  /* ---------- F1 One shape ---------- */
+  fill('f1',
+    welcome('', false) + network('off', false) + add('off', false) +
+    '<div class="app layer L-cam off" style="background:#0E0D0C">' + camera('') + '</div>' +
+    link('off', false) +
+    '<div class="shape"><span class="s-get">Get started</span><span class="s-cont" style="opacity:0">Continue</span>' +
+    '<span class="s-scan" style="opacity:0">' + I.scan + 'Scan the code</span><span class="s-done" style="opacity:0">Continue</span>' +
+    '<div class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path class="ckp" d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></div>' +
+    alertNet);
+
+  /* ---------- F2 Plain iOS ---------- */
+  fill('f2',
+    welcome('') + network('f2in') + add('f2in') + link('f2fade', true) +
+    '<div class="veil"></div>' +
+    '<div class="dimmer s-dim off"></div>' +
+    '<div class="sheet s-sheet" style="top:59px;transform:translateY(110%)"><div class="grab"></div>' +
+    '<div class="nav"><button class="bb word">Cancel</button><span class="nav-title">Scan the code</span><span style="width:44px"></span></div>' +
+    camera('', true) + '</div>' +
+    alertNet + alertCam);
+
+  /* ---------- F3 One page ---------- */
+  const s3 = (n, icon, title, sub, btn) =>
+    '<div class="s3row r' + n + '"><div class="s3dot">' + I[icon] + '<span class="dn">' + I.check + '</span></div>' +
+    '<div class="s3txt"><span class="t-head">' + title + '</span><span class="t-sub c2">' + sub + '</span>' + (btn ? '<button class="pbtn b' + n + '">' + btn + '</button>' : '') + '</div></div>';
+  fill('f3',
+    '<div class="app safe layer L-list">' +
+    '<div class="nav"></div>' +
+    '<div class="largetitle"><div style="display:flex;align-items:center;gap:14px;margin-bottom:10px"><div class="uc-icon" style="width:52px;height:52px;border-radius:12px">' + I.app + '</div></div>' +
+    '<h1 class="t-large">Set up this iPhone</h1><p class="t-body c2" style="margin-top:6px">Three steps. You do this once.</p></div>' +
+    '<div class="gap"></div>' +
+    '<div class="steps3"><div class="s3line l1" style="top:44px;height:52px"><b></b></div><div class="s3line l2" style="top:140px;height:52px"><b></b></div>' +
+    s3(1, 'wifi', 'Find your computers', 'Allow the local network.', 'Allow') +
+    s3(2, 'scan', 'Add a computer', 'Scan the code it shows.', 'Scan the code') +
+    s3(3, 'info', 'How it works', 'Open the app to sync.', 'Show me') +
+    '</div>' +
+    '<div style="flex:1"></div><div class="foot-actions"><button class="pbtn grey s3go">Done</button><div class="slot2"></div></div></div>' +
+    '<div class="app layer L-cam f3cam" style="background:#0E0D0C">' + camera('') + '</div>' +
+    alertNet);
+
+  IOS.decorate(document);
+
+  /* ---------- helpers ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const PUSH = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const fadeIn = (c, el, at, d, dx) => an(c, el, [{ opacity: 0, transform: 'translateX(' + (dx || 0) + 'px)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: d || 420, easing: EOUT });
+  const fadeOut = (c, el, at, d, dx) => an(c, el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(' + (dx || 0) + 'px)' }], { delay: at, duration: d || 260, easing: EIN });
+  const press = (c, el, at) => an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(0.96)', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: 260, easing: EIO, fill: 'none' });
+  const swapIn = (c, el, at) => { c.after(at, () => { el.classList.remove('off'); }); };
+  const showAlert = (c, dim, box, btn, at, dur) => {
+    an(c, dim, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: 260 });
+    an(c, box, [{ opacity: 0, transform: 'translateY(-50%) scale(1.12)' }, { opacity: 1, transform: 'translateY(-50%) scale(1)' }], { delay: at, duration: 340, easing: EOUT });
+    an(c, btn, [{ filter: 'brightness(1)' }, { filter: 'brightness(0.75)' }, { filter: 'brightness(1)' }], { delay: at + dur - 300, duration: 300, fill: 'none' });
+    an(c, dim, [{ opacity: 1 }, { opacity: 0 }], { delay: at + dur, duration: 220, easing: EIN });
+    an(c, box, [{ opacity: 1 }, { opacity: 0 }], { delay: at + dur, duration: 220, easing: EIN });
+  };
+  const lightBars = (c, on, at) => c.after(at, () => { c.$$('.sbar, .homebar').forEach((e) => e.classList.toggle('light', on)); });
+  // Element box in screen points (the stage is scaled in the gallery).
+  const box = (c, el) => {
+    const scr = c.$('.screen').getBoundingClientRect(); const k = scr.width / 393; const r = el.getBoundingClientRect();
+    return { x: (r.left - scr.left) / k, y: (r.top - scr.top) / k, w: r.width / k, h: r.height / k };
+  };
+
+  /* F1 */
+  Kit.register('#f1', (c) => {
+    const wel = c.$('.L-wel'), net = c.$('.L-net'), add = c.$('.L-add'), cam = c.$('.L-cam'), lk = c.$('.L-link');
+    const sh = c.$('.shape');
+    const lab = (a, b, at) => { an(c, c.$(a), [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: 180, easing: EIN }); an(c, c.$(b), [{ opacity: 0 }, { opacity: 1 }], { delay: at + 150, duration: 260 }); };
+    if (c.reduced) {
+      const x = (a, b, at) => { an(c, a, [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: 200 }); an(c, b, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: 200 }); };
+      x(wel, net, 1700); lab('.s-get', '.s-cont', 1700);
+      showAlert(c, '.a-dim', '.a-box', '.a-allow', 3000, 1500);
+      x(net, add, 4800); lab('.s-cont', '.s-scan', 4800);
+      x(add, cam, 6400); an(c, sh, [{ opacity: 1 }, { opacity: 0 }], { delay: 6400, duration: 200 }); lightBars(c, true, 6400);
+      an(c, c.$('.cam .vf'), [{ opacity: 1 }, { opacity: 0.6 }], { delay: 7600, duration: 200 });
+      x(cam, lk, 8400); lightBars(c, false, 8400);
+      an(c, c.$('.lk-wait'), [{ opacity: 1 }, { opacity: 0 }], { delay: 10200, duration: 200 }); an(c, c.$('.lk-ok'), [{ opacity: 0 }, { opacity: 1 }], { delay: 10200, duration: 200 });
+      an(c, c.$('.lk-t1'), [{ opacity: 1 }, { opacity: 0 }], { delay: 10200, duration: 200 }); an(c, c.$('.lk-t2'), [{ opacity: 0 }, { opacity: 1 }], { delay: 10200, duration: 200 });
+      an(c, sh, [{ opacity: 0 }, { opacity: 1 }], { delay: 11000, duration: 200 }); lab('.s-scan', '.s-done', 10900);
+      return;
+    }
+    // Welcome -> Local Network
+    press(c, sh, 1450);
+    fadeOut(c, wel, 1700, 280, -28); fadeIn(c, net, 1820, 460, 28); lab('.s-get', '.s-cont', 1700);
+    press(c, sh, 2850);
+    showAlert(c, '.a-dim', '.a-box', '.a-allow', 3000, 1500);
+    // Local Network -> Add
+    fadeOut(c, net, 4800, 280, -28); fadeIn(c, add, 4920, 460, 28); lab('.s-cont', '.s-scan', 4800);
+    press(c, sh, 6150);
+    // The button opens into the camera frame.
+    const vf = { x: 71, y: 268, w: 250, h: 250 };
+    an(c, c.$('.s-scan'), [{ opacity: 1 }, { opacity: 0 }], { delay: 6350, duration: 140 });
+    an(c, sh, [
+      { left: '20px', top: '694px', width: '353px', height: '50px', borderRadius: '25px', backgroundColor: 'var(--tint)', boxShadow: '0 0 0 0 rgba(255,255,255,0)' },
+      { left: vf.x + 'px', top: vf.y + 'px', width: vf.w + 'px', height: vf.h + 'px', borderRadius: '30px', backgroundColor: 'rgba(29,28,26,0.0)', boxShadow: 'inset 0 0 0 5px rgba(255,255,255,1)' },
+    ], { delay: 6400, duration: 760, easing: EIO });
+    fadeOut(c, add, 6400, 300); fadeIn(c, cam, 6450, 500); lightBars(c, true, 6500);
+    an(c, c.$('.cam .vf'), [{ opacity: 0 }, { opacity: 1 }], { delay: 7050, duration: 200 });
+    an(c, sh, [{ opacity: 1 }, { opacity: 0 }], { delay: 7150, duration: 160 });
+    // Found: the frame hugs the code and turns green.
+    an(c, c.$('.cam .vf'), [{ transform: 'scale(1)' }, { transform: 'scale(0.84)' }], { delay: 7800, duration: 420, easing: EOUT });
+    an(c, c.$$('.cam .vf i'), [{ borderColor: '#fff' }, { borderColor: '#3FB56E' }], { delay: 7800, duration: 300 });
+    // The frame closes to a dot between the devices.
+    c.after(8500, () => {
+      const lw = c.$('.lk-wait').getBoundingClientRect(), scr = c.$('.screen').getBoundingClientRect(), k = scr.width / 393;
+      const cx = (lw.left + lw.width / 2 - scr.left) / k, cy = (lw.top + lw.height / 2 - scr.top) / k;
+      an(c, sh, [
+        { opacity: 1, left: (vf.x + 20) + 'px', top: (vf.y + 20) + 'px', width: (vf.w - 40) + 'px', height: (vf.h - 40) + 'px', borderRadius: '26px', backgroundColor: 'rgba(63,181,110,0)', boxShadow: 'inset 0 0 0 5px #3FB56E' },
+        { opacity: 1, left: (cx - 10) + 'px', top: (cy - 10) + 'px', width: '20px', height: '20px', borderRadius: '10px', backgroundColor: 'var(--label-3)', boxShadow: 'inset 0 0 0 0 #3FB56E' },
+      ], { duration: 820, easing: EIO });
+      an(c, sh, [{ transform: 'scale(1)' }, { transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { delay: 1000, duration: 900, iterations: 2, easing: EIO, fill: 'none' });
+      an(c, sh, [
+        { left: (cx - 10) + 'px', top: (cy - 10) + 'px', width: '20px', height: '20px', borderRadius: '10px', backgroundColor: 'var(--label-3)' },
+        { left: (cx - 20) + 'px', top: (cy - 20) + 'px', width: '40px', height: '40px', borderRadius: '20px', backgroundColor: 'var(--ok)' },
+      ], { delay: 2900, duration: 420, easing: EOUT });
+      an(c, c.$('.shape .ck'), [{ opacity: 0 }, { opacity: 1 }], { delay: 3050, duration: 120 });
+      an(c, c.$('.ckp'), [{ strokeDashoffset: 24 }, { strokeDashoffset: 0 }], { delay: 3100, duration: 420, easing: EOUT });
+      // Then the dot goes back to being the button.
+      an(c, sh, [
+        { left: (cx - 20) + 'px', top: (cy - 20) + 'px', width: '40px', height: '40px', borderRadius: '20px', backgroundColor: 'var(--ok)' },
+        { left: '20px', top: '694px', width: '353px', height: '50px', borderRadius: '25px', backgroundColor: 'var(--tint)' },
+      ], { delay: 4200, duration: 760, easing: EIO });
+      an(c, c.$('.shape .ck'), [{ opacity: 1 }, { opacity: 0 }], { delay: 4200, duration: 160 });
+      an(c, c.$('.s-done'), [{ opacity: 0 }, { opacity: 1 }], { delay: 4800, duration: 260 });
+    });
+    fadeOut(c, cam, 8500, 360); fadeIn(c, lk, 8600, 460); lightBars(c, false, 8550);
+    an(c, c.$('.lk-wait'), [{ strokeDashoffset: 0 }, { strokeDashoffset: -20 }], { delay: 8600, duration: 600, iterations: 4, easing: 'linear', fill: 'none' });
+    an(c, c.$('.lk-wait'), [{ opacity: 1 }, { opacity: 0 }], { delay: 11350, duration: 300 });
+    an(c, c.$('.lk-ok'), [{ opacity: 0, strokeDasharray: '84 84', strokeDashoffset: 84 }, { opacity: 1, strokeDasharray: '84 84', strokeDashoffset: 0 }], { delay: 11350, duration: 500, easing: EOUT });
+    an(c, c.$('.lk-t1'), [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-8px)' }], { delay: 11400, duration: 220, easing: EIN });
+    an(c, c.$('.lk-t2'), [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { delay: 11550, duration: 420, easing: EOUT });
+  });
+
+  /* F2 */
+  Kit.register('#f2', (c) => {
+    const wel = c.$('.L-wel'), net = c.$('.L-net'), add = c.$('.L-add'), lk = c.$('.L-link');
+    const sheet = c.$('.s-sheet');
+    const push = (from, to, at) => {
+      if (c.reduced) { an(c, from, [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: 200 }); an(c, to, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: 200 }); return; }
+      an(c, to, [{ transform: 'translateX(393px)', boxShadow: '-10px 0 30px rgba(0,0,0,0.12)' }, { transform: 'none', boxShadow: '-10px 0 30px rgba(0,0,0,0)' }], { delay: at, duration: 520, easing: PUSH });
+      an(c, from, [{ transform: 'none', opacity: 1, filter: 'brightness(1)' }, { transform: 'translateX(-118px)', opacity: 1, filter: 'brightness(0.9)' }], { delay: at, duration: 520, easing: PUSH });
+      an(c, from, [{ opacity: 1 }, { opacity: 0 }], { delay: at + 520, duration: 1 });
+    };
+    press(c, wel.querySelector('.pbtn'), 1300);
+    push(wel, net, 1500);
+    press(c, net.querySelector('.pbtn'), 2700);
+    showAlert(c, '.a-dim', '.a-box', '.a-allow', 2900, 1500);
+    push(net, add, 4700);
+    press(c, add.querySelector('.pbtn'), 5900);
+    // The camera sheet rises; iOS asks for the camera first.
+    an(c, c.$('.s-dim'), [{ opacity: 0 }, { opacity: 1 }], { delay: 6100, duration: 300 });
+    an(c, sheet, [{ transform: 'translateY(110%)' }, { transform: 'translateY(0)' }], { delay: 6100, duration: c.reduced ? 1 : 560, easing: PUSH });
+    if (c.reduced) an(c, sheet, [{ opacity: 0 }, { opacity: 1 }], { delay: 6100, duration: 200 });
+    an(c, add, [{ transform: 'scale(1)', borderRadius: '0px' }, { transform: 'scale(0.94)', borderRadius: '40px' }], { delay: 6100, duration: c.reduced ? 1 : 560, easing: PUSH });
+    showAlert(c, '.c-dim', '.c-box', '.c-allow', 6800, 1400);
+    an(c, c.$('.sheet .cam .vf'), [{ transform: 'scale(1)' }, { transform: 'scale(0.84)' }], { delay: 8700, duration: c.reduced ? 1 : 420, easing: EOUT });
+    an(c, c.$('.sheet .cam .chip'), [{ opacity: 0, transform: 'translateX(-50%) translateY(8px) scale(0.9)' }, { opacity: 1, transform: 'translateX(-50%) translateY(0) scale(1)' }], { delay: 8800, duration: c.reduced ? 200 : 420, easing: EOUT });
+    c.after(8800, () => c.$('.sheet .cam .chip').classList.remove('off'));
+    press(c, c.$('.sheet .cam .chip'), 9700);
+    // Sheet drops away; the Connected page is already pushed underneath.
+    an(c, sheet, [{ transform: 'translateY(0)' }, { transform: 'translateY(110%)' }], { delay: 10100, duration: c.reduced ? 200 : 460, easing: EIN });
+    if (c.reduced) an(c, sheet, [{ opacity: 1 }, { opacity: 0 }], { delay: 10100, duration: 200 });
+    an(c, c.$('.s-dim'), [{ opacity: 1 }, { opacity: 0 }], { delay: 10100, duration: 300 });
+    an(c, add, [{ transform: 'scale(0.94)', borderRadius: '40px', opacity: 1 }, { transform: 'scale(1)', borderRadius: '0px', opacity: 0 }], { delay: 10100, duration: c.reduced ? 200 : 460, easing: PUSH });
+    an(c, lk, [{ transform: 'none', opacity: 0 }, { transform: 'none', opacity: 1 }], { delay: 10200, duration: 300 });
+    an(c, c.$('.lk-wait'), [{ strokeDashoffset: 0 }, { strokeDashoffset: -20 }], { delay: 10200, duration: 600, iterations: 2, easing: 'linear', fill: 'none' });
+    an(c, c.$('.lk-wait'), [{ opacity: 1 }, { opacity: 0 }], { delay: 11400, duration: 300 });
+    an(c, c.$('.lk-ok'), [{ opacity: 0, strokeDasharray: '84 84', strokeDashoffset: 84 }, { opacity: 1, strokeDasharray: '84 84', strokeDashoffset: 0 }], { delay: 11400, duration: c.reduced ? 200 : 520, easing: EOUT });
+    an(c, c.$('.lk-t1'), [{ opacity: 1 }, { opacity: 0 }], { delay: 11400, duration: 200 });
+    an(c, c.$('.lk-t2'), [{ opacity: 0, transform: c.reduced ? 'none' : 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { delay: 11550, duration: 420, easing: EOUT });
+    an(c, c.$('.lk-btn'), [{ opacity: 0 }, { opacity: 1 }], { delay: 12100, duration: 360 });
+  });
+
+  /* F3 */
+  Kit.register('#f3', (c) => {
+    const cam = c.$('.L-cam');
+    const done = (n, at) => {
+      an(c, c.$('.r' + n + ' .dn'), [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.6)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: c.reduced ? 200 : 420, easing: EOUT });
+      an(c, c.$('.b' + n), [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.96)' }], { delay: at, duration: 200, easing: EIN });
+      c.after(at, () => { const s = c.$('.r' + n + ' .t-sub'); s.textContent = ['', 'Allowed.', 'Max\'s PC is added.', 'Done.'][n]; s.classList.add('cok'); });
+      const line = c.$('.l' + n + ' b');
+      if (line) an(c, line, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }], { delay: at + 250, duration: c.reduced ? 1 : 600, easing: EIO });
+      const nx = c.$('.r' + (n + 1) + ' .s3dot');
+      if (nx) c.after(at + 700, () => nx.classList.add('cur'));
+    };
+    c.after(0, () => c.$('.r1 .s3dot').classList.add('cur'));
+    press(c, c.$('.b1'), 1300);
+    showAlert(c, '.a-dim', '.a-box', '.a-allow', 1500, 1500);
+    done(1, 3200);
+    an(c, c.$('.b2'), [{ opacity: 0.35 }, { opacity: 1 }], { delay: 3800, duration: 300 });
+    press(c, c.$('.b2'), 4800);
+    an(c, cam, [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }], { delay: 5000, duration: c.reduced ? 1 : 560, easing: PUSH });
+    if (c.reduced) an(c, cam, [{ opacity: 0 }, { opacity: 1 }], { delay: 5000, duration: 200 });
+    lightBars(c, true, 5200);
+    an(c, c.$('.cam .vf'), [{ transform: 'scale(1)' }, { transform: 'scale(0.84)' }], { delay: 6400, duration: c.reduced ? 1 : 420, easing: EOUT });
+    an(c, c.$$('.cam .vf i'), [{ borderColor: '#fff' }, { borderColor: '#3FB56E' }], { delay: 6400, duration: 300 });
+    an(c, cam, [{ transform: 'translateY(0)' }, { transform: 'translateY(100%)' }], { delay: 7400, duration: c.reduced ? 1 : 460, easing: EIN });
+    if (c.reduced) an(c, cam, [{ opacity: 1 }, { opacity: 0 }], { delay: 7400, duration: 200 });
+    lightBars(c, false, 7500);
+    done(2, 7900);
+    an(c, c.$('.b3'), [{ opacity: 0.35 }, { opacity: 1 }], { delay: 8500, duration: 300 });
+    press(c, c.$('.b3'), 9700);
+    done(3, 10100);
+    c.after(10900, () => { const g = c.$('.s3go'); g.classList.remove('grey'); });
+    an(c, c.$('.s3go'), [{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { delay: 10900, duration: c.reduced ? 1 : 420, easing: EIO, fill: 'none' });
+  });
+})();
+</script>
+</body>
+</html>

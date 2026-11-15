@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone mockups</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<style>
+  /* Page-local (index.html). */
+  .ix { max-width: 880px; margin: 0 auto; box-sizing: border-box; padding: 56px 32px 72px; }
+  .ix h1 { font-size: 34px; line-height: 40px; letter-spacing: -0.02em; }
+  .ix .lead { margin-top: 10px; font-size: 16px; line-height: 24px; color: var(--ink-2); max-width: 62ch; }
+  .ix .meta { margin-top: 6px; font-size: 13.5px; color: var(--ink-3); }
+  .groups { list-style: none; margin: 36px 0 0; padding: 0; display: grid; gap: 12px; }
+  .grp {
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 18px; align-items: center;
+    background: var(--white); border: 1px solid var(--line); border-radius: var(--r-tile);
+    padding: 18px 20px; color: var(--ink); text-decoration: none;
+    transition: border-color var(--t-base) var(--ease-out), transform var(--t-base) var(--ease-out);
+  }
+  .grp:hover { border-color: var(--line-2); transform: translateY(-1px); }
+  .grp:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .grp .nm { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .grp .ds { grid-column: 1; font-size: 14px; line-height: 20px; color: var(--ink-3); }
+  .grp .ct {
+    grid-row: 1 / 3; grid-column: 2; font-size: 13.5px; font-weight: 700; color: var(--ink);
+    border: 1px solid var(--line-2); border-radius: 999px; padding: 5px 12px; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .how { margin-top: 36px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-tile); padding: 22px 24px; }
+  .how h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .how ol, .how ul { margin: 12px 0 0; padding-left: 20px; font-size: 15px; line-height: 24px; color: var(--ink-2); }
+  .how li + li { margin-top: 4px; }
+  .how code { font-family: var(--font); font-weight: 700; color: var(--ink); background: var(--white); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
+  .foot { margin-top: 28px; font-size: 13.5px; line-height: 20px; color: var(--ink-3); }
+  .foot a { color: var(--ink); text-underline-offset: 3px; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .groups li { animation: rise 520ms var(--ease-out) both; }
+  .groups li:nth-child(2) { animation-delay: 50ms; } .groups li:nth-child(3) { animation-delay: 100ms; }
+  .groups li:nth-child(4) { animation-delay: 150ms; } .groups li:nth-child(5) { animation-delay: 200ms; }
+  .groups li:nth-child(6) { animation-delay: 250ms; } .groups li:nth-child(7) { animation-delay: 300ms; }
+  @media (prefers-reduced-motion: reduce) { .groups li { animation: none; } .grp, .grp:hover { transition: none; transform: none; } }
+  @media (max-width: 720px) {
+    .ix { padding: 32px 16px 48px; } .ix h1 { font-size: 26px; line-height: 32px; }
+    .grp { grid-template-columns: 1fr; padding: 16px; } .grp .ct { grid-row: auto; grid-column: 1; justify-self: start; margin-top: 6px; }
+    .how { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body class="gallery">
+<main class="ix">
+  <h1>iPhone mockups</h1>
+  <p class="lead">Universal Clipboard on iPhone: native iOS with the desktop's warm colors and motion. Each page shows one part of the app with three options that play and loop. iPad comes after you pick, with the same screens in its wider layout.</p>
+  <p class="meta">Made 2026-11-15. 21 options on 7 pages. Replaces the old <code>docs/mockups/10</code> and <code>11</code>.</p>
+
+  <ul class="groups">
+    <li><a class="grp" href="setup.html"><span class="nm">First run and pairing</span><span class="ds">Welcome, Local Network, scan the code on a computer, Connected.</span><span class="ct">F1 to F3</span></a></li>
+    <li><a class="grp" href="howto.html"><span class="nm">How it works</span><span class="ds">The page after pairing: open the app to sync, the Share sheet, and the paste setting.</span><span class="ct">W1 to W3</span></a></li>
+    <li><a class="grp" href="home.html"><span class="nm">Home</span><span class="ds">What you see when the app opens, which is also when it syncs. This iPhone shown apart, the ticker.</span><span class="ct">H1 to H3</span></a></li>
+    <li><a class="grp" href="share.html"><span class="nm">Share sheet</span><span class="ds">Sending a copy from another app without opening Universal Clipboard.</span><span class="ct">X1 to X3</span></a></li>
+    <li><a class="grp" href="pause.html"><span class="nm">Pause and Resume</span><span class="ds">The Hush wave on iPhone. Paused means opening the app moves nothing.</span><span class="ct">P1 to P3</span></a></li>
+    <li><a class="grp" href="errors.html"><span class="nm">Errors</span><span class="ds">Wrong or old code, no computer on, Local Network off, a VPN in the way.</span><span class="ct">E1 to E3</span></a></li>
+    <li><a class="grp" href="settings.html"><span class="nm">Settings and devices</span><span class="ds">Name, images, the paste setting, remove a device, About. Updates come from the App Store.</span><span class="ct">T1 to T3</span></a></li>
+  </ul>
+
+  <section class="how" aria-labelledby="how-h">
+    <h2 id="how-h">How to choose</h2>
+    <ol>
+      <li>Open a page. Each option plays its story and loops. Press Replay to see it again.</li>
+      <li>Use the buttons at the top: Reduced motion, Dark Mode, Actual size.</li>
+      <li>Reply with the ids you like, for example <code>F1, W2, H1, X3, P1, E1, T2</code>. Mixing parts is fine.</li>
+    </ol>
+  </section>
+  <section class="how" aria-labelledby="carry-h">
+    <h2 id="carry-h">What carries over from the desktop</h2>
+    <ul>
+      <li>S1 One shape (setup), E1 Shake, then clear (code errors), H3 You are here (this device apart), A3 Ticker, A4 Hush.</li>
+      <li>6 digits and a QR code, local network only. No copy history: the app shows facts, never content.</li>
+      <li>iPhone rules: a copy moves when you open the app or use the Share sheet. Updates come from the App Store.</li>
+      <li>Real iPhone paste prompts are not checked yet (spike S5).</li>
+    </ul>
+  </section>
+  <p class="foot">Open any page straight from the folder in a browser. It works offline. Desktop motion: <a href="../desktop/motion/index.html">desktop mockups</a>.</p>
+</main>
+</body>
+</html>
