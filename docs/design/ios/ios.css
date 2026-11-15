@@ -266,6 +266,27 @@ html.dark .gal-tools button[aria-pressed='true'] { background: #F2F0ED; color: #
 @media (max-width: 720px) { .gal-grid, .gal-grid.actual { --s: 0.62; } }
 @media (max-width: 380px) { .gal-grid, .gal-grid.actual { --s: 0.56; } }
 
+/* "Pick one" banner, option tags and "or" between options (ios.js markChoices). */
+.pick {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 14px 18px; flex-wrap: wrap;
+  background: var(--ink); color: #F7F6F4; border-radius: 14px; padding: 16px 20px; margin-bottom: 4px;
+}
+.pick-t { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+.pick-s { font-size: 15px; line-height: 22px; color: #DAD6D0; flex: 1 1 320px; }
+.pick-s b { display: inline-block; color: var(--ink); background: #F7F6F4; border-radius: 6px; padding: 0 7px; font-weight: 700; margin: 0 1px; }
+.opt { position: relative; }
+.opt-tag { display: flex; align-items: baseline; gap: 10px; }
+.opt-tag b { font-size: 26px; line-height: 30px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.opt-tag span { font-size: 13.5px; font-weight: 600; color: var(--ink-3); }
+.opt-or::before {
+  content: 'or'; position: absolute; left: -26px; top: calc(42px + var(--sh) * var(--s) / 2 - 12px); width: 24px; text-align: center;
+  font-size: 14px; font-weight: 700; color: var(--ink-3); font-style: italic;
+}
+html.dark .pick { background: #F2F0ED; color: #1D1C1A; }
+html.dark .pick-s { color: #3F3C38; }
+html.dark .pick-s b { background: #1D1C1A; color: #F2F0ED; }
+html.dark .opt-tag span, html.dark .opt-or::before { color: #B3AEA7; }
+
 /* Gallery chrome bits for these pages. */
 .gal-back { display: inline-block; margin-bottom: 10px; font-size: 14px; color: inherit; text-underline-offset: 3px; }
 .gal-section-note { grid-column: 1 / -1; margin-top: -24px; font-size: 14px; line-height: 20px; color: var(--ink-3); max-width: 80ch; }

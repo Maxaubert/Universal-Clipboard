@@ -101,8 +101,32 @@
     });
     tools.appendChild(sz);
   }
+  /* Max 2026-11-15: make it plain that the options on a page are alternatives, not steps.
+     A "Pick one" banner above the grid, an "Option X, n of N" tag on each, and "or" between them. */
+  function markChoices() {
+    const grid = document.querySelector('.gal-grid');
+    if (!grid || grid.querySelector('.pick')) return;
+    const opts = Array.from(grid.querySelectorAll('figure.opt'));
+    if (opts.length < 2) return;
+    const ids = opts.map((o) => { const b = o.querySelector('.opt-label b'); return b ? b.textContent.trim() : o.id.toUpperCase(); });
+    const words = ['', 'one', 'two', 'three', 'four', 'five', 'six'];
+    const list = ids.slice(0, -1).map((i) => '<b>' + i + '</b>').join(', ') + ' or <b>' + ids[ids.length - 1] + '</b>';
+    const ban = document.createElement('div');
+    ban.className = 'pick';
+    ban.innerHTML = '<span class="pick-t">Pick one</span><span class="pick-s">These are ' + (words[opts.length] || opts.length) +
+      ' different versions of the same screens. Each plays the whole story. Choose ' + list + '.</span>';
+    grid.insertBefore(ban, grid.firstChild);
+    opts.forEach((o, i) => {
+      const tag = document.createElement('div');
+      tag.className = 'opt-tag';
+      tag.innerHTML = '<b>' + ids[i] + '</b><span>Option ' + (i + 1) + ' of ' + opts.length + '</span>';
+      o.insertBefore(tag, o.firstChild);
+      if (i > 0) o.classList.add('opt-or');
+    });
+  }
+
   // kit.js fills .gal-tools on DOMContentLoaded; add ours right after.
-  const later = () => setTimeout(addDarkButton, 0);
+  const later = () => setTimeout(() => { addDarkButton(); markChoices(); }, 0);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', later); else later();
 
   window.IOS = { ic, decorate };
