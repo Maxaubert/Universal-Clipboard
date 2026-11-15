@@ -50,10 +50,12 @@ can change a choice, but then they change this page too.
   explicit fetch) but not put on the clipboard. While paused, received clips are held too.
 - Explicit fetch (`Engine::fetch`) uses the newest header the peers sent. Call it after the
   `Hello`/`Latest` exchange.
-- Echo layer 4 follows the plan word for word: content seen in the last 64 clips sent or applied
-  is never sent again. **Open point for Max:** a user who copies an old item again (for example
-  from a clipboard history) within those 64 clips will not see it sync. A time window (for
-  example 10 s) would stop manager loops just as well. Not changed in M1.
+- Echo layers 3 and 4 compare a local copy with the **current clip only** (the one held: last
+  sent or received), by wire ID and by content hash. On receive, only a newer stamp counts.
+  So an older item copied again (same link twice, clipboard history) is a new copy and syncs.
+  Manager loops still stop: a rewritten clip always equals the current one. (Changed
+  2026-11-15 after a bug: a link copied a second time in Flare never reached the Mac. Before,
+  the last 64 IDs and content hashes were blocked.)
 - Settle time (150 ms) and read retries belong to the agent and the backends, not to the core.
 - Membership and address messages are passed through as opaque bytes for M2 and M3. The agent
   must only `connect` peers that are valid members.

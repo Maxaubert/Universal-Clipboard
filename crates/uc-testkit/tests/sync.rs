@@ -73,6 +73,40 @@ fn layer4_rewritten_content_is_never_sent_back() {
     assert_eq!(net.in_flight(), 0);
 }
 
+/// Bug 2026-11-15: a link copied on the PC, then something copied on the Mac, then the same link
+/// copied on the PC again never reached the Mac. An older clip copied again is a new copy.
+#[test]
+fn an_older_clip_copied_again_syncs_again() {
+    let mut net = FakeNet::full_mesh(2);
+    net.copy_text(0, "https://example.com/link");
+    net.run();
+    net.copy_text(1, "something else");
+    net.run();
+    assert_eq!(net.text(0).as_deref(), Some("something else"));
+
+    net.copy_text(0, "https://example.com/link");
+    net.run();
+    assert_eq!(net.text(1).as_deref(), Some("https://example.com/link"));
+    assert!(net.converged(), "{}", net.describe());
+
+    // The other way round too: the receiver copies again what it received earlier.
+    net.copy_text(1, "something else");
+    net.run();
+    assert_eq!(net.text(0).as_deref(), Some("something else"));
+    assert_eq!(net.sends(), 4, "one send per user copy");
+}
+
+#[test]
+fn the_current_clip_copied_again_is_not_sent() {
+    let mut net = FakeNet::full_mesh(2);
+    net.copy_text(0, "same");
+    net.run();
+    net.copy_text(0, "same");
+    assert!(has(&net, 0, |e| *e == Event::Skipped(SkipReason::SeenId)));
+    assert_eq!(net.in_flight(), 0);
+    assert_eq!(net.sends(), 1);
+}
+
 /// Plan 6.1 and the M1 acceptance: two devices with clipboard managers that strip the marker
 /// and re-encode every clip must not ping-pong.
 #[test]

@@ -11,7 +11,7 @@ publish = false
 workspace = true
 
 [dependencies]
-uc-clip = { version = "0.1.0", path = "../uc-clip" }
+uc-clip = { version = "0.1.1", path = "../uc-clip" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.5"
@@ -21,4 +21,4 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 blake3 = "1.8.7"
 png = "0.18.1"
-uc-core = { version = "0.1.0", path = "../uc-core" }
+uc-core = { version = "0.1.1", path = "../uc-core" }

@@ -20,7 +20,6 @@ pub mod hlc;
 pub mod ids;
 pub mod image;
 pub mod msg;
-pub mod recent;
 pub mod sync;
 pub mod text;
 
