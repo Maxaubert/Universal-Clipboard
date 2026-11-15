@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPad first run</title>
+<link rel="stylesheet" href="kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: iPad first run and pairing (F1 One shape). */
+  .gal-grid.ipad-grid.mixed { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+  .off { opacity: 0; pointer-events: none; }
+  .st { stroke: var(--label); }
+  .fl { fill: var(--cell); }
+  .lg-fill { fill: var(--label); }
+  .okst { stroke: var(--ok); }
+  .mutest { stroke: var(--label-3); }
+  .lab-t { fill: var(--label-2); font: 600 15px/1 var(--sf); letter-spacing: -0.23px; }
+  /* Layout numbers per orientation: --H screen height, --by button top, --vfy viewfinder top. */
+  .tablet.land { --H: 820px; --by: 620px; --vfy: 220px; }
+  .tablet.port { --H: 1180px; --by: 820px; --vfy: 400px; }
+  /* One centered column, 440 pt, that ends 40 pt above the button. */
+  .col { position: absolute; left: 50%; width: 440px; margin-left: -220px; bottom: calc(var(--H) - var(--by) + 40px);
+    display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+  .col p { max-width: 400px; }
+  .col h1 { text-wrap: balance; }
+  .slot2p { position: absolute; left: 50%; width: 360px; margin-left: -180px; top: calc(var(--by) + 54px); }
+  .pad .nav { padding: 0 20px; height: 50px; }
+  .hero-ic { width: 96px; height: 96px; border-radius: 28px; background: var(--fill); display: flex; align-items: center; justify-content: center; color: var(--label); margin-bottom: 16px; }
+  .hero-ic svg { width: 50px; height: 50px; }
+  .art { display: block; margin: 0 auto; }
+  /* F1: the one shape. Absolute in screen points. */
+  .shape {
+    position: absolute; z-index: 20; left: calc(50% - 180px); top: var(--by); width: 360px; height: 50px; border-radius: 25px;
+    background: var(--tint); color: var(--on-tint); display: flex; align-items: center; justify-content: center;
+    font: 600 17px/22px var(--sf); letter-spacing: -0.43px; overflow: hidden; box-sizing: border-box;
+  }
+  .shape > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
+  .shape > span svg { width: 20px; height: 20px; }
+  .shape .ck { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; color: #fff; }
+  .shape .ck svg { width: 22px; height: 22px; }
+  .ckp { stroke-dasharray: 24; stroke-dashoffset: 24; }
+  /* Camera: fills the screen, the viewfinder in the middle. */
+  .cam .room { position: absolute; inset: 0; background: radial-gradient(90% 70% at 50% 46%, #3A3631 0%, #1E1C1A 55%, #0E0D0C 100%); }
+  .cam .mon { position: absolute; left: 50%; margin-left: -280px; top: calc(var(--vfy) - 35px); width: 560px; height: 420px; border-radius: 16px; background: #EDEBE8;
+    box-shadow: 0 0 0 11px #26231F, 0 30px 90px rgba(0,0,0,0.6); filter: blur(0.4px); }
+  .cam .mon .cb { position: absolute; left: 50%; top: 60px; width: 256px; margin-left: -128px; background: #1D1C1A; border-radius: 16px; padding: 18px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .cam .mon .cb svg.qr { width: 220px; height: 220px; border-radius: 10px; background: #fff; display: block; }
+  .cam .mon .cb b { color: #fff; font: 700 28px/1 var(--sfd); letter-spacing: 2px; }
+  .cam .mon .mt { position: absolute; left: 0; right: 0; top: 22px; text-align: center; font: 700 17px/1 var(--sfd); color: #1D1C1A; }
+  .cam .hint { position: absolute; left: 0; right: 0; top: calc(var(--vfy) + 420px); text-align: center; color: #fff; font: 600 20px/25px var(--sf); text-shadow: 0 1px 8px rgba(0,0,0,0.6); }
+  .cam .glass { position: absolute; background: rgba(40,38,35,0.55); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #fff; border: 0; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.18); }
+  .cam .gx { left: 24px; top: 40px; width: 50px; height: 50px; border-radius: 25px; display: flex; align-items: center; justify-content: center; }
+  .cam .gx svg { width: 22px; height: 22px; }
+  .cam .gtype { left: 50%; transform: translateX(-50%); bottom: 48px; height: 50px; padding: 0 24px; border-radius: 25px; font: 600 17px/22px var(--sf); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .cam .gtype svg { width: 20px; height: 20px; }
+  .cam .vf { position: absolute; left: 50%; margin-left: -170px; top: var(--vfy); width: 340px; height: 340px; }
+  .cam .vf i { position: absolute; width: 58px; height: 58px; border: 5px solid #fff; box-sizing: border-box; }
+  .cam .vf i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 32px; }
+  .cam .vf i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 32px; }
+  .cam .vf i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 32px; }
+  .cam .vf i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 32px; }
+  .lk-ok { opacity: 0; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>iPad first run and pairing</h1>
+    <p class="gal-note">These are the iPad versions of Max's picks, to check, not to choose between. F1 One shape plays the whole first run in about 14 seconds, in landscape and in portrait: Welcome, Local Network, scan the QR code on a computer, Connected. "Max's PC" is the computer; this device is "Max's iPad".</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid ipad-grid mixed" data-pick="none">
+
+  <figure class="opt land" id="f1-l" data-loop="14500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>F1</b> One shape, landscape</div>
+      <p class="opt-desc">Each step sits in one centered column. The 360 pt button never leaves: it changes its word, opens into the camera frame in the middle of the screen, closes to a dot between Max's PC and the iPad and turns green.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt port" id="f1-p" data-loop="14500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>F1</b> One shape, portrait</div>
+      <p class="opt-desc">The same story held upright. The column and the button stay the same size; the camera fills the taller screen with the frame in the middle.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="art.js"></script>
+<script src="ios.js"></script>
+<script src="kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const A = window.UC_ART, I = IOS.ic;
+  const qr = A.qr.replace('width="256" height="256"', '');
+  const LOG = (k, x, y, s) => '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')" class="lg-fill">' + A[k] + '</g>';
+
+  // Three devices with a green arc (Welcome), as on iPhone, drawn larger.
+  const artWelcome =
+    '<svg class="art" width="408" height="276" viewBox="0 0 340 230" fill="none" aria-hidden="true">' +
+    '<path class="okst" d="M110 96C130 40 196 28 222 70" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>' +
+    '<path class="okst" d="M262 92C292 70 316 92 318 120" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>' +
+    '<rect class="fl st" x="14" y="104" width="150" height="96" rx="9" stroke-width="2"/>' +
+    '<path class="st" d="M89 200v12M66 214h46" stroke-width="2" stroke-linecap="round"/>' + LOG('logoWindows', 75, 138, 1.15) +
+    '<rect class="fl st" x="202" y="70" width="64" height="122" rx="14" stroke-width="2"/>' + LOG('logoApple', 220, 113, 1.15) +
+    '<rect class="fl st" x="290" y="118" width="40" height="76" rx="9" stroke-width="2"/>' + LOG('logoAndroid', 300, 146, 0.85) +
+    '<g><rect class="fl okst" x="140" y="28" width="30" height="36" rx="5" stroke-width="2"/><rect class="fl okst" x="148" y="23" width="14" height="8" rx="2" stroke-width="2"/><path class="okst" d="M147 41h16M147 49h11" stroke-width="2" stroke-linecap="round"/></g>' +
+    '</svg>';
+
+  // Max's PC, the link, Max's iPad. The link has a waiting (dashed) and a done (green) layer.
+  const artLink =
+    '<svg class="art lart" width="440" height="222" viewBox="0 0 440 222" fill="none" aria-hidden="true">' +
+    '<path class="mutest lk-wait" d="M190 90H300" stroke-width="2.5" stroke-dasharray="3 7" stroke-linecap="round"/>' +
+    '<path class="okst lk-ok" d="M190 90H300" stroke-width="2.5" stroke-linecap="round"/>' +
+    '<rect class="fl st" x="10" y="32" width="180" height="116" rx="10" stroke-width="2"/>' +
+    '<path class="st" d="M100 148v16M70 166h60" stroke-width="2" stroke-linecap="round"/>' + LOG('logoWindows', 83, 73, 1.4) +
+    '<rect class="fl st" x="300" y="12" width="124" height="166" rx="16" stroke-width="2"/>' +
+    '<circle class="lg-fill" cx="362" cy="21" r="2"/>' + LOG('logoApple', 345, 78, 1.4) +
+    '<text class="lab-t" x="100" y="210" text-anchor="middle">Max\'s PC</text>' +
+    '<text class="lab-t" x="362" y="210" text-anchor="middle">Max\'s iPad</text>' +
+    '</svg>';
+
+  // A computer showing the dark code box with the QR (Add a computer).
+  const artShow =
+    '<svg class="art" width="360" height="240" viewBox="0 0 300 200" fill="none" aria-hidden="true">' +
+    '<rect class="fl st" x="40" y="10" width="220" height="150" rx="10" stroke-width="2"/>' +
+    '<path class="st" d="M150 160v16M114 178h72" stroke-width="2" stroke-linecap="round"/>' +
+    '<rect x="104" y="26" width="92" height="118" rx="10" fill="#1D1C1A"/>' +
+    '<rect x="112" y="34" width="76" height="76" rx="5" fill="#fff"/>' +
+    '<g transform="translate(112 34) scale(2.303)">' + qr.replace(/<svg[^>]*>/, '').replace('</svg>', '') + '</g>' +
+    '<path d="M120 128h60" stroke="#BDB8B1" stroke-width="5" stroke-linecap="round" stroke-dasharray="6 5"/>' +
+    '</svg>';
+
+  const back = '<div class="nav"><button class="bb">' + I.back + '</button></div>';
+
+  const welcome =
+    '<div class="app safe-pad layer L-wel">' +
+    '<div class="col">' + artWelcome +
+    '<h1 class="t-title1" style="margin-top:28px">Your latest copy, on every device.</h1><p class="t-body c2">Copy once. Paste anywhere.</p></div></div>';
+
+  const network =
+    '<div class="app safe-pad layer L-net off">' + back +
+    '<div class="col"><div class="hero-ic">' + I.wifi + '</div>' +
+    '<h1 class="t-title1">Find your computers</h1>' +
+    '<p class="t-body c2">This iPad looks for your other devices on this Wi-Fi. iPadOS asks you once.</p></div></div>';
+
+  const add =
+    '<div class="app safe-pad layer L-add off">' + back +
+    '<div class="col" style="gap:12px">' + artShow +
+    '<h1 class="t-title1" style="margin-top:14px">Add a computer</h1>' +
+    '<p class="t-body c2">On your computer, open Universal Clipboard and choose Show a code.</p></div>' +
+    '<div class="slot2p"><button class="pbtn ghost">Type the 6 digits</button></div></div>';
+
+  const camera =
+    '<div class="app layer L-cam off" style="background:#0E0D0C"><div class="cam">' +
+    '<div class="room"></div>' +
+    '<div class="mon"><div class="mt">Pair a device</div><div class="cb">' + qr + '<b>418 207</b></div></div>' +
+    '<div class="vf"><i></i><i></i><i></i><i></i></div>' +
+    '<p class="hint">Point at the code on your computer.</p>' +
+    '<button class="glass gx">' + I.x + '</button>' +
+    '<button class="glass gtype">' + I.keypad + 'Type the 6 digits</button>' +
+    '</div></div>';
+
+  const link =
+    '<div class="app safe-pad layer L-link off">' +
+    '<div class="col" style="gap:14px">' + artLink +
+    '<div style="position:relative;height:84px;width:100%;margin-top:18px">' +
+    '<div class="lk-t1" style="position:absolute;inset:0;display:flex;flex-direction:column;gap:8px"><h1 class="t-title1">Connecting...</h1><p class="t-body c2">Talking to Max\'s PC.</p></div>' +
+    '<div class="lk-t2" style="position:absolute;inset:0;display:flex;flex-direction:column;gap:8px;opacity:0"><h1 class="t-title1">Max\'s PC is added</h1><p class="t-body c2">Your latest copy is on both.</p></div>' +
+    '</div></div></div>';
+
+  const alertNet =
+    '<div class="dimmer a-dim off"></div><div class="alert a-box off"><h3>"Universal Clipboard" Would Like to Find and Connect to Devices on Your Local Network</h3>' +
+    '<p>This lets the app find your computers on this Wi-Fi.</p><div class="ab"><button>Don\'t Allow</button><button class="def a-allow">Allow</button></div></div>';
+
+  const shape =
+    '<div class="shape"><span class="s-get">Get started</span><span class="s-cont" style="opacity:0">Continue</span>' +
+    '<span class="s-scan" style="opacity:0">' + I.scan + 'Scan the code</span><span class="s-done" style="opacity:0">Continue</span>' +
+    '<div class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path class="ckp" d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></div>';
+
+  const fill = (id, orient) => {
+    document.querySelector('#' + id + ' .stage').innerHTML =
+      '<div class="tablet ' + orient + '"><div class="screen pad">' + welcome + network + add + camera + link + shape + alertNet + '</div></div>';
+  };
+  fill('f1-l', 'land');
+  fill('f1-p', 'port');
+
+  IOS.decorate(document);
+
+  /* ---------- helpers (as setup.html) ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const fadeIn = (c, el, at, d, dx) => an(c, el, [{ opacity: 0, transform: 'translateX(' + (dx || 0) + 'px)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: d || 420, easing: EOUT });
+  const fadeOut = (c, el, at, d, dx) => an(c, el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(' + (dx || 0) + 'px)' }], { delay: at, duration: d || 260, easing: EIN });
+  const press = (c, el, at) => an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(0.96)', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: 260, easing: EIO, fill: 'none' });
+  const showAlert = (c, dim, box, btn, at, dur) => {
+    an(c, dim, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: 260 });
+    an(c, box, [{ opacity: 0, transform: 'translateY(-50%) scale(1.12)' }, { opacity: 1, transform: 'translateY(-50%) scale(1)' }], { delay: at, duration: 340, easing: EOUT });
+    an(c, btn, [{ filter: 'brightness(1)' }, { filter: 'brightness(0.75)' }, { filter: 'brightness(1)' }], { delay: at + dur - 300, duration: 300, fill: 'none' });
+    an(c, dim, [{ opacity: 1 }, { opacity: 0 }], { delay: at + dur, duration: 220, easing: EIN });
+    an(c, box, [{ opacity: 1 }, { opacity: 0 }], { delay: at + dur, duration: 220, easing: EIN });
+  };
+  const lightBars = (c, on, at) => c.after(at, () => { c.$$('.sbar, .homebar').forEach((e) => e.classList.toggle('light', on)); });
+
+  /* F1 One shape, both orientations. Geometry comes from the screen size, not from animated styles. */
+  const f1 = (c) => {
+    const wel = c.$('.L-wel'), net = c.$('.L-net'), add = c.$('.L-add'), cam = c.$('.L-cam'), lk = c.$('.L-link');
+    const sh = c.$('.shape'), scr = c.$('.screen');
+    const W = scr.offsetWidth, land = W > 1000;
+    const BTN = { x: W / 2 - 180, y: land ? 620 : 820, w: 360, h: 50 };
+    const vf = { x: W / 2 - 170, y: land ? 220 : 400, w: 340, h: 340 };
+    const px = (r, rad, extra) => Object.assign({ left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', borderRadius: rad + 'px' }, extra || {});
+    const lab = (a, b, at) => { an(c, c.$(a), [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: 180, easing: EIN }); an(c, c.$(b), [{ opacity: 0 }, { opacity: 1 }], { delay: at + 150, duration: 260 }); };
+    if (c.reduced) {
+      const x = (a, b, at) => { an(c, a, [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: 200 }); an(c, b, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: 200 }); };
+      x(wel, net, 1700); lab('.s-get', '.s-cont', 1700);
+      showAlert(c, '.a-dim', '.a-box', '.a-allow', 3000, 1500);
+      x(net, add, 4800); lab('.s-cont', '.s-scan', 4800);
+      x(add, cam, 6400); an(c, sh, [{ opacity: 1 }, { opacity: 0 }], { delay: 6400, duration: 200 }); lightBars(c, true, 6400);
+      an(c, c.$$('.cam .vf i'), [{ borderColor: '#fff' }, { borderColor: '#3FB56E' }], { delay: 7600, duration: 200 });
+      x(cam, lk, 8400); lightBars(c, false, 8400);
+      an(c, c.$('.lk-wait'), [{ opacity: 1 }, { opacity: 0 }], { delay: 10200, duration: 200 }); an(c, c.$('.lk-ok'), [{ opacity: 0 }, { opacity: 1 }], { delay: 10200, duration: 200 });
+      an(c, c.$('.lk-t1'), [{ opacity: 1 }, { opacity: 0 }], { delay: 10200, duration: 200 }); an(c, c.$('.lk-t2'), [{ opacity: 0 }, { opacity: 1 }], { delay: 10200, duration: 200 });
+      an(c, sh, [{ opacity: 0 }, { opacity: 1 }], { delay: 11000, duration: 200 }); lab('.s-scan', '.s-done', 10900);
+      return;
+    }
+    // Welcome -> Local Network
+    press(c, sh, 1450);
+    fadeOut(c, wel, 1700, 280, -28); fadeIn(c, net, 1820, 460, 28); lab('.s-get', '.s-cont', 1700);
+    press(c, sh, 2850);
+    showAlert(c, '.a-dim', '.a-box', '.a-allow', 3000, 1500);
+    // Local Network -> Add
+    fadeOut(c, net, 4800, 280, -28); fadeIn(c, add, 4920, 460, 28); lab('.s-cont', '.s-scan', 4800);
+    press(c, sh, 6150);
+    // The button opens into the camera frame in the middle of the screen.
+    an(c, c.$('.s-scan'), [{ opacity: 1 }, { opacity: 0 }], { delay: 6350, duration: 140 });
+    an(c, sh, [
+      px(BTN, 25, { backgroundColor: 'var(--tint)', boxShadow: '0 0 0 0 rgba(255,255,255,0)' }),
+      px(vf, 34, { backgroundColor: 'rgba(29,28,26,0.0)', boxShadow: 'inset 0 0 0 5px rgba(255,255,255,1)' }),
+    ], { delay: 6400, duration: 820, easing: EIO });
+    fadeOut(c, add, 6400, 300); fadeIn(c, cam, 6450, 520); lightBars(c, true, 6500);
+    an(c, c.$('.cam .vf'), [{ opacity: 0 }, { opacity: 1 }], { delay: 7100, duration: 200 });
+    an(c, sh, [{ opacity: 1 }, { opacity: 0 }], { delay: 7200, duration: 160 });
+    // Found: the frame hugs the code and turns green.
+    an(c, c.$('.cam .vf'), [{ transform: 'scale(1)' }, { transform: 'scale(0.86)' }], { delay: 7800, duration: 420, easing: EOUT });
+    an(c, c.$$('.cam .vf i'), [{ borderColor: '#fff' }, { borderColor: '#3FB56E' }], { delay: 7800, duration: 300 });
+    // The frame closes to a dot between the devices.
+    c.after(8500, () => {
+      const lw = c.$('.lk-wait').getBoundingClientRect(), sr = scr.getBoundingClientRect(), k = sr.width / W;
+      const cx = (lw.left + lw.width / 2 - sr.left) / k, cy = (lw.top + lw.height / 2 - sr.top) / k;
+      const hug = { x: vf.x + 24, y: vf.y + 24, w: vf.w - 48, h: vf.h - 48 };
+      const dot = (r) => ({ x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
+      an(c, sh, [
+        px(hug, 30, { opacity: 1, backgroundColor: 'rgba(63,181,110,0)', boxShadow: 'inset 0 0 0 5px #3FB56E' }),
+        px(dot(10), 10, { opacity: 1, backgroundColor: 'var(--label-3)', boxShadow: 'inset 0 0 0 0 #3FB56E' }),
+      ], { duration: 880, easing: EIO });
+      an(c, sh, [{ transform: 'scale(1)' }, { transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { delay: 1000, duration: 900, iterations: 2, easing: EIO, fill: 'none' });
+      an(c, sh, [px(dot(10), 10, { backgroundColor: 'var(--label-3)' }), px(dot(20), 20, { backgroundColor: 'var(--ok)' })], { delay: 2900, duration: 420, easing: EOUT });
+      an(c, c.$('.shape .ck'), [{ opacity: 0 }, { opacity: 1 }], { delay: 3050, duration: 120 });
+      an(c, c.$('.ckp'), [{ strokeDashoffset: 24 }, { strokeDashoffset: 0 }], { delay: 3100, duration: 420, easing: EOUT });
+      // Then the dot goes back to being the button.
+      an(c, sh, [px(dot(20), 20, { backgroundColor: 'var(--ok)' }), px(BTN, 25, { backgroundColor: 'var(--tint)' })], { delay: 4200, duration: 800, easing: EIO });
+      an(c, c.$('.shape .ck'), [{ opacity: 1 }, { opacity: 0 }], { delay: 4200, duration: 160 });
+      an(c, c.$('.s-done'), [{ opacity: 0 }, { opacity: 1 }], { delay: 4850, duration: 260 });
+    });
+    fadeOut(c, cam, 8500, 360); fadeIn(c, lk, 8600, 460); lightBars(c, false, 8550);
+    an(c, c.$('.lk-wait'), [{ strokeDashoffset: 0 }, { strokeDashoffset: -20 }], { delay: 8600, duration: 600, iterations: 4, easing: 'linear', fill: 'none' });
+    an(c, c.$('.lk-wait'), [{ opacity: 1 }, { opacity: 0 }], { delay: 11350, duration: 300 });
+    an(c, c.$('.lk-ok'), [{ opacity: 0, strokeDasharray: '110 110', strokeDashoffset: 110 }, { opacity: 1, strokeDasharray: '110 110', strokeDashoffset: 0 }], { delay: 11350, duration: 520, easing: EOUT });
+    an(c, c.$('.lk-t1'), [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-8px)' }], { delay: 11400, duration: 220, easing: EIN });
+    an(c, c.$('.lk-t2'), [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { delay: 11550, duration: 420, easing: EOUT });
+  };
+  Kit.register('#f1-l', f1);
+  Kit.register('#f1-p', f1);
+})();
+</script>
+</body>
+</html>
