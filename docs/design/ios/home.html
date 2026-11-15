@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone Home</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: Home. */
+  .pre { opacity: 0; }
+  .st { stroke: var(--label); }
+  .fl { fill: var(--cell); }
+  .lg-fill { fill: var(--label); }
+  .okst { stroke: var(--ok); }
+  .okfl { fill: var(--ok); }
+  .nav.end { justify-content: flex-end; }
+
+  /* The ticker: one line that rolls. Items stack; only one shows. */
+  .tk { position: relative; height: 22px; overflow: hidden; }
+  .tk > span { position: absolute; left: 0; right: 0; top: 0; height: 22px; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .tk > span.n { opacity: 0; }
+  .tk .ar { display: flex; width: 16px; height: 16px; flex: none; }
+  .tk .ar svg { width: 16px; height: 16px; }
+  .tk.end > span { justify-content: flex-end; }
+  .tsub { margin-top: 2px; }
+
+  /* This iPhone: the dark shape (desktop H3). */
+  .me {
+    position: absolute; z-index: 10; left: 16px; right: 16px; bottom: 42px; border-radius: 30px; overflow: hidden;
+    background: var(--dark-bar); color: var(--on-dark); padding: 14px 18px 14px 14px; box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(40,35,30,0.10), 0 10px 26px rgba(40,35,30,0.22);
+  }
+  html.dark .me { box-shadow: 0 0 0 0.5px rgba(255,255,255,0.08), 0 10px 26px rgba(0,0,0,0.4); }
+  .me-a { display: flex; align-items: center; gap: 12px; }
+  .me-g { position: relative; width: 44px; height: 44px; border-radius: 22px; background: var(--dark-bar-2); display: flex; align-items: center; justify-content: center; flex: none; color: #fff; }
+  .me-g svg { width: 22px; height: 22px; fill: currentColor; }
+  .me-ring { position: absolute; inset: -5px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.7); opacity: 0; }
+  .me-t { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .me-t b { font-weight: 600; font-size: 17px; line-height: 22px; letter-spacing: -0.43px; }
+  .me-t span { font-size: 13px; line-height: 18px; color: var(--on-dark-2); }
+  .me-b { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding-top: 11px; border-top: 0.5px solid rgba(255,255,255,0.16); font-size: 15px; line-height: 20px; letter-spacing: -0.23px; }
+  .me-b .lab { color: var(--on-dark-2); flex: none; }
+  .me-b .tk { flex: 1; color: var(--on-dark); }
+  .me-line { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: rgba(255,255,255,0.8); opacity: 0; transform-origin: left center; }
+  .me-line.rtl { transform-origin: right center; }
+
+  /* H1: device rows with a status line. */
+  .row .rt .t-sub { display: flex; align-items: center; gap: 6px; }
+
+  /* H2: the event card and the tile grid. */
+  .ev { margin: 0 16px; background: var(--cell); border-radius: 26px; padding: 14px 16px 16px; flex: none; }
+  .ev svg.art { display: block; }
+  .ev-f { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+  .ev-f .t-foot { color: var(--label-2); }
+  .ev-f .tk { height: 24px; }
+  .ev-f .tk > span { height: 24px; font-weight: 600; font-size: 17px; letter-spacing: -0.43px; }
+  .trail { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; }
+  .doc { opacity: 0; transform-box: fill-box; transform-origin: center; }
+  .glow { opacity: 0; }
+  .dtiles { margin: 0 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex: none; }
+  .dtile { position: relative; height: 92px; border-radius: 22px; background: var(--cell); padding: 13px 14px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; }
+  .dtile .dlogo { width: 32px; height: 32px; border-radius: 9px; }
+  .dtile .dlogo svg { width: 18px; height: 18px; }
+  .dtile .tn { font-weight: 600; font-size: 15px; line-height: 20px; letter-spacing: -0.23px; }
+  .dtile .ts { display: flex; align-items: center; gap: 5px; font-size: 13px; line-height: 16px; color: var(--label-2); }
+  .dtile .hl { position: absolute; inset: 0; border-radius: 22px; box-shadow: inset 0 0 0 2px var(--ok); opacity: 0; }
+  .me.slim { padding: 14px 18px 14px 14px; }
+
+  /* H3: the pinned card and the plain list. */
+  .pin { position: relative; margin: 4px 16px 0; border-radius: 28px; overflow: hidden; background: var(--dark-bar); color: var(--on-dark); padding: 14px 18px 14px 14px; flex: none; box-shadow: 0 1px 2px rgba(40,35,30,0.10), 0 10px 26px rgba(40,35,30,0.18); }
+  html.dark .pin { box-shadow: 0 0 0 0.5px rgba(255,255,255,0.08); }
+  .pin .me-b { margin-top: 12px; }
+  .pin .tk-big { margin-top: 12px; padding-top: 11px; border-top: 0.5px solid rgba(255,255,255,0.16); }
+  .pin .tk-big .tk { height: 24px; }
+  .pin .tk-big .tk > span { height: 24px; font-weight: 600; font-size: 17px; letter-spacing: -0.43px; }
+  .pin .tk-big .dt.ok { background: #3FB56E; }
+  .pin .lab2 { margin-top: 3px; font-size: 15px; line-height: 20px; letter-spacing: -0.23px; color: var(--on-dark-2); }
+  .plh { padding: 0 20px 6px; font: 600 17px/22px var(--sf); letter-spacing: -0.43px; }
+  .plain { margin: 0; }
+  .plain .row { min-height: 60px; padding: 0 20px; }
+  .plain .row + .row::before { left: 70px; }
+  .plain .row.add { color: var(--tint); }
+  .plain .row.add .dlogo { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fill-2); }
+  .plain .row.add .dlogo svg { fill: none; }
+  .plain .rule { height: 0.5px; background: var(--sep); margin-left: 70px; }
+
+  /* The iOS paste prompt (one option only). Long labels stack, as iOS does. */
+  .alert .ab.stack { flex-direction: column; gap: 8px; }
+  .alert .ab.stack button { flex: none; width: 100%; }
+  .off { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>Home: three ways</h1>
+    <p class="gal-note">Home is what you see each time you open the app, and opening it is the moment the iPhone syncs. Each story: the app opens, the newest copy from Max's PC arrives (arrow down), then the app reads what you copied on this iPhone and sends it (arrow up). The line under "Working" rolls to each copy and back to "3 devices connected", like desktop A3. Max's iPad is asleep. The screen shows facts about a copy, never the copy itself.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="h1" data-loop="15000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>H1</b> Dark bar</div>
+      <p class="opt-desc">Desktop H3 on the phone. A plain list of devices, and this iPhone as a dark bar docked above the home indicator with the last copy. Shows the iOS paste prompt once (Ask setting); real prompts are checked in spike S5.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h2" data-loop="14000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>H2</b> Arrival</div>
+      <p class="opt-desc">A big card at the top is the event: the copy drops from the PC into this iPhone, then the iPhone's own copy rises to the PC, with the facts under it. Devices are tiles, this iPhone a slim dark bar. No paste prompt (Allow setting).</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="h3" data-loop="14000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>H3</b> Pinned</div>
+      <p class="opt-desc">This iPhone is a dark card pinned at the top, and the ticker lives inside it. The other devices sit in a plain list below, with Add a device as the last row. No paste prompt (Allow setting).</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="../desktop/motion/art.js"></script>
+<script src="ios.js"></script>
+<script src="../desktop/motion/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const A = window.UC_ART, I = IOS.ic;
+  const LOG = (k, x, y, s) => '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')" class="lg-fill">' + A[k] + '</g>';
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = '<div class="phone"><div class="screen">' + html + '</div></div>'; };
+
+  const DEV = [
+    ['windows', 'Max\'s PC', true],
+    ['apple', 'Mac mini', true],
+    ['linux', 'Ubuntu laptop', true],
+    ['ipad', 'Max\'s iPad', false],
+  ];
+  const status = (on) => on ? '<span class="dt ok"></span>Connected' : '<span class="dt off"></span>Asleep';
+  const DOWN = '<span class="ar">' + I.down + '</span>', UP = '<span class="ar">' + I.up + '</span>';
+  const F0 = 'Text, from Mac mini, 1 hour ago', F1 = 'Text, from Max\'s PC, just now', F2 = 'Image, sent, just now';
+
+  // The ticker under "Working": 3 devices connected / arrow down + received / arrow up + sent.
+  const ticker = (cls) =>
+    '<div class="tk ' + (cls || '') + '">' +
+    '<span class="i0"><span class="dt ok"></span>3 devices connected</span>' +
+    '<span class="i1 n">' + DOWN + F1 + '</span>' +
+    '<span class="i2 n">' + UP + F2 + '</span></div>';
+  // Last copy facts (no arrow at rest, like desktop "Last copy").
+  const facts = (cls) =>
+    '<div class="tk fk ' + (cls || '') + '">' +
+    '<span class="f0">' + F0 + '</span><span class="f1 n">' + F1 + '</span><span class="f2 n">' + F2 + '</span></div>';
+
+  const toolbar = (plus) =>
+    '<div class="nav end"><div class="bbs">' +
+    (plus ? '<button class="bb" aria-label="Add a device">' + I.plus + '</button>' : '') +
+    '<button class="bb" aria-label="Pause">' + I.pause + '</button>' +
+    '<button class="bb" aria-label="Settings">' + I.gear + '</button></div></div>';
+
+  const meTop =
+    '<div class="me-a"><div class="me-g"><i data-logo="iphone" data-size="22"></i><span class="me-ring"></span></div>' +
+    '<div class="me-t"><b>Max\'s iPhone</b><span>This iPhone</span></div></div>';
+
+  const pasteAlert =
+    '<div class="dimmer p-dim off"></div><div class="alert p-box off"><h3>"Universal Clipboard" would like to paste from "Safari"</h3>' +
+    '<p>Do you want to allow this?</p><div class="ab stack"><button>Don\'t Allow Paste</button><button class="def p-allow">Allow Paste</button></div></div>';
+
+  /* ---------- H1 Dark bar ---------- */
+  fill('h1',
+    '<div class="app safe">' + toolbar(true) +
+    '<div class="largetitle pre ttl"><h1 class="t-large">Working</h1><div class="tsub t-callout c2">' + ticker() + '</div></div>' +
+    '<div class="gap s"></div>' +
+    '<div class="lhead pre lh">Devices</div>' +
+    '<div class="list">' + DEV.map((d) =>
+      '<div class="row ic pre dr"><div class="dlogo"><i data-logo="' + d[0] + '"></i></div>' +
+      '<div class="rt"><b>' + d[1] + '</b><span class="t-sub c2">' + status(d[2]) + '</span></div>' + I.chev + '</div>').join('') +
+    '</div>' +
+    '<div class="lfoot pre lf">This iPhone syncs each time you open the app.</div>' +
+    '</div>' +
+    '<div class="me pre"><span class="me-line"></span>' + meTop +
+    '<div class="me-b"><span class="lab">Last copy</span>' + facts('end') + '</div></div>' +
+    pasteAlert);
+
+  /* ---------- H2 Arrival ---------- */
+  const doc = (cls, kind) =>
+    '<g class="doc ' + cls + '"><rect class="fl okst" x="0" y="0" width="28" height="34" rx="6" stroke-width="2"/>' +
+    (kind === 'text'
+      ? '<path class="okst" d="M7 11h14M7 17h14M7 23h9" stroke-width="2" stroke-linecap="round"/>'
+      : '<circle class="okfl" cx="10" cy="11" r="2.6"/><path class="okst" d="M5 27l7-8 5 5 3-3 4 4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>') +
+    '</g>';
+  const artArrive =
+    '<svg class="art" width="329" height="176" viewBox="0 0 329 176" fill="none" aria-hidden="true">' +
+    '<path class="trail okst t-down" pathLength="100" d="M104 50C150 -4 248 2 274 84"/>' +
+    '<path class="trail okst t-up" pathLength="100" d="M274 84C248 2 150 -4 104 50"/>' +
+    '<rect class="fl st" x="18" y="22" width="150" height="98" rx="10" stroke-width="2"/>' +
+    '<path class="st" d="M93 120v14M70 136h46" stroke-width="2" stroke-linecap="round"/>' +
+    '<rect class="okfl glow g-pc" x="24" y="28" width="138" height="86" rx="6"/>' +
+    LOG('logoWindows', 81, 59, 1) +
+    '<rect class="fl st" x="242" y="44" width="66" height="126" rx="15" stroke-width="2"/>' +
+    '<rect x="264" y="51" width="22" height="7" rx="3.5" class="lg-fill"/>' +
+    '<rect class="okfl glow g-ph" x="248" y="62" width="54" height="100" rx="9"/>' +
+    LOG('logoApple', 263, 95, 1) +
+    doc('d-down', 'text') + doc('d-up', 'image') +
+    '</svg>';
+  fill('h2',
+    '<div class="app safe">' + toolbar(true) +
+    '<div class="largetitle pre ttl"><h1 class="t-large">Working</h1><div class="tsub t-callout c2">' + ticker() + '</div></div>' +
+    '<div class="gap s"></div>' +
+    '<div class="ev pre evc">' + artArrive +
+    '<div class="ev-f"><span class="t-foot">Last copy</span>' +
+    '<div class="tk fk"><span class="f0">' + F0 + '</span><span class="f1 n">' + DOWN + F1 + '</span><span class="f2 n">' + UP + F2 + '</span></div></div></div>' +
+    '<div class="gap s"></div>' +
+    '<div class="dtiles">' + DEV.map((d, i) =>
+      '<div class="dtile pre tl t' + i + '"><div class="dlogo"><i data-logo="' + d[0] + '"></i></div>' +
+      '<div><div class="tn">' + d[1] + '</div><div class="ts">' + status(d[2]) + '</div></div><span class="hl"></span></div>').join('') +
+    '</div></div>' +
+    '<div class="me slim pre"><span class="me-line"></span>' + meTop + '</div>');
+
+  /* ---------- H3 Pinned ---------- */
+  fill('h3',
+    '<div class="app safe">' + toolbar(false) +
+    '<div class="largetitle pre ttl"><h1 class="t-large">Working</h1></div>' +
+    '<div class="pin pre pinc"><span class="me-line"></span>' + meTop +
+    '<div class="tk-big">' + ticker() + '</div>' +
+    '<div class="me-b" style="margin-top:10px;padding-top:0;border-top:0"><span class="lab">Last copy</span>' + facts('end') + '</div></div>' +
+    '<div class="gap"></div>' +
+    '<div class="plh pre lh">Other devices</div>' +
+    '<div class="plain">' + DEV.map((d) =>
+      '<div class="row ic pre dr"><div class="dlogo"><i data-logo="' + d[0] + '"></i></div>' +
+      '<div class="rt"><b>' + d[1] + '</b><span class="t-sub c2">' + status(d[2]) + '</span></div>' + I.chev + '</div>').join('') +
+    '<div class="row ic add pre dr"><div class="dlogo">' + I.plus + '</div><div class="rt"><b>Add a device</b></div></div>' +
+    '<div class="rule pre dr"></div>' +
+    '</div>' +
+    '<div class="lfoot pre lf" style="padding:10px 20px 0">This iPhone syncs each time you open the app.</div>' +
+    '</div>');
+
+  IOS.decorate(document);
+
+  /* ---------- helpers ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  // Rise in: elements start hidden by the .pre class.
+  const rise = (c, el, at, dy, d) => {
+    if (!el) return;
+    if (c.reduced) an(c, el, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: 320 });
+    else an(c, el, [{ opacity: 0, transform: 'translateY(' + (dy || 12) + 'px)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: d || 560, easing: EOUT });
+  };
+  // Roll one line out and the next one in (desktop A3).
+  const roll = (c, out, inn, at) => {
+    if (c.reduced) {
+      an(c, out, [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: 260 });
+      an(c, inn, [{ opacity: 0, transform: 'none' }, { opacity: 1, transform: 'none' }], { delay: at + 200, duration: 300 });
+      return;
+    }
+    an(c, out, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-22px)' }], { delay: at, duration: 520, easing: EIO });
+    an(c, inn, [{ opacity: 0, transform: 'translateY(22px)' }, { opacity: 1, transform: 'none' }], { delay: at + 60, duration: 560, easing: EIO });
+  };
+  // The light line across the dark shape and one ring around its logo (desktop H3).
+  const touch = (c, root, at, rtl) => {
+    const line = root.querySelector('.me-line'), ring = root.querySelector('.me-ring');
+    if (rtl) c.after(at - 10, () => line.classList.add('rtl')); else c.after(at - 10, () => line.classList.remove('rtl'));
+    if (c.reduced) {
+      an(c, line, [{ opacity: 0, transform: 'none' }, { opacity: 1, transform: 'none', offset: 0.35 }, { opacity: 0, transform: 'none' }], { delay: at, duration: 1400, easing: 'ease-in-out' });
+      an(c, ring, [{ opacity: 0, transform: 'none' }, { opacity: 0.8, transform: 'none', offset: 0.4 }, { opacity: 0, transform: 'none' }], { delay: at + 200, duration: 1400, easing: 'ease-in-out' });
+      return;
+    }
+    an(c, line, [{ opacity: 1, transform: 'scaleX(0)' }, { opacity: 1, transform: 'scaleX(1)', offset: 0.55 }, { opacity: 0, transform: 'scaleX(1)' }], { delay: at, duration: 1700, easing: EIO });
+    an(c, ring, [{ opacity: 0.9, transform: 'scale(0.9)' }, { opacity: 0, transform: 'scale(1.35)' }], { delay: at + 500, duration: 1100, easing: EOUT });
+  };
+  const ticks = (c, root, recv, send) => {
+    const $ = (s) => root.querySelector(s);
+    roll(c, $('.i0'), $('.i1'), recv);
+    roll(c, $('.i1'), $('.i0'), recv + 3000);
+    roll(c, $('.i0'), $('.i2'), send);
+    roll(c, $('.i2'), $('.i0'), send + 3000);
+  };
+  const factsRoll = (c, root, recv, send) => {
+    const $ = (s) => root.querySelector(s);
+    roll(c, $('.fk .f0'), $('.fk .f1'), recv + 200);
+    roll(c, $('.fk .f1'), $('.fk .f2'), send + 200);
+  };
+  const press = (c, el, at) => an(c, el, [{ filter: 'brightness(1)' }, { filter: 'brightness(0.78)' }, { filter: 'brightness(1)' }], { delay: at, duration: 320, fill: 'none' });
+
+  /* H1 */
+  Kit.register('#h1', (c) => {
+    const RECV = 2200, ASK = 5600, SEND = 8000;
+    rise(c, c.$('.ttl'), 100, 8);
+    rise(c, c.$('.lh'), 260, 10);
+    c.$$('.dr').forEach((r, i) => rise(c, r, 320 + i * 80, 12));
+    rise(c, c.$('.lf'), 700, 8);
+    rise(c, c.$('.me'), 900, 60, 820);
+    ticks(c, c.$('.largetitle'), RECV, SEND);
+    factsRoll(c, c.$('.me'), RECV, SEND);
+    touch(c, c.$('.me'), RECV + 100, false);
+    // The app reads the iPhone clipboard. With the Ask setting, iOS asks first.
+    const dim = c.$('.p-dim'), box = c.$('.p-box');
+    c.after(ASK, () => { dim.classList.remove('off'); box.classList.remove('off'); });
+    an(c, dim, [{ opacity: 0 }, { opacity: 1 }], { delay: ASK, duration: 300 });
+    if (c.reduced) an(c, box, [{ opacity: 0 }, { opacity: 1 }], { delay: ASK, duration: 300 });
+    else an(c, box, [{ opacity: 0, transform: 'translateY(-50%) scale(1.1)' }, { opacity: 1, transform: 'translateY(-50%) scale(1)' }], { delay: ASK, duration: 380, easing: EOUT });
+    press(c, c.$('.p-allow'), ASK + 1700);
+    an(c, dim, [{ opacity: 1 }, { opacity: 0 }], { delay: ASK + 2050, duration: 260, easing: EIN });
+    an(c, box, [{ opacity: 1, transform: 'translateY(-50%)' }, { opacity: 0, transform: 'translateY(-50%)' }], { delay: ASK + 2050, duration: 260, easing: EIN });
+    touch(c, c.$('.me'), SEND + 100, true);
+  });
+
+  /* H2 */
+  Kit.register('#h2', (c) => {
+    const RECV = 2300, SEND = 6900;
+    rise(c, c.$('.ttl'), 100, 8);
+    rise(c, c.$('.evc'), 240, 14, 620);
+    c.$$('.tl').forEach((t, i) => rise(c, t, 420 + i * 80, 12));
+    rise(c, c.$('.me'), 900, 60, 820);
+    ticks(c, c.$('.largetitle'), RECV, SEND);
+    factsRoll(c, c.$('.ev-f'), RECV + 900, SEND + 900);
+    const dd = c.$('.d-down'), du = c.$('.d-up');
+    const glow = (el, at) => an(c, el, [{ opacity: 0 }, { opacity: 0.16, offset: 0.35 }, { opacity: 0 }], { delay: at, duration: 1500, easing: 'ease-in-out' });
+    const hl = c.$('.t0 .hl');
+    // Received: the copy drops from the PC into this iPhone.
+    if (c.reduced) {
+      an(c, dd, [{ opacity: 0, transform: 'translate(260px, 104px)' }, { opacity: 1, transform: 'translate(260px, 104px)', offset: 0.3 }, { opacity: 1, transform: 'translate(260px, 104px)', offset: 0.75 }, { opacity: 0, transform: 'translate(260px, 104px)' }], { delay: RECV + 300, duration: 2000 });
+    } else {
+      an(c, c.$('.t-down'), [{ strokeDashoffset: 100, opacity: 0.55 }, { strokeDashoffset: 0, opacity: 0.55, offset: 0.55 }, { strokeDashoffset: 0, opacity: 0 }], { delay: RECV + 150, duration: 1900, easing: EIO });
+      an(c, dd, [
+        { opacity: 0, transform: 'translate(79px, 52px) scale(0.5)' },
+        { opacity: 1, transform: 'translate(79px, 52px) scale(1)', offset: 0.18 },
+        { opacity: 1, transform: 'translate(176px, 2px) scale(1)', offset: 0.55 },
+        { opacity: 1, transform: 'translate(260px, 94px) scale(0.85)', offset: 0.88 },
+        { opacity: 0, transform: 'translate(260px, 104px) scale(0.5)' },
+      ], { delay: RECV + 100, duration: 1700, easing: 'cubic-bezier(0.45, 0, 0.55, 1)' });
+    }
+    glow(c.$('.g-ph'), RECV + 1500);
+    an(c, hl, [{ opacity: 0 }, { opacity: 0.8, offset: 0.25 }, { opacity: 0 }], { delay: RECV + 100, duration: 2200, easing: 'ease-in-out' });
+    touch(c, c.$('.me'), RECV + 1500, false);
+    // Sent: the iPhone's own copy rises to the PC.
+    if (c.reduced) {
+      an(c, du, [{ opacity: 0, transform: 'translate(79px, 52px)' }, { opacity: 1, transform: 'translate(79px, 52px)', offset: 0.3 }, { opacity: 1, transform: 'translate(79px, 52px)', offset: 0.75 }, { opacity: 0, transform: 'translate(79px, 52px)' }], { delay: SEND + 300, duration: 2000 });
+    } else {
+      an(c, c.$('.t-up'), [{ strokeDashoffset: 100, opacity: 0.55 }, { strokeDashoffset: 0, opacity: 0.55, offset: 0.55 }, { strokeDashoffset: 0, opacity: 0 }], { delay: SEND + 150, duration: 1900, easing: EIO });
+      an(c, du, [
+        { opacity: 0, transform: 'translate(260px, 100px) scale(0.5)' },
+        { opacity: 1, transform: 'translate(260px, 94px) scale(1)', offset: 0.18 },
+        { opacity: 1, transform: 'translate(176px, 2px) scale(1)', offset: 0.5 },
+        { opacity: 1, transform: 'translate(79px, 52px) scale(0.85)', offset: 0.88 },
+        { opacity: 0, transform: 'translate(79px, 56px) scale(0.5)' },
+      ], { delay: SEND + 100, duration: 1700, easing: 'cubic-bezier(0.45, 0, 0.55, 1)' });
+    }
+    touch(c, c.$('.me'), SEND, true);
+    glow(c.$('.g-pc'), SEND + 1500);
+    an(c, hl, [{ opacity: 0 }, { opacity: 0.8, offset: 0.25 }, { opacity: 0 }], { delay: SEND + 1300, duration: 2200, easing: 'ease-in-out' });
+  });
+
+  /* H3 */
+  Kit.register('#h3', (c) => {
+    const RECV = 2200, SEND = 6800;
+    rise(c, c.$('.ttl'), 100, 8);
+    rise(c, c.$('.pinc'), 260, 24, 760);
+    rise(c, c.$('.lh'), 620, 10);
+    c.$$('.dr').forEach((r, i) => rise(c, r, 680 + i * 80, 12));
+    rise(c, c.$('.lf'), 1100, 8);
+    ticks(c, c.$('.tk-big'), RECV, SEND);
+    factsRoll(c, c.$('.pin .me-b'), RECV, SEND);
+    touch(c, c.$('.pin'), RECV + 100, false);
+    touch(c, c.$('.pin'), SEND + 100, true);
+  });
+})();
+</script>
+</body>
+</html>

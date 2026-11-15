@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone settings</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: Settings and devices. */
+  .row .lg svg { width: 24px; height: 24px; }
+  .row .lg { color: var(--label); }
+  .st { display: flex; align-items: center; gap: 6px; }
+  .rv { white-space: nowrap; }
+  .row .tbtn { padding: 0 4px; margin-right: -4px; }
+  .tint { color: var(--tint); font-weight: 600 !important; }
+  .row .tbtn { font-weight: 600; }
+  .scv { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+  .sc { position: relative; }
+  .hsub { display: flex; align-items: center; gap: 7px; margin-top: 2px; }
+  .lfoot + .gap { height: 22px; }
+  .dim0 { opacity: 0; }
+  /* Rising things (sheets, keyboard, action sheets) start below the screen. */
+  .rise0 { transform: translateY(calc(100% + 60px)); }
+  html.reduce .rise0 { transform: none; opacity: 0; }
+  /* Pushed pages start off to the right. */
+  .pin { transform: translateX(393px); }
+  html.reduce .pin { transform: none; opacity: 0; }
+  html.reduce .sw, html.reduce .sw::after { transition-duration: 160ms; }
+
+  /* Rename alert with a text field. */
+  .r-box { top: 318px; opacity: 0; }
+  .fld { margin-top: 16px; height: 44px; border-radius: 14px; background: var(--cell); display: flex; align-items: center; padding: 0 10px 0 14px; gap: 1px; text-align: left; font-size: 17px; letter-spacing: -0.43px; }
+  .fld .fv { white-space: pre; }
+  .fld .car { width: 2px; height: 22px; border-radius: 1px; background: var(--tint); flex: none; }
+  .fld .fx { margin-left: auto; width: 20px; height: 20px; border-radius: 10px; background: var(--label-3); color: var(--cell); display: flex; align-items: center; justify-content: center; flex: none; }
+  .fld .fx svg { width: 11px; height: 11px; }
+
+  /* Keyboard, drawn simply. */
+  .kb { position: absolute; left: 0; right: 0; bottom: 0; z-index: 42; background: #D6D3CF; padding: 8px 3px 44px; display: flex; flex-direction: column; gap: 11px; }
+  html.dark .kb { background: #2B2A28; }
+  .kr { display: flex; gap: 6px; justify-content: center; padding: 0 3px; }
+  .kr span { flex: 1; max-width: 33px; height: 43px; border-radius: 9px; background: #fff; color: #1D1C1A; display: flex; align-items: center; justify-content: center; font: 400 22px/1 var(--sf); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+  html.dark .kr span { background: #5A5754; color: #fff; }
+  .kr span.m { background: #ABA7A2; max-width: 44px; flex: none; width: 44px; font-size: 15px; }
+  html.dark .kr span.m { background: #403D3A; }
+  .kr span.m svg { width: 20px; height: 20px; }
+  .kr span.sp { max-width: none; flex: 4; font-size: 15px; }
+  .kr span.w { max-width: none; flex: none; width: 88px; font-size: 16px; }
+  .kr span.go { background: #0A84FF; color: #fff; }
+  html.dark .kr span.go { background: #0A84FF; }
+  .kr.r2 { padding: 0 21px; }
+
+  /* Action sheet (system). */
+  .as { position: absolute; z-index: 46; left: 8px; right: 8px; bottom: 42px; display: flex; flex-direction: column; gap: 8px; }
+  .as-g { background: var(--alert); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8); border-radius: 28px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.18); }
+  .as-h { padding: 16px 24px 15px; display: flex; flex-direction: column; gap: 3px; text-align: center; font-size: 13px; line-height: 18px; letter-spacing: -0.08px; color: var(--label-2); }
+  .as-h b { font-weight: 600; }
+  .as-b, .as-c { display: block; width: 100%; height: 58px; border: 0; font: 400 20px/24px var(--sfd); letter-spacing: -0.38px; }
+  .as-b { background: transparent; color: var(--bad); box-shadow: inset 0 0.5px 0 var(--sep); }
+  .as-c { background: var(--sheet); color: var(--tint); font-weight: 600; border-radius: 28px; box-shadow: 0 10px 40px rgba(0,0,0,0.18); }
+
+  /* T1: the settings sheet. */
+  .t1-sheet { top: 59px; background: var(--bg); }
+  .t1-sheet .nav { background: transparent; }
+  .L-home { overflow: hidden; transform-origin: 50% 40%; }
+
+  /* T2: dark header card for this iPhone (desktop H3). */
+  .hcard { margin: 0 16px; border-radius: 26px; background: var(--dark-bar); color: var(--on-dark); padding: 18px 18px 16px 20px; display: flex; flex-direction: column; gap: 14px; flex: none; }
+  .hc-top { display: flex; align-items: center; gap: 14px; }
+  .hc-ic { width: 48px; height: 48px; border-radius: 14px; background: var(--dark-bar-2); display: flex; align-items: center; justify-content: center; flex: none; }
+  .hc-ic svg { width: 28px; height: 28px; }
+  .hc-t { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .hc-t b { font: 600 20px/25px var(--sfd); letter-spacing: -0.45px; }
+  .hc-t span { font-size: 15px; line-height: 20px; color: var(--on-dark-2); }
+  .hc-btn { height: 36px; padding: 0 16px; border: 0; border-radius: 18px; background: rgba(255,255,255,0.14); color: var(--on-dark); font: 600 15px/20px var(--sf); letter-spacing: -0.23px; flex: none; }
+  .hc-s { font-size: 15px; line-height: 20px; color: var(--on-dark-2); padding-top: 12px; border-top: 0.5px solid rgba(255,255,255,0.14); display: flex; align-items: center; gap: 8px; }
+  .hc-s svg { width: 18px; height: 18px; flex: none; }
+  .veil { position: absolute; inset: 0; background: rgba(0,0,0,0.12); opacity: 0; pointer-events: none; z-index: 2; }
+  .dhead { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 20px 22px; flex: none; }
+  .dhead .big { width: 84px; height: 84px; border-radius: 24px; background: var(--cell); display: flex; align-items: center; justify-content: center; margin-bottom: 8px; color: var(--label); }
+  .dhead .big svg { width: 44px; height: 44px; fill: currentColor; }
+
+  /* T3: everything on Home, the dark bar for this iPhone, the updated card. */
+  .t3-scv { position: absolute; left: 0; right: 0; top: 59px; bottom: 34px; overflow: hidden; }
+  .ucard { margin: 0 16px 20px; height: 128px; box-sizing: border-box; border-radius: 26px; background: var(--cell); padding: 16px 16px 14px 18px; display: flex; flex-direction: column; justify-content: space-between; opacity: 0; }
+  .uc-top { display: flex; gap: 14px; align-items: flex-start; }
+  .uc-top svg.ub { width: 40px; height: 40px; flex: none; }
+  .uc-tx { display: flex; flex-direction: column; gap: 2px; padding-top: 1px; }
+  .uc-acts { display: flex; justify-content: flex-end; }
+  .uc-acts .pbtn { height: 40px; border-radius: 20px; font-size: 15px; padding: 0 22px; }
+  .tick { stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .t3below { transform: translateY(-148px); }
+  .dbar { position: absolute; z-index: 20; left: 16px; right: 16px; bottom: 42px; height: 68px; border-radius: 34px; background: var(--dark-bar); color: var(--on-dark); display: flex; align-items: center; gap: 12px; padding: 0 20px 0 12px; box-sizing: border-box; box-shadow: 0 8px 28px rgba(30,25,20,0.22); }
+  .dbar .hc-ic { width: 44px; height: 44px; border-radius: 22px; }
+  .dbar .hc-ic svg { width: 24px; height: 24px; }
+  .dbar .db-t { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .dbar .db-t b { font-weight: 600; font-size: 17px; line-height: 22px; }
+  .dbar .db-t span { font-size: 13px; line-height: 18px; color: var(--on-dark-2); }
+  .dbar .db-f { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: 13px; line-height: 18px; color: var(--on-dark); text-align: right; }
+  .dbar .db-f span { color: var(--on-dark-2); }
+  .dbar .chev { width: 8px; height: 14px; flex: none; color: var(--on-dark-2); transform: rotate(-90deg); margin-left: 6px; }
+  .dbar .db-t, .dbar .db-f { white-space: nowrap; }
+  .fadebot { position: absolute; z-index: 19; left: 0; right: 0; bottom: 0; height: 150px; background: linear-gradient(to bottom, transparent, var(--bg) 55%); pointer-events: none; }
+  .t3-sheet { background: var(--bg); }
+  .t3-sheet .nav .nav-title { font-weight: 600; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>Settings and devices: three ways</h1>
+    <p class="gal-note">The iPhone has few settings: this iPhone's name, Sync images and the 25 MB limit, a tip for the iOS paste setting, How it works, the other devices, and Remove this iPhone. Updates come from the App Store, so About shows the version and no update button. T1 and T2 keep a separate Settings screen; T3 puts it all on Home and also shows the one-time "Updated" card after an App Store update.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="t1" data-loop="14500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>T1</b> Sheet</div>
+      <p class="opt-desc">The gear opens one tall sheet with Done, one plain list like iOS Settings. Sync images turns off, the iPhone gets a new name with the keyboard, the list scrolls to About, Done closes it.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="t2" data-loop="12500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>T2</b> Two levels</div>
+      <p class="opt-desc">Settings pushes in from the right with this iPhone as a dark card on top, like the desktop's "You are here". Each device has its own page: Mac mini is removed with the iOS action sheet, and its row folds away.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="t3" data-loop="15000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>T3</b> On Home</div>
+      <p class="opt-desc">No Settings screen. The settings sit under the devices on Home, in one scroll. After an App Store update a card says "Updated to 0.2.0" once. The dark bar for this iPhone opens a small sheet with its name and Remove.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="../desktop/motion/art.js"></script>
+<script src="ios.js"></script>
+<script src="../desktop/motion/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const I = IOS.ic;
+
+  /* ---------- parts ---------- */
+  const dev = (logo, name, st, cls, chev) =>
+    '<div class="row ic ' + (cls || '') + '"><span class="dlogo"><i data-logo="' + logo + '"></i></span>' +
+    '<span class="rt"><b>' + name + '</b><span class="t-sub c2 st"><span class="dt ' + (st === 'ok' ? 'ok' : 'ring') + '"></span>' + (st === 'ok' ? 'Connected' : 'Asleep') + '</span></span>' +
+    (chev === false ? '' : I.chev) + '</div>';
+  const devices = (chev, macCls) =>
+    dev('windows', 'Max\'s PC', 'ok', 'r-pc', chev) + dev('apple', 'Mac mini', 'ok', 'r-mac ' + (macCls || ''), chev) +
+    dev('linux', 'Ubuntu laptop', 'ok', 'r-ubu', chev) + dev('apple', 'Max\'s iPad', 'asleep', 'r-ipad', chev);
+  const head = (t) => '<div class="lhead">' + t + '</div>';
+  const foot = (t, cls) => '<div class="lfoot ' + (cls || '') + '">' + t + '</div>';
+  const list = (rows, cls) => '<div class="list ' + (cls || '') + '">' + rows + '</div>';
+  const gap = '<div class="gap"></div>';
+  const row = (inner, cls) => '<div class="row ' + (cls || '') + '">' + inner + '</div>';
+  const rt = (t, sub) => '<span class="rt"><b>' + t + '</b>' + (sub ? '<span class="t-sub c2">' + sub + '</span>' : '') + '</span>';
+
+  const syncGroup = (cls) =>
+    head('Sync') + list(
+      row(rt('Sync images') + '<span class="sw on s-sw"></span>') +
+      row(rt('Largest image') + '<span class="rv">25 MB</span>', 's-max')) +
+    foot('<span class="s-f">Text and images up to 25 MB are synced.</span>') + gap;
+  const pasteGroup =
+    list(
+      row('<span class="lg">' + I.paste + '</span>' + rt('Paste from Other Apps', 'Set it to Allow so the app does not ask each time.'), 'ic') +
+      row('<span class="rt"><b class="tint">Open Settings</b></span>')) + gap;
+  const howGroup = list(row('<span class="lg">' + I.info + '</span>' + rt('How it works') + I.chev, 'ic')) + gap;
+  const aboutGroup = (v) => head('About') + list(row(rt('Version ' + v), 'r-ver')) + foot('Updates come from the App Store.');
+  const removeMe = list(row(rt('Remove this iPhone and forget everything'), 'danger')) + gap;
+
+  const homeApp = (cls) =>
+    '<div class="app safe layer L-home ' + (cls || '') + '">' +
+    '<div class="nav"><span></span><button class="bb gearb">' + I.gear + '</button></div>' +
+    '<div class="scv"><div class="largetitle"><h1 class="t-large">Working</h1><p class="t-sub c2 hsub"><span class="dt ok"></span>Synced just now</p></div>' +
+    '<div class="gap s"></div>' + head('Last copy') + list(row('<span class="lg">' + I.text + '</span>' + rt('Text, from Max\'s PC, just now'), 'ic')) + gap +
+    head('Your devices') + list(devices(false)) + '</div></div>';
+
+  const keyboard = (cls) => {
+    const k = (s) => s.split('').map((x) => '<span>' + x + '</span>').join('');
+    return '<div class="kb ' + (cls || '') + '">' +
+      '<div class="kr">' + k('QWERTYUIOP') + '</div>' +
+      '<div class="kr r2">' + k('ASDFGHJKL') + '</div>' +
+      '<div class="kr"><span class="m">' + I.up + '</span><span style="flex:0;width:8px;background:none;box-shadow:none"></span>' + k('ZXCVBNM') + '<span style="flex:0;width:8px;background:none;box-shadow:none"></span><span class="m">' + I.back + '</span></div>' +
+      '<div class="kr"><span class="m w">123</span><span class="sp">space</span><span class="m w go">done</span></div></div>';
+  };
+
+  const actionSheet = (k, title, msg, yes) =>
+    '<div class="dimmer ' + k + '-dim dim0" style="z-index:45"></div>' +
+    '<div class="as ' + k + ' rise0"><div class="as-g"><div class="as-h"><b>' + title + '</b><span>' + msg + '</span></div>' +
+    '<button class="as-b ' + k + '-yes">' + yes + '</button></div><button class="as-c ' + k + '-no">Cancel</button></div>';
+
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = '<div class="phone"><div class="screen">' + html + '</div></div>'; };
+
+  /* ---------- T1 Sheet ---------- */
+  fill('t1',
+    homeApp() +
+    '<div class="dimmer d1 dim0"></div>' +
+    '<div class="sheet t1-sheet rise0"><div class="grab"></div>' +
+    '<div class="nav"><span style="width:44px"></span><span class="nav-title">Settings</span><button class="bb word t1-done">Done</button></div>' +
+    '<div class="scv"><div class="sc sc1"><div class="gap s"></div>' +
+    head('This iPhone') + list(row('<span class="lg">' + I.iphone + '</span>' + rt('<span class="nm">Max\'s iPhone</span>', 'Your other devices see this name.') + '<button class="tbtn t1-ren">Rename</button>', 'ic')) + gap +
+    syncGroup() + pasteGroup + howGroup +
+    head('Your devices') + list(devices()) + gap + removeMe + aboutGroup('0.1.0') +
+    '<div style="height:24px"></div></div></div><div style="height:34px;flex:none"></div></div>' +
+    '<div class="dimmer r-dim dim0" style="z-index:40"></div>' +
+    '<div class="alert r-box"><h3>Rename this iPhone</h3><p>Your other devices see this name.</p>' +
+    '<div class="fld"><span class="fv">Max\'s iPhone</span><span class="car"></span><span class="fx">' + I.x + '</span></div>' +
+    '<div class="ab"><button>Cancel</button><button class="def r-save">Save</button></div></div>' +
+    keyboard('rise0'));
+
+  /* ---------- T2 Two levels ---------- */
+  fill('t2',
+    homeApp() +
+    '<div class="app safe layer L-set pin">' +
+    '<div class="nav"><button class="bb">' + I.back + '</button></div>' +
+    '<div class="scv"><div class="largetitle"><h1 class="t-large">Settings</h1></div><div class="gap s"></div>' +
+    '<div class="hcard"><div class="hc-top"><span class="hc-ic">' + I.iphone + '</span><span class="hc-t"><b>Max\'s iPhone</b><span>This iPhone</span></span><button class="hc-btn">Rename</button></div>' +
+    '<p class="hc-s">' + I.info + 'It syncs each time you open the app.</p></div>' + gap +
+    head('Your devices') + list(devices(), 'devlist') +
+    '<div class="after-dev">' + gap + syncGroup() + pasteGroup + howGroup + removeMe + aboutGroup('0.1.0') + '</div>' +
+    '</div></div>' +
+    '<div class="app safe layer L-det pin">' +
+    '<div class="nav"><button class="bb">' + I.back + '</button></div>' +
+    '<div class="scv"><div class="dhead"><span class="big"><i data-logo="apple" data-size="44"></i></span><h1 class="t-title1">Mac mini</h1>' +
+    '<p class="t-sub c2 st"><span class="dt ok"></span>Connected</p></div>' +
+    list(row(rt('System') + '<span class="rv">macOS</span>') + row(rt('Last copy') + '<span class="rv">Text, 4 minutes ago</span>')) + gap +
+    list(row('<span class="rt"><b class="tint">Rename</b></span>')) + gap +
+    list(row(rt('Remove this device'), 'danger d-rem')) +
+    foot('Mac mini stops getting your copies. You can add it again with a code.') +
+    '</div></div>' +
+    actionSheet('a2', 'Remove Mac mini?', 'It stops getting your copies.', 'Remove'));
+
+  /* ---------- T3 On Home ---------- */
+  const tickSvg = '<svg class="ub" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="var(--cell)" stroke="var(--ok)" stroke-width="2.4"/><path class="tick" pathLength="1" d="M12.5 20.5l5 5 10-10.5" stroke="var(--ok)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  fill('t3',
+    '<div class="app layer L-t3">' +
+    '<div class="t3-scv"><div class="sc sc3"><div style="height:44px"></div>' +
+    '<div class="largetitle"><h1 class="t-large">Working</h1><p class="t-sub c2 hsub"><span class="dt ok"></span>Synced just now</p></div><div class="gap s"></div>' +
+    '<div class="ucard"><div class="uc-top">' + tickSvg + '<div class="uc-tx"><span class="t-head">Updated to 0.2.0</span><span class="t-sub c2">You have the newest version.</span></div></div>' +
+    '<div class="uc-acts"><button class="pbtn grey auto uc-done">Done</button></div></div>' +
+    '<div class="t3below">' +
+    head('Your devices') + list(devices()) + gap +
+    syncGroup() + pasteGroup + howGroup + aboutGroup('0.2.0') +
+    '<div style="height:108px"></div></div></div></div>' +
+    '<div class="fadebot"></div>' +
+    '<div class="dbar"><span class="hc-ic">' + I.iphone + '</span><span class="db-t"><b>Max\'s iPhone</b><span>This iPhone</span></span>' +
+    '<span class="db-f"><span>Last copy</span>Text, just now</span>' + I.chev + '</div>' +
+    '</div>' +
+    '<div class="dimmer d3 dim0"></div>' +
+    '<div class="sheet float t3-sheet rise0"><div class="grab"></div>' +
+    '<div class="nav"><button class="bb t3-x">' + I.x + '</button><span class="nav-title">This iPhone</span><span style="width:44px"></span></div>' +
+    '<div class="gap s"></div>' +
+    list(row('<span class="lg">' + I.iphone + '</span>' + rt('Max\'s iPhone', 'Your other devices see this name.') + '<button class="tbtn">Rename</button>', 'ic')) + gap +
+    list(row(rt('Remove this iPhone and forget everything'), 'danger t3-rem')) +
+    foot('It leaves your devices. To sync again, add it with a code.') +
+    '<div style="height:30px"></div></div>' +
+    actionSheet('a3', 'Remove this iPhone and forget everything?', 'It leaves your devices and forgets them.', 'Remove and forget'));
+
+  IOS.decorate(document);
+
+  /* ---------- helpers ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const PUSH = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const fade = (c, el, a, b, at, d) => an(c, el, [{ opacity: a }, { opacity: b }], { delay: at, duration: d || 220 });
+  const press = (c, el, at) => { if (!c.reduced) an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(0.95)', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: 300, easing: EIO, fill: 'none' }); };
+  const hi = (c, el, at) => an(c, el, [{ backgroundColor: 'var(--cell)' }, { backgroundColor: 'var(--cell-hi)', offset: 0.3 }, { backgroundColor: 'var(--cell-hi)', offset: 0.7 }, { backgroundColor: 'var(--cell)' }], { delay: at, duration: 520, fill: 'none' });
+  const dimBtn = (c, el, at) => an(c, el, [{ filter: 'brightness(1)' }, { filter: 'brightness(0.8)' }, { filter: 'brightness(1)' }], { delay: at, duration: 340, fill: 'none' });
+  const rise = (c, el, at, d) => {
+    if (c.reduced) return fade(c, el, 0, 1, at, 220);
+    an(c, el, [{ transform: 'translateY(calc(100% + 60px))' }, { transform: 'translateY(0)' }], { delay: at, duration: d || 560, easing: PUSH });
+  };
+  const sink = (c, el, at, d) => {
+    if (c.reduced) return fade(c, el, 1, 0, at, 220);
+    an(c, el, [{ transform: 'translateY(0)' }, { transform: 'translateY(calc(100% + 60px))' }], { delay: at, duration: d || 440, easing: EIN });
+  };
+  const scrollTo = (c, el, from, to, at, d) => {
+    if (c.reduced) {
+      fade(c, el, 1, 0, at, 180);
+      an(c, el, [{ transform: 'translateY(' + from + 'px)' }, { transform: 'translateY(' + to + 'px)' }], { delay: at + 190, duration: 1 });
+      fade(c, el, 0, 1, at + 200, 240);
+      return;
+    }
+    an(c, el, [{ transform: 'translateY(' + from + 'px)' }, { transform: 'translateY(' + to + 'px)' }], { delay: at, duration: d || 1400, easing: EIO });
+  };
+  const push = (c, from, to, at) => {
+    if (c.reduced) { fade(c, from, 1, 0, at, 220); fade(c, to, 0, 1, at, 220); return; }
+    an(c, to, [{ transform: 'translateX(393px)', boxShadow: '-10px 0 30px rgba(0,0,0,0.12)' }, { transform: 'none', boxShadow: '-10px 0 30px rgba(0,0,0,0)' }], { delay: at, duration: 540, easing: PUSH });
+    an(c, from, [{ transform: 'none', filter: 'brightness(1)' }, { transform: 'translateX(-118px)', filter: 'brightness(0.92)' }], { delay: at, duration: 540, easing: PUSH });
+  };
+  const pop = (c, under, top, at) => {
+    if (c.reduced) { fade(c, top, 1, 0, at, 220); fade(c, under, 0, 1, at, 220); return; }
+    an(c, top, [{ transform: 'none' }, { transform: 'translateX(393px)' }], { delay: at, duration: 520, easing: PUSH });
+    an(c, under, [{ transform: 'translateX(-118px)', filter: 'brightness(0.92)' }, { transform: 'none', filter: 'brightness(1)' }], { delay: at, duration: 520, easing: PUSH });
+  };
+  const showAS = (c, k, at) => { fade(c, c.$('.' + k + '-dim'), 0, 1, at, 280); rise(c, c.$('.' + k), at, 520); };
+  const hideAS = (c, k, at) => { fade(c, c.$('.' + k + '-dim'), 1, 0, at, 260); sink(c, c.$('.' + k), at, 380); };
+
+  /* T1 */
+  Kit.register('#t1', (c) => {
+    const home = c.$('.L-home'), sheet = c.$('.t1-sheet'), sc = c.$('.sc1');
+    const S = Math.max(0, sc.offsetHeight - c.$('.t1-sheet .scv').clientHeight);
+    // Open the sheet.
+    press(c, c.$('.gearb'), 800);
+    fade(c, c.$('.d1'), 0, 1, 1000, 360);
+    rise(c, sheet, 1000, 600);
+    if (!c.reduced) an(c, home, [{ transform: 'scale(1)', borderRadius: '55px' }, { transform: 'scale(0.92) translateY(14px)', borderRadius: '40px' }], { delay: 1000, duration: 600, easing: PUSH });
+    // Sync images off.
+    c.after(2600, () => { c.$('.s-sw').classList.remove('on'); c.$('.s-f').textContent = 'Only text is synced.'; });
+    an(c, c.$('.s-max'), [{ opacity: 1 }, { opacity: 0.4 }], { delay: 2600, duration: 300 });
+    // Rename with the keyboard.
+    dimBtn(c, c.$('.t1-ren'), 3800);
+    fade(c, c.$('.r-dim'), 0, 1, 4000, 260);
+    if (c.reduced) fade(c, c.$('.r-box'), 0, 1, 4000, 220);
+    else an(c, c.$('.r-box'), [{ opacity: 0, transform: 'translateY(-50%) scale(1.1)' }, { opacity: 1, transform: 'translateY(-50%) scale(1)' }], { delay: 4000, duration: 360, easing: EOUT });
+    rise(c, c.$('.kb'), 4000, 520);
+    const fv = c.$('.fv');
+    dimBtn(c, c.$('.fx'), 5000);
+    c.after(5150, () => { fv.textContent = ''; });
+    const name = 'Max\'s work phone';
+    if (c.reduced) c.after(5700, () => { fv.textContent = name; });
+    else for (let i = 1; i <= name.length; i++) c.after(5400 + i * 95, ((n) => () => { fv.textContent = name.slice(0, n); })(i));
+    dimBtn(c, c.$('.r-save'), 7300);
+    fade(c, c.$('.r-dim'), 1, 0, 7500, 260);
+    fade(c, c.$('.r-box'), 1, 0, 7500, 220);
+    sink(c, c.$('.kb'), 7500, 400);
+    c.after(7600, () => { c.$('.nm').textContent = name; });
+    // Scroll to About.
+    scrollTo(c, sc, 0, -S, 8500, 1500);
+    // Done.
+    press(c, c.$('.t1-done'), 10700);
+    sink(c, sheet, 10900, 460);
+    fade(c, c.$('.d1'), 1, 0, 10900, 400);
+    if (!c.reduced) an(c, home, [{ transform: 'scale(0.92) translateY(14px)', borderRadius: '40px' }, { transform: 'scale(1)', borderRadius: '55px' }], { delay: 10900, duration: 520, easing: PUSH });
+  });
+
+  /* T2 */
+  Kit.register('#t2', (c) => {
+    const home = c.$('.L-home'), set = c.$('.L-set'), det = c.$('.L-det');
+    press(c, c.$('.gearb'), 800);
+    push(c, home, set, 1000);
+    hi(c, c.$('.L-set .r-mac'), 2500);
+    push(c, set, det, 2800);
+    hi(c, c.$('.d-rem'), 4400);
+    showAS(c, 'a2', 4700);
+    dimBtn(c, c.$('.a2-yes'), 6500);
+    hideAS(c, 'a2', 6700);
+    pop(c, set, det, 7000);
+    // Mac mini folds out of the list.
+    const mac = c.$('.L-set .r-mac'), h = mac.offsetHeight;
+    fade(c, mac, 1, 0, 7800, 300);
+    const t = (el) => an(c, el, [{ transform: 'translateY(0)' }, { transform: 'translateY(-' + h + 'px)' }], { delay: 8150, duration: c.reduced ? 220 : 520, easing: EIO });
+    if (c.reduced) {
+      // Same story, fades only: the rows below fade out, close the gap, fade back in.
+      const below = [c.$('.L-set .r-ubu'), c.$('.L-set .r-ipad'), c.$('.after-dev')];
+      below.forEach((el) => { fade(c, el, 1, 0, 8100, 160); an(c, el, [{ transform: 'translateY(0)' }, { transform: 'translateY(-' + h + 'px)' }], { delay: 8270, duration: 1 }); fade(c, el, 0, 1, 8280, 240); });
+      an(c, c.$('.devlist'), [{ clipPath: 'inset(0 0 0 0 round 26px)' }, { clipPath: 'inset(0 0 ' + h + 'px 0 round 26px)' }], { delay: 8270, duration: 1 });
+      return;
+    }
+    [c.$('.L-set .r-ubu'), c.$('.L-set .r-ipad'), c.$('.after-dev')].forEach(t);
+    an(c, c.$('.devlist'), [{ clipPath: 'inset(0 0 0 0 round 26px)' }, { clipPath: 'inset(0 0 ' + h + 'px 0 round 26px)' }], { delay: 8150, duration: 520, easing: EIO });
+  });
+
+  /* T3 */
+  Kit.register('#t3', (c) => {
+    const card = c.$('.ucard'), below = c.$('.t3below'), sc = c.$('.sc3');
+    const S = Math.max(0, sc.offsetHeight - 148 - c.$('.t3-scv').clientHeight);
+    // The card arrives once, after an App Store update.
+    if (c.reduced) {
+      fade(c, card, 0, 1, 500, 240);
+      an(c, below, [{ transform: 'translateY(-148px)' }, { transform: 'translateY(0)' }], { delay: 500, duration: 1 });
+      an(c, c.$('.tick'), [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { delay: 500, duration: 1 });
+    } else {
+      an(c, card, [{ opacity: 0, transform: 'translateY(-10px) scale(0.98)' }, { opacity: 1, transform: 'none' }], { delay: 600, duration: 600, easing: EOUT });
+      an(c, below, [{ transform: 'translateY(-148px)' }, { transform: 'translateY(0)' }], { delay: 500, duration: 700, easing: EOUT });
+      an(c, c.$('.tick'), [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { delay: 1100, duration: 520, easing: EOUT });
+    }
+    press(c, c.$('.uc-done'), 2900);
+    if (c.reduced) {
+      fade(c, card, 1, 0, 3100, 200);
+      fade(c, below, 1, 0, 3100, 160);
+      an(c, below, [{ transform: 'translateY(0)' }, { transform: 'translateY(-148px)' }], { delay: 3270, duration: 1 });
+      fade(c, below, 0, 1, 3280, 240);
+    } else {
+      an(c, card, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.97)' }], { delay: 3100, duration: 280, easing: EIN });
+      an(c, below, [{ transform: 'translateY(0)' }, { transform: 'translateY(-148px)' }], { delay: 3200, duration: 560, easing: EIO });
+    }
+    // Scroll down through the settings.
+    scrollTo(c, sc, 0, -S, 4200, 1700);
+    // This iPhone: its own small sheet.
+    press(c, c.$('.dbar'), 6900);
+    fade(c, c.$('.d3'), 0, 1, 7100, 320);
+    rise(c, c.$('.t3-sheet'), 7100, 560);
+    hi(c, c.$('.t3-rem'), 8500);
+    showAS(c, 'a3', 8800);
+    dimBtn(c, c.$('.a3-no'), 10900);
+    hideAS(c, 'a3', 11100);
+    press(c, c.$('.t3-x'), 12000);
+    sink(c, c.$('.t3-sheet'), 12200, 440);
+    fade(c, c.$('.d3'), 1, 0, 12200, 360);
+  });
+})();
+</script>
+</body>
+</html>

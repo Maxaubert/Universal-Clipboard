@@ -28,7 +28,7 @@ storage and end-to-end encryption. It keeps working when a device is on a VPN on
 ## Operating Context
 - No system tray icon and no Dock icon. A background agent starts at login. Opening the app shows one
   settings window (about 420 x 560 px).
-- Pairing with a 9-digit short code (same network), a QR code, or a 20-character long code (anywhere).
+- Pairing with a 6-digit code or a QR code, local network only (changed 2026-11-13: no long code).
 - Phones need one tap per sync, because iOS and Android do not allow background clipboard access.
 - A group needs at least one computer (or Android phone) that is on.
 - The OS notifies only when the user must act, at most once a day.

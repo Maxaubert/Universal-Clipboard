@@ -2,7 +2,7 @@
 
 Clipboard sync between Windows, macOS, Linux, iOS and Android. Rust workspace in `crates/`.
 Plan and spec: `docs/plan/2026-11-13-spec-and-plan.md` (read sections 5 to 7 first).
-Desktop design (locked): `docs/design/desktop`. Desktop window (M8b): `docs/desktop.md`.
+Desktop design (locked): `docs/design/desktop`. iPhone mockups (options, 2026-11-15): `docs/design/ios`. Desktop window (M8b): `docs/desktop.md`.
 Core library choices (M1): `docs/core.md`.
 Networking choices (M2, plain QUIC, LAN only): `docs/net.md`. Spike S1 so far: `docs/spikes/s1-interfaces.md`.
 Windows clipboard backend and `tools/winhost` (M4): `docs/windows.md`.

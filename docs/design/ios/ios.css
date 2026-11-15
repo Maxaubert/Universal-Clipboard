@@ -1,0 +1,269 @@
+/* Universal Clipboard iPhone kit (2026-11-15).
+   Load after ../desktop/motion/kit.css (gallery, motion tokens, replay controls).
+   Part 1: phone frame (iPhone 16 / 17, 393 x 852 pt) with status bar, Dynamic Island, home indicator.
+   Part 2: iOS tokens. Warm desktop colors mapped to iOS roles, light and dark.
+   Part 3: iOS parts: nav bars, large titles, inset grouped lists, switches, capsule buttons,
+           sheets, alerts, the share sheet, the camera view, the 6 digit boxes.
+   Part 4: gallery overrides for phone-sized options.
+   Rules: SF Pro (the system font), 17 pt body, 44 pt targets, content inside the safe area,
+   Dark Mode for every screen (html.dark or ?dark=1), Reduced motion (kit.js). */
+
+/* ---------- Part 2: tokens ---------- */
+:root {
+  --sf: -apple-system, 'SF Pro Text', 'SF Pro', system-ui, sans-serif;
+  --sfd: -apple-system, 'SF Pro Display', 'SF Pro', system-ui, sans-serif;
+  /* Light: the desktop's paper and ink. */
+  --bg: #F7F6F4;            /* systemGroupedBackground, warm */
+  --cell: #FFFFFF;          /* secondarySystemGroupedBackground */
+  --cell-hi: #EFEDEA;       /* pressed cell */
+  --label: #1D1C1A;         /* label */
+  --label-2: #5E5B56;       /* secondaryLabel (AA on bg and cell) */
+  --label-3: #6E6A64;       /* tertiary, footers */
+  --sep: rgba(60, 55, 50, 0.16);
+  --fill: rgba(120, 112, 104, 0.14); /* systemFill: digit boxes, search fields */
+  --fill-2: rgba(120, 112, 104, 0.22);
+  --tint: #1D1C1A;          /* one tint: ink. Buttons, links, bar buttons */
+  --on-tint: #FFFFFF;
+  --ok: #1E7A46;            /* connected, switch on */
+  --bad: #B42318;
+  --mute-ic: #B3AEA7;       /* paused logos */
+  --dark-bar: #1D1C1A;      /* H3: this device, always dark */
+  --dark-bar-2: #2B2926;
+  --on-dark: #F7F6F4;
+  --on-dark-2: #BDB8B1;
+  --material: rgba(247, 246, 244, 0.78);   /* bars over content */
+  --sheet: #FFFFFF;
+  --alert: rgba(242, 240, 237, 0.86);
+  --dim: rgba(20, 18, 16, 0.32);           /* behind sheets and alerts */
+  --frame: #1A1918;          /* phone hardware */
+  --island: #000000;
+}
+html.dark {
+  --bg: #121110;
+  --cell: #1F1E1C;
+  --cell-hi: #2A2826;
+  --label: #F2F0ED;
+  --label-2: #B3AEA7;
+  --label-3: #9A958E;
+  --sep: rgba(235, 228, 220, 0.14);
+  --fill: rgba(235, 228, 220, 0.10);
+  --fill-2: rgba(235, 228, 220, 0.16);
+  --tint: #F2F0ED;
+  --on-tint: #1D1C1A;
+  --ok: #3FB56E;
+  --bad: #FF6B5E;
+  --mute-ic: #5E5B56;
+  --dark-bar: #2B2926;      /* still the darkest thing that is not the background: one step up */
+  --dark-bar-2: #37342F;
+  --on-dark: #F7F6F4;
+  --on-dark-2: #BDB8B1;
+  --material: rgba(30, 29, 27, 0.78);
+  --sheet: #1C1B19;
+  --alert: rgba(44, 42, 39, 0.88);
+  --dim: rgba(0, 0, 0, 0.5);
+  --frame: #2E2C2A;
+}
+
+/* ---------- Part 1: phone ---------- */
+/* <div class="stage"><div class="phone"><div class="screen"> ...status bar, island, app... </div></div></div>
+   Screen coordinates are iOS points: 393 x 852. Safe area: top 59, bottom 34. */
+.phone {
+  position: relative; width: 417px; height: 876px; flex: none; box-sizing: border-box;
+  border-radius: 67px; background: var(--frame); padding: 12px;
+  box-shadow: 0 0 0 1.5px #3A3734 inset, 0 2px 4px rgba(40,35,30,0.12), 0 28px 60px rgba(40,35,30,0.22);
+}
+.screen {
+  position: relative; width: 393px; height: 852px; border-radius: 55px; overflow: hidden;
+  background: var(--bg); color: var(--label); font-family: var(--sf);
+  font-size: 17px; line-height: 22px; letter-spacing: -0.41px;
+  -webkit-font-smoothing: antialiased; isolation: isolate;
+}
+.island { position: absolute; z-index: 60; top: 11px; left: 50%; width: 126px; height: 37px; margin-left: -63px; border-radius: 19px; background: var(--island); }
+.sbar {
+  position: absolute; z-index: 59; top: 0; left: 0; right: 0; height: 54px; display: flex;
+  align-items: center; justify-content: space-between; padding: 6px 36px 0 52px; box-sizing: border-box;
+  font-family: var(--sfd); font-weight: 600; font-size: 17px; letter-spacing: -0.4px; color: var(--label); pointer-events: none;
+}
+.sbar .sic { display: flex; gap: 6px; align-items: center; }
+.sbar.light { color: #fff; }
+.homebar { position: absolute; z-index: 59; bottom: 8px; left: 50%; width: 140px; height: 5px; margin-left: -70px; border-radius: 3px; background: var(--label); opacity: 0.9; pointer-events: none; }
+.homebar.light { background: #fff; }
+/* The app fills the screen; .safe pads it to the safe area. */
+.app { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.app.layer { z-index: 1; }
+.safe { padding-top: 59px; padding-bottom: 34px; box-sizing: border-box; }
+
+/* ---------- Part 3: iOS parts ---------- */
+/* Type: the Dynamic Type default (Large) sizes. */
+.t-large { font-family: var(--sfd); font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: 0.4px; }
+.t-title1 { font-family: var(--sfd); font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: 0.36px; }
+.t-title2 { font-family: var(--sfd); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.26px; }
+.t-title3 { font-family: var(--sfd); font-size: 20px; line-height: 25px; font-weight: 600; letter-spacing: -0.45px; }
+.t-head { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.43px; }
+.t-body { font-size: 17px; line-height: 22px; letter-spacing: -0.43px; }
+.t-callout { font-size: 16px; line-height: 21px; letter-spacing: -0.31px; }
+.t-sub { font-size: 15px; line-height: 20px; letter-spacing: -0.23px; }
+.t-foot { font-size: 13px; line-height: 18px; letter-spacing: -0.08px; }
+.t-cap { font-size: 12px; line-height: 16px; letter-spacing: 0; }
+.c2 { color: var(--label-2); }
+.c3 { color: var(--label-3); }
+.cok { color: var(--ok); }
+.cbad { color: var(--bad); }
+.tc { text-align: center; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Navigation bar. Inline: 44 pt tall under the status bar. Large title below it. */
+.nav { position: relative; z-index: 20; height: 44px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }
+.nav .nav-title { position: absolute; left: 0; right: 0; text-align: center; font-weight: 600; font-size: 17px; pointer-events: none; }
+.largetitle { padding: 3px 20px 8px; flex: none; }
+/* iOS 26 bar buttons: a round glass button (44 pt) or a capsule with a word. */
+.bb {
+  position: relative; z-index: 1; height: 44px; min-width: 44px; padding: 0; border: 0; border-radius: 22px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--tint);
+  background: var(--material); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: 0 0 0 0.5px var(--sep), 0 2px 8px rgba(40,35,30,0.08); font: 600 17px/22px var(--sf); letter-spacing: -0.43px;
+}
+.bb.word { padding: 0 16px; }
+.bb svg { width: 22px; height: 22px; }
+.bb.on { background: var(--tint); color: var(--on-tint); }
+.bb.plain { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.bbs { display: flex; gap: 8px; }
+
+/* Buttons: capsules, 50 pt tall (iOS 26 large prominent). */
+.pbtn {
+  height: 50px; width: 100%; border: 0; border-radius: 25px; background: var(--tint); color: var(--on-tint);
+  font: 600 17px/22px var(--sf); letter-spacing: -0.43px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-sizing: border-box; flex: none;
+}
+.pbtn.grey { background: var(--fill); color: var(--tint); }
+.pbtn.ghost { background: transparent; color: var(--tint); }
+.pbtn.danger { background: var(--fill); color: var(--bad); }
+.pbtn.auto { width: auto; padding: 0 24px; }
+.pbtn svg { width: 20px; height: 20px; }
+.tbtn { border: 0; background: transparent; color: var(--tint); font: 400 17px/22px var(--sf); letter-spacing: -0.43px; min-height: 44px; padding: 0 8px; }
+.tbtn.b { font-weight: 600; }
+.foot-actions { padding: 0 20px 16px; display: flex; flex-direction: column; gap: 4px; align-items: stretch; flex: none; }
+
+/* Inset grouped list. */
+.lhead { padding: 0 36px 7px; font-size: 13px; line-height: 18px; color: var(--label-2); letter-spacing: -0.08px; }
+.list { margin: 0 16px; background: var(--cell); border-radius: 26px; overflow: hidden; flex: none; }
+.lfoot { padding: 7px 36px 0; font-size: 13px; line-height: 18px; color: var(--label-2); letter-spacing: -0.08px; }
+.row { position: relative; min-height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 20px; box-sizing: border-box; }
+.row + .row::before { content: ''; position: absolute; top: 0; right: 0; left: 20px; height: 0.5px; background: var(--sep); }
+.row.ic + .row::before, .row + .row.ic::before { left: 64px; }
+.row .rt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 10px 0; }
+.row .rt b { font-weight: 400; }
+.row .rv { color: var(--label-2); }
+.row .chev { width: 8px; height: 14px; color: var(--label-3); flex: none; }
+.row .lg { width: 30px; height: 30px; flex: none; display: flex; align-items: center; justify-content: center; }
+.row.danger { color: var(--bad); }
+.row.center { justify-content: center; }
+.gap { height: 24px; flex: none; }
+.gap.s { height: 12px; }
+.gap.l { height: 36px; }
+
+/* Switch (51 x 31). .sw.on is the on state. */
+.sw { position: relative; width: 51px; height: 31px; border-radius: 16px; background: var(--fill-2); flex: none; transition: background 280ms var(--ease-out); }
+.sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,0.15), 0 1px 1px rgba(0,0,0,0.16); transition: transform 280ms var(--ease-out); }
+.sw.on { background: var(--ok); }
+.sw.on::after { transform: translateX(20px); }
+
+/* Status dots. */
+.dt { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.dt.ok { background: var(--ok); }
+.dt.bad { background: var(--bad); }
+.dt.off { background: var(--mute-ic); }
+.dt.ring { box-sizing: border-box; border: 1.5px solid var(--label-3); }
+
+/* Sheet: rises from the bottom, grabber, 38 pt corners. .sheet.full fills to 59 pt from the top. */
+.dimmer { position: absolute; inset: 0; z-index: 30; background: var(--dim); }
+.sheet {
+  position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; background: var(--sheet); color: var(--label);
+  border-radius: 38px 38px 0 0; box-shadow: 0 -2px 30px rgba(0,0,0,0.12); display: flex; flex-direction: column; overflow: hidden;
+}
+.sheet.float { left: 8px; right: 8px; bottom: 8px; border-radius: 40px; }
+.grab { width: 36px; height: 5px; border-radius: 3px; background: var(--fill-2); margin: 5px auto 0; flex: none; }
+.sheet .nav { height: 52px; }
+
+/* Alert (system). */
+.alert {
+  position: absolute; z-index: 41; left: 50%; top: 50%; width: 300px; margin-left: -150px; transform: translateY(-50%);
+  background: var(--alert); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8);
+  border-radius: 34px; padding: 22px 18px 16px; box-sizing: border-box; text-align: center; color: var(--label);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+}
+.alert h3 { margin: 0 0 6px; font: 600 17px/22px var(--sf); letter-spacing: -0.43px; }
+.alert p { font-size: 15px; line-height: 20px; letter-spacing: -0.23px; }
+.alert .ab { display: flex; gap: 10px; margin-top: 18px; }
+.alert .ab button { flex: 1; height: 48px; border: 0; border-radius: 24px; background: var(--fill); color: var(--label); font: 600 17px/22px var(--sf); letter-spacing: -0.43px; }
+.alert .ab button.def { background: #0A84FF; color: #fff; } /* system alerts keep the system blue */
+
+/* Camera view (scanner). Always dark. */
+.cam { position: absolute; inset: 0; background: #0E0D0C; overflow: hidden; }
+.cam .scene { position: absolute; inset: 0; }
+.viewfinder { position: absolute; width: 250px; height: 250px; left: 50%; top: 290px; margin-left: -125px; }
+.viewfinder i { position: absolute; width: 44px; height: 44px; border: 4px solid #fff; }
+.viewfinder i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 22px; }
+.viewfinder i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 22px; }
+.viewfinder i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 22px; }
+.viewfinder i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 22px; }
+
+/* Six digit boxes (filled system style). */
+.pdigits { display: flex; gap: 8px; justify-content: center; align-items: center; }
+.pdigits .sp { width: 8px; }
+.pd {
+  position: relative; width: 46px; height: 58px; border-radius: 14px; background: var(--fill); box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center; font: 600 28px/1 var(--sfd); font-variant-numeric: tabular-nums; color: var(--label);
+}
+.pd.cur { box-shadow: inset 0 0 0 2px var(--tint); }
+.pd.bad { box-shadow: inset 0 0 0 2px var(--bad); }
+.pd .car { width: 2px; height: 28px; background: var(--tint); border-radius: 1px; }
+
+/* iOS keyboard (number pad), drawn simply. */
+.numpad { position: absolute; left: 0; right: 0; bottom: 0; z-index: 25; background: #D6D3CF; padding: 6px 6px 42px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+html.dark .numpad { background: #2B2A28; }
+.numpad span { height: 47px; border-radius: 8px; background: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 400 25px/1 var(--sfd); color: #1D1C1A; box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+html.dark .numpad span { background: #5A5754; color: #fff; }
+html.dark .numpad span.blank { background: transparent; box-shadow: none; }
+.numpad span small { font: 600 10px/1 var(--sf); letter-spacing: 2px; margin-top: 1px; }
+.numpad span.blank { background: transparent; box-shadow: none; }
+
+/* Share sheet (system), drawn generically: no real app content. */
+.share { background: var(--sheet); }
+.share .apps { display: flex; gap: 20px; padding: 12px 20px 8px; overflow: hidden; }
+.share .appi { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; line-height: 13px; color: var(--label); text-align: center; letter-spacing: 0.06px; }
+.share .appi .ai { width: 64px; height: 64px; border-radius: 15px; background: var(--fill-2); }
+.share .acts { margin: 8px 16px 0; background: var(--fill); border-radius: 22px; overflow: hidden; }
+.share .acts .row { min-height: 50px; }
+/* The app icon: ink rounded square with two stacked sheets. */
+.uc-icon { width: 64px; height: 64px; border-radius: 15px; background: #1D1C1A; display: flex; align-items: center; justify-content: center; flex: none; }
+.uc-icon svg { width: 40px; height: 40px; }
+
+/* Device row logo boxes. */
+.dlogo { width: 36px; height: 36px; border-radius: 10px; background: var(--fill); display: flex; align-items: center; justify-content: center; flex: none; color: var(--label); }
+.dlogo svg { width: 20px; height: 20px; fill: currentColor; }
+
+/* No text selection in the UI (Max 2026-11-14), inputs excepted. */
+.screen, .screen * { -webkit-user-select: none; user-select: none; }
+.screen input { -webkit-user-select: text; user-select: text; }
+.screen button { cursor: default; }
+
+/* ---------- Part 4: gallery overrides ---------- */
+/* The stage is the phone plus a 22 px margin: 461 x 920. */
+.gal-grid { --s: 0.6; --sw: 461px; --sh: 920px; grid-template-columns: repeat(auto-fill, minmax(calc(var(--sw) * var(--s)), 1fr)); }
+.gal-grid.actual { --s: 1; }
+.opt { width: calc(var(--sw) * var(--s)); }
+.opt-frame { width: calc(var(--sw) * var(--s)); height: calc(var(--sh) * var(--s)); }
+.opt-frame > .stage { width: var(--sw); height: var(--sh); padding: 22px; background: var(--stage); }
+html.dark body.gallery { background: #1A1918; color: #F2F0ED; }
+html.dark .gal-note, html.dark .opt-desc { color: #B3AEA7; }
+html.dark .opt-frame, html.dark .opt-frame > .stage { background: #262422; }
+html.dark .gal-tools button, html.dark .opt-replay { background: #2B2926; color: #F2F0ED; border-color: #4A4643; }
+html.dark .gal-tools button[aria-pressed='true'] { background: #F2F0ED; color: #1D1C1A; }
+@media (max-width: 720px) { .gal-grid, .gal-grid.actual { --s: 0.62; } }
+@media (max-width: 380px) { .gal-grid, .gal-grid.actual { --s: 0.56; } }
+
+/* Gallery chrome bits for these pages. */
+.gal-back { display: inline-block; margin-bottom: 10px; font-size: 14px; color: inherit; text-underline-offset: 3px; }
+.gal-section-note { grid-column: 1 / -1; margin-top: -24px; font-size: 14px; line-height: 20px; color: var(--ink-3); max-width: 80ch; }
+html.dark .gal-section-note { color: #B3AEA7; }

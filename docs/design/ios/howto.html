@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone how it works</title>
+<link rel="stylesheet" href="../desktop/motion/kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: How it works. */
+  .hid { opacity: 0; }
+
+  /* ---- The drawing: a computer and a small iPhone, 320 x 272 points. Scaled per option. ---- */
+  .scw { position: relative; flex: none; margin: 0 auto; }
+  .scn { position: absolute; left: 0; top: 0; width: 320px; height: 272px; transform-origin: 0 0; }
+  .scn .pc { position: absolute; left: 0; top: 84px; width: 140px; height: 96px; box-sizing: border-box; border: 2.5px solid var(--label); border-radius: 10px; background: var(--cell); display: flex; align-items: center; justify-content: center; color: var(--label); }
+  .scn .pcok { position: absolute; inset: -2.5px; border: 2.5px solid var(--ok); border-radius: 10px; opacity: 0; }
+  .scn .pcck { position: absolute; right: -11px; top: -11px; width: 22px; height: 22px; border-radius: 11px; background: var(--ok); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .scn .pcck svg { width: 13px; height: 13px; }
+  .scn .neck { position: absolute; left: 62px; top: 180px; width: 16px; height: 11px; background: var(--label); }
+  .scn .foot { position: absolute; left: 38px; top: 190px; width: 64px; height: 3px; border-radius: 2px; background: var(--label); }
+  .scn .pclabel { position: absolute; left: -10px; top: 202px; width: 160px; text-align: center; font-size: 13px; line-height: 18px; color: var(--label-2); }
+  .scn .arw { position: absolute; left: 153px; top: 40px; width: 30px; height: 30px; border-radius: 15px; background: var(--fill-2); color: var(--label); display: flex; align-items: center; justify-content: center; opacity: 0; }
+  .scn .arw svg { width: 18px; height: 18px; }
+  .scn .arw.ar svg { transform: rotate(-90deg); }
+  .scn .arw.al svg { transform: rotate(90deg); }
+  .scn .mph { position: absolute; left: 196px; top: 0; width: 124px; height: 268px; border-radius: 26px; background: var(--frame); padding: 5px; box-sizing: border-box; box-shadow: 0 0 0 1px #3A3734 inset, 0 10px 24px rgba(40,35,30,0.14); }
+  .scn .mscr { position: relative; width: 114px; height: 258px; border-radius: 21px; overflow: hidden; background: var(--bg); font-family: var(--sf); letter-spacing: 0; }
+  .scn .mis { position: absolute; z-index: 9; top: 6px; left: 41px; width: 32px; height: 9px; border-radius: 5px; background: #000; }
+  .scn .ly { position: absolute; inset: 0; }
+  /* Home screen */
+  .scn .home { background: linear-gradient(165deg, #EAE3D9 0%, #D8CEC1 100%); }
+  html.dark .scn .home { background: linear-gradient(165deg, #2E2A26 0%, #1C1A18 100%); }
+  .scn .grid { position: absolute; top: 30px; left: 9px; display: grid; grid-template-columns: repeat(4, 20px); gap: 10px 6px; }
+  .scn .grid span, .scn .dock span { width: 20px; height: 20px; border-radius: 6px; }
+  .scn .dock { position: absolute; left: 6px; right: 6px; bottom: 7px; height: 30px; border-radius: 13px; background: rgba(255,255,255,0.35); display: flex; align-items: center; justify-content: space-around; }
+  html.dark .scn .dock { background: rgba(255,255,255,0.08); }
+  .scn .ucapp { background: #1D1C1A; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.3); }
+  .scn .ucapp svg { width: 15px; height: 15px; }
+  /* Our app */
+  .scn .appv { background: var(--bg); transform-origin: 43px 65px; }
+  .scn .ma-t { position: absolute; left: 9px; top: 26px; font: 700 11px/14px var(--sfd); color: var(--label); }
+  .scn .ma-card { position: absolute; left: 7px; right: 7px; top: 44px; height: 76px; border-radius: 12px; background: var(--cell); }
+  .scn .landtx { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 7.5px; line-height: 9.5px; color: var(--label-2); }
+  .scn .ma-list { position: absolute; left: 7px; right: 7px; top: 128px; border-radius: 12px; background: var(--cell); padding: 2px 0; }
+  .scn .ma-row { height: 20px; display: flex; align-items: center; gap: 5px; padding: 0 8px; font-size: 8px; color: var(--label); }
+  .scn .ma-row .nm { flex: 1; }
+  .scn .ma-row svg { width: 9px; height: 9px; }
+  .scn .ma-row .dt { width: 5px; height: 5px; }
+  /* Another app (a notes app, drawn as lines) */
+  .scn .oth { background: var(--cell); }
+  .scn .oth .tb { position: absolute; left: 9px; top: 26px; width: 40px; height: 8px; border-radius: 4px; background: var(--fill-2); }
+  .scn .oth .ln { position: absolute; left: 9px; height: 6px; border-radius: 3px; background: var(--fill-2); }
+  .scn .oth .sel { position: absolute; left: 7px; top: 96px; width: 84px; height: 10px; border-radius: 2px; background: rgba(10,132,255,0.28); transform-origin: left center; transform: scaleX(0); }
+  .scn .emenu { position: absolute; left: 12px; top: 72px; height: 18px; border-radius: 9px; background: #2B2926; color: #fff; display: flex; align-items: center; font: 600 8px/18px var(--sf); opacity: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  html.dark .scn .emenu { background: #4A4643; }
+  .scn .emenu span { padding: 0 7px; }
+  .scn .emenu span + span { border-left: 1px solid rgba(255,255,255,0.25); }
+  /* Share sheet */
+  .scn .shdim { position: absolute; inset: 0; background: var(--dim); opacity: 0; }
+  .scn .shs { position: absolute; left: 0; right: 0; bottom: 0; height: 128px; border-radius: 18px 18px 0 0; background: var(--sheet); transform: translateY(105%); box-shadow: 0 -2px 12px rgba(0,0,0,0.1); }
+  html.reduce .scn .shs { transform: none; opacity: 0; }
+  .scn .shs .gr { width: 20px; height: 3px; border-radius: 2px; background: var(--fill-2); margin: 4px auto 0; }
+  .scn .shs .apps { display: flex; gap: 6px; padding: 10px 8px 0; }
+  .scn .shs .ai { width: 21px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 5.5px; line-height: 6.5px; text-align: center; color: var(--label); }
+  .scn .shs .ai > span { width: 21px; height: 21px; border-radius: 6px; background: var(--fill-2); }
+  .scn .shs .ai .ucapp { box-shadow: 0 0 0 1.5px var(--ok); }
+  .scn .shs .ai .ucapp svg { width: 15px; height: 15px; }
+  .scn .shs .acts { margin: 10px 7px 0; border-radius: 9px; background: var(--fill); }
+  .scn .shs .acts i { display: block; height: 18px; border-top: 0.5px solid var(--sep); }
+  .scn .shs .acts i:first-child { border-top: 0; }
+  /* iOS Settings for this app */
+  .scn .sets { background: var(--bg); }
+  .scn .sets .st-t { position: absolute; left: 9px; top: 26px; font: 700 9.5px/12px var(--sfd); color: var(--label); }
+  .scn .sets .st-l { position: absolute; left: 7px; right: 7px; top: 46px; border-radius: 10px; background: var(--cell); }
+  .scn .sets .st-r { height: 26px; display: flex; align-items: center; justify-content: space-between; padding: 0 7px; font-size: 7.5px; color: var(--label); }
+  .scn .sets .st-r + .st-r { border-top: 0.5px solid var(--sep); }
+  .scn .sets .st-r.two { position: relative; height: 32px; line-height: 8.5px; gap: 4px; }
+  .scn .sets .msw { width: 17px; height: 10px; border-radius: 5px; background: var(--ok); position: relative; }
+  .scn .sets .msw::after { content: ''; position: absolute; right: 1px; top: 1px; width: 8px; height: 8px; border-radius: 4px; background: #fff; }
+  .scn .sets .st-v { position: relative; width: 22px; height: 10px; color: var(--label-2); }
+  .scn .sets .st-hint { position: absolute; left: 12px; right: 10px; top: 110px; font-size: 6.5px; line-height: 8.5px; color: var(--label-3); }
+  .scn .sets .st-hl { position: absolute; inset: 0; border-radius: 0 0 10px 10px; box-shadow: inset 0 0 0 1.5px var(--ok); opacity: 0; }
+  /* Value that rolls from Ask to Allow */
+  .roll { position: relative; display: inline-block; overflow: hidden; vertical-align: top; }
+  .roll > span { position: absolute; right: 0; top: 0; white-space: nowrap; }
+  .roll .v2 { opacity: 0; transform: translateY(70%); }
+  /* The copy, drawn as a shape (never content) */
+  .scn .chip { position: absolute; z-index: 10; width: 36px; height: 28px; box-sizing: border-box; border-radius: 8px; border: 2px solid var(--label); background: var(--cell); color: var(--label); display: flex; align-items: center; justify-content: center; opacity: 0; box-shadow: 0 4px 10px rgba(40,35,30,0.14); }
+  .scn .chip svg { width: 18px; height: 18px; }
+  .scn .c-in { left: 52px; top: 118px; }
+  .scn .c-out { left: 240px; top: 131px; }
+  /* Starting on the other app instead of the home screen */
+  .scn.start-other .home { opacity: 0; }
+  .scn.start-other .oth { opacity: 1; }
+
+  /* ---- W1 Two cards ---- */
+  .w1view { position: relative; flex: 1; overflow: hidden; }
+  .w1scroll { position: absolute; left: 0; right: 0; top: 0; }
+  .w1nav { background: transparent; }
+  .w1bar { position: absolute; inset: 0; background: var(--material); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: 0 0.5px 0 var(--sep); opacity: 0; }
+  .wcard { margin: 0 16px; background: var(--cell); border-radius: 26px; padding: 12px 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .wart { height: 150px; border-radius: 18px; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  .wtx { padding: 0 8px; display: flex; flex-direction: column; gap: 3px; }
+  .wnum { display: inline-flex; width: 22px; height: 22px; border-radius: 11px; background: var(--label); color: var(--cell); font: 700 13px/22px var(--sf); justify-content: center; margin-bottom: 4px; }
+  .tiprow { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 18px; background: var(--bg); }
+  .tiprow .tic { width: 30px; height: 30px; border-radius: 8px; background: var(--label); color: var(--cell); display: flex; align-items: center; justify-content: center; flex: none; }
+  .tiprow .tic svg { width: 18px; height: 18px; }
+  .tiprow .roll { width: 52px; height: 22px; color: var(--label-2); }
+  .tiprow .chev { width: 8px; height: 14px; color: var(--label-3); flex: none; }
+  .tipbtns { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+  .tipbtns .pbtn { height: 44px; border-radius: 22px; font-size: 16px; }
+
+  /* ---- W2 Pages ---- */
+  .w2view { position: relative; flex: 1; overflow: hidden; }
+  .w2track { position: absolute; top: 0; bottom: 0; left: 0; width: 1179px; display: flex; }
+  .w2pg { width: 393px; flex: none; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 18px 28px 0; box-sizing: border-box; gap: 10px; }
+  .w2art { height: 290px; width: 337px; display: flex; align-items: center; justify-content: center; margin-bottom: 18px; flex: none; }
+  .w2dots { display: flex; justify-content: center; gap: 8px; padding: 0 0 18px; flex: none; }
+  .w2dots i { width: 8px; height: 8px; border-radius: 4px; background: var(--fill-2); position: relative; overflow: hidden; }
+  .w2dots i b { position: absolute; inset: 0; background: var(--label); opacity: 0; }
+  .w2dots i.on b { opacity: 1; }
+  .w2foot { position: relative; height: 104px; flex: none; }
+  .w2foot > div { position: absolute; inset: 0; }
+  .w2foot .fb { opacity: 0; }
+  .w2set { width: 337px; text-align: left; }
+  .w2set .crumb { display: flex; align-items: center; gap: 6px; padding: 0 20px 10px; color: var(--label-3); }
+  .w2set .crumb svg { width: 6px; height: 11px; }
+  .w2set .list { margin: 0; }
+  .w2set .lhead { padding-left: 20px; }
+  .w2set .ck { color: #0A84FF; display: flex; }
+  .w2set .ck svg { width: 20px; height: 20px; }
+  .w2set .row .rt { padding: 15px 0; }
+  .w2set .k2 { opacity: 0; }
+  .w2set .rhl { position: absolute; inset: 0; background: var(--cell-hi); opacity: 0; }
+
+  /* ---- W3 One story ---- */
+  .w3art { flex: none; height: 304px; display: flex; justify-content: center; padding-top: 4px; }
+  .w3prog { display: flex; gap: 6px; padding: 18px 32px 0; flex: none; }
+  .w3prog i { flex: 1; height: 4px; border-radius: 2px; background: var(--fill-2); position: relative; overflow: hidden; }
+  .w3prog i b { position: absolute; inset: 0; background: var(--label); transform-origin: left center; transform: scaleX(0); }
+  html.reduce .w3prog i b { transform: none; opacity: 0; }
+  .w3cap { position: relative; height: 176px; margin-top: 20px; flex: none; }
+  .w3cap .cp { position: absolute; inset: 0; padding: 0 28px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; opacity: 0; }
+  .w3cap .cp:first-child { opacity: 1; }
+  .w3cap .pbtn { height: 44px; border-radius: 22px; font-size: 16px; margin-top: 6px; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>How it works: three ways</h1>
+    <p class="gal-note">Shown once after pairing. It can be skipped, and Settings opens it again. Each option teaches the two iPhone rules, "Open the app to sync." and "Use the Share sheet to send a copy from another app.", then offers the paste tip: Settings, Paste from Other Apps, Allow. A copy is always drawn as a shape, never its content. "Max's PC" is the computer in every story.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid">
+
+  <figure class="opt" id="W1" data-loop="15500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>W1</b> Two cards</div>
+      <p class="opt-desc">One page you scroll. Each rule is a numbered card with its own small drawing that plays in turn. The page then scrolls to the paste tip, where the setting rolls from Ask to Allow.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="W2" data-loop="16000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>W2</b> Pages</div>
+      <p class="opt-desc">Three full pages with page dots, one idea each: a big drawing and one sentence. Continue slides to the next page. The last page shows the iOS setting itself, and the check moves to Allow.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt" id="W3" data-loop="16500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>W3</b> One story</div>
+      <p class="opt-desc">One big drawing plays the whole story: copy on the PC, open the app, it lands; share from another app, it goes to the PC; then the setting. A five part bar and the caption under it move in step. One Continue.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="../desktop/motion/art.js"></script>
+<script src="ios.js"></script>
+<script src="../desktop/motion/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const I = IOS.ic;
+
+  /* ---------- The drawing ---------- */
+  const tones = ['#C9B8A6', '#A9B7A0', '#B9C4CF', '#D8C08A', '#C7A9A3', null, '#B3AEA7', '#A3B5B0', '#D3B5A0', '#B7AFC4', '#C2C9A8', '#AFA59A', '#C8BBA9', '#9FB0BF', '#CDB09B', '#B8B0A4'];
+  const grid = tones.map((t) => t ? '<span style="background:' + t + '"></span>' : '<span class="ucapp">' + I.app + '</span>').join('');
+  const lines = [40, 54, 66, 78, 98, 110, 122, 142, 154, 166, 186, 198].map((y, i) => '<i class="ln" style="top:' + y + 'px;width:' + [92, 80, 96, 60, 84, 70, 94, 88, 52, 90, 76, 64][i] + 'px"></i>').join('');
+  const scene = (cls) =>
+    '<div class="scn ' + (cls || '') + '">' +
+    '<div class="pc"><i data-logo="windows" data-size="30"></i><div class="pcok"><span class="pcck">' + I.check + '</span></div></div>' +
+    '<div class="neck"></div><div class="foot"></div><div class="pclabel">Max\'s PC</div>' +
+    '<div class="arw ar">' + I.down + '</div><div class="arw al">' + I.down + '</div>' +
+    '<div class="mph"><div class="mscr">' +
+      '<div class="ly home"><div class="grid">' + grid + '</div><div class="dock"><span style="background:#A9B7A0"></span><span style="background:#B9C4CF"></span><span style="background:#D8C08A"></span><span style="background:#C7A9A3"></span></div></div>' +
+      '<div class="ly appv hid"><div class="ma-t">Max\'s iPhone</div><div class="ma-card"><div class="landtx hid">Text, from Max\'s PC<br>just now</div></div>' +
+        '<div class="ma-list"><div class="ma-row"><i data-logo="windows" data-size="9"></i><span class="nm">Max\'s PC</span><span class="dt ok"></span></div>' +
+        '<div class="ma-row"><i data-logo="apple" data-size="9"></i><span class="nm">Mac mini</span><span class="dt ok"></span></div>' +
+        '<div class="ma-row"><i data-logo="apple" data-size="9"></i><span class="nm">Max\'s iPad</span><span class="dt off"></span></div></div></div>' +
+      '<div class="ly oth hid"><i class="tb"></i>' + lines + '<i class="sel"></i><div class="emenu"><span>Copy</span><span class="e-sh">Share...</span></div></div>' +
+      '<div class="ly shr"><div class="shdim"></div><div class="shs"><div class="gr"></div><div class="apps">' +
+        '<div class="ai"><span></span></div><div class="ai"><span class="ucapp s-uc">' + I.app + '</span>Universal Clipboard</div><div class="ai"><span></span></div><div class="ai"><span></span></div></div>' +
+        '<div class="acts"><i></i><i></i><i></i></div></div></div>' +
+      '<div class="ly sets hid"><div class="st-t">Universal Clipboard</div><div class="st-l">' +
+        '<div class="st-r"><span>Local Network</span><span class="msw"></span></div>' +
+        '<div class="st-r two"><div class="st-hl"></div><span>Paste from<br>Other Apps</span><span class="roll st-v"><span class="v1">Ask</span><span class="v2">Allow</span></span></div></div>' +
+        '<div class="st-hint">Then the app does not ask each time.</div></div>' +
+      '<div class="mis"></div>' +
+    '</div></div>' +
+    '<div class="chip c-in">' + I.text + '</div><div class="chip c-out">' + I.text + '</div>' +
+    '</div>';
+  const scw = (k, cls) => '<div class="scw" style="width:' + (320 * k) + 'px;height:' + (272 * k) + 'px">' + scene(cls).replace('class="scn', 'style="transform:scale(' + k + ')" class="scn') + '</div>';
+
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = '<div class="phone"><div class="screen">' + html + '</div></div>'; };
+
+  const R1 = 'Open the app to sync.';
+  const R1s = 'Your newest copy comes to this iPhone. Nothing moves while the app is closed.';
+  const R2 = 'Use the Share sheet to send a copy from another app.';
+  const R2s = 'Tap Share, then Universal Clipboard.';
+  const TIP = 'Then the app does not ask each time.';
+
+  /* ---------- W1 Two cards ---------- */
+  fill('W1',
+    '<div class="app safe layer">' +
+    '<div class="nav w1nav"><div class="w1bar"></div><span></span><span class="nav-title w1it hid">How it works</span><button class="bb word">Skip</button></div>' +
+    '<div class="w1view"><div class="w1scroll">' +
+      '<div class="largetitle"><h1 class="t-large">How it works</h1><p class="t-body c2" style="margin-top:4px">Two things to know on iPhone.</p></div>' +
+      '<div class="gap s"></div>' +
+      '<div class="wcard c1"><div class="wart">' + scw(0.5) + '</div><div class="wtx"><span class="wnum">1</span><span class="t-head">' + R1 + '</span><span class="t-sub c2">' + R1s + '</span></div></div>' +
+      '<div class="gap s"></div>' +
+      '<div class="wcard c2"><div class="wart">' + scw(0.5, 'start-other') + '</div><div class="wtx"><span class="wnum">2</span><span class="t-head">' + R2 + '</span><span class="t-sub c2">' + R2s + '</span></div></div>' +
+      '<div class="gap"></div><div class="lhead">Optional</div>' +
+      '<div class="wcard tip"><div class="tiprow"><span class="tic">' + I.paste + '</span><span class="t-body" style="flex:1">Paste from Other Apps</span><span class="roll"><span class="v1">Ask</span><span class="v2">Allow</span></span>' + I.chev + '</div>' +
+        '<div class="wtx"><span class="t-sub c2">In Settings, set it to Allow. ' + TIP + '</span></div>' +
+        '<div class="tipbtns"><button class="pbtn auto w1os">Open Settings</button><button class="tbtn">Not now</button></div></div>' +
+      '<div class="gap"></div>' +
+    '</div></div></div>');
+
+  /* ---------- W2 Pages ---------- */
+  const settingsArt =
+    '<div class="w2set"><div class="crumb t-foot">Settings' + I.chev + 'Universal Clipboard' + I.chev + '</div>' +
+    '<div class="lhead">Paste from Other Apps</div><div class="list">' +
+    '<div class="row"><span class="rt"><b>Ask</b></span><span class="ck k1">' + I.check + '</span></div>' +
+    '<div class="row"><span class="rt"><b>Deny</b></span></div>' +
+    '<div class="row r-allow"><span class="rhl"></span><span class="rt" style="position:relative"><b>Allow</b></span><span class="ck k2" style="position:relative">' + I.check + '</span></div>' +
+    '</div></div>';
+  fill('W2',
+    '<div class="app safe layer">' +
+    '<div class="nav"><span></span><button class="bb word w2skip">Skip</button></div>' +
+    '<div class="w2view"><div class="w2track">' +
+      '<div class="w2pg p1"><div class="w2art">' + scw(1) + '</div><h1 class="t-title1">' + R1 + '</h1><p class="t-body c2">' + R1s + '</p></div>' +
+      '<div class="w2pg p2"><div class="w2art">' + scw(1, 'start-other') + '</div><h1 class="t-title1">' + R2 + '</h1><p class="t-body c2">' + R2s + '</p></div>' +
+      '<div class="w2pg p3"><div class="w2art">' + settingsArt + '</div><h1 class="t-title1">Allow paste in Settings.</h1><p class="t-body c2">Set Paste from Other Apps to Allow. ' + TIP + '</p></div>' +
+    '</div></div>' +
+    '<div class="w2dots"><i class="d1 on"><b></b></i><i class="d2"><b></b></i><i class="d3"><b></b></i></div>' +
+    '<div class="w2foot"><div class="fa foot-actions"><button class="pbtn w2c">Continue</button></div>' +
+    '<div class="fb foot-actions"><button class="pbtn">Open Settings</button><button class="pbtn ghost">Not now</button></div></div>' +
+    '</div>');
+
+  /* ---------- W3 One story ---------- */
+  const caps = [
+    ['Copy on your computer.', 'Like you always do.'],
+    [R1, 'Your copy is now on this iPhone.'],
+    ['Use the Share sheet.', 'In another app, select something and tap Share.'],
+    ['Choose Universal Clipboard.', 'A copy goes to your other devices.'],
+    ['Tip: allow paste.', 'In Settings, set Paste from Other Apps to Allow. ' + TIP],
+  ];
+  fill('W3',
+    '<div class="app safe layer">' +
+    '<div class="nav"><span></span><span class="nav-title">How it works</span><button class="bb word">Skip</button></div>' +
+    '<div class="w3art">' + scw(1.1) + '</div>' +
+    '<div class="w3prog">' + caps.map((_, i) => '<i class="g' + (i + 1) + '"><b></b></i>').join('') + '</div>' +
+    '<div class="w3cap">' + caps.map((t, i) => '<div class="cp k' + (i + 1) + '"><h2 class="t-title2">' + t[0] + '</h2><p class="t-body c2">' + t[1] + '</p>' +
+      (i === 4 ? '<button class="pbtn grey auto">Open Settings</button>' : '') + '</div>').join('') + '</div>' +
+    '<div style="flex:1"></div><div class="foot-actions"><button class="pbtn">Continue</button><div class="slot2"></div></div>' +
+    '</div>');
+
+  IOS.decorate(document);
+
+  /* ---------- helpers ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const PUSH = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const fade = (c, el, a, b, at, d) => an(c, el, [{ opacity: a }, { opacity: b }], { delay: at, duration: d || 320, easing: EIO });
+  const press = (c, el, at, s) => an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(' + (s || 0.96) + ')', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: 280, easing: EIO, fill: 'none' });
+  // Move by a transform. Reduced motion: fade out, jump, fade in.
+  const travel = (c, el, from, to, at, d) => {
+    if (c.reduced) {
+      fade(c, el, 1, 0, at, 180);
+      an(c, el, [{ transform: to }, { transform: to }], { delay: at + 180, duration: 1 });
+      fade(c, el, 0, 1, at + 200, 220);
+    } else an(c, el, [{ transform: from }, { transform: to }], { delay: at, duration: d, easing: EIO });
+  };
+  const roll = (c, r, at) => {
+    const y = c.reduced ? 0 : 1;
+    an(c, r.querySelector('.v1'), [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(' + (-70 * y) + '%)' }], { delay: at, duration: 260, easing: EIN });
+    an(c, r.querySelector('.v2'), [{ opacity: 0, transform: 'translateY(' + (70 * y) + '%)' }, { opacity: 1, transform: 'none' }], { delay: at + 160, duration: 420, easing: EOUT });
+  };
+
+  // Story 1: the copy is on the PC, the app opens, the copy lands on the iPhone. About 3 s.
+  function openStory(c, s, t0) {
+    const q = (x) => s.querySelector(x);
+    const chip = q('.c-in');
+    an(c, chip, [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.7)' }, { opacity: 1, transform: 'none' }], { delay: t0, duration: 420, easing: EOUT });
+    press(c, q('.home .ucapp'), t0 + 900, 0.84);
+    if (c.reduced) fade(c, q('.appv'), 0, 1, t0 + 1100, 260);
+    else an(c, q('.appv'), [{ opacity: 0, transform: 'scale(0.2)', borderRadius: '40px' }, { opacity: 1, transform: 'none', borderRadius: '0px' }], { delay: t0 + 1100, duration: 520, easing: EOUT });
+    fade(c, q('.ar'), 0, 1, t0 + 1600, 300);
+    travel(c, chip, 'translate(0px, 0px)', 'translate(188px, -57px)', t0 + 1700, 820);
+    an(c, chip, [{ borderColor: 'var(--label)', color: 'var(--label)' }, { borderColor: 'var(--ok)', color: 'var(--ok)' }], { delay: t0 + 2550, duration: 360 });
+    fade(c, q('.landtx'), 0, 1, t0 + 2600, 400);
+    fade(c, q('.ar'), 1, 0, t0 + 2800, 300);
+    return t0 + 3000;
+  }
+  // Story 2: another app, Share, Universal Clipboard, the copy goes to the PC. About 4 s plus hold.
+  function shareStory(c, s, t0, hold) {
+    const q = (x) => s.querySelector(x);
+    if (c.reduced) fade(c, q('.sel'), 0, 1, t0 + 400, 260), an(c, q('.sel'), [{ transform: 'none' }, { transform: 'none' }], { delay: t0 + 400, duration: 1 });
+    else an(c, q('.sel'), [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { delay: t0 + 400, duration: 460, easing: EIO });
+    an(c, q('.emenu'), [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.92)' }, { opacity: 1, transform: 'none' }], { delay: t0 + 900, duration: 320, easing: EOUT });
+    an(c, q('.e-sh'), [{ backgroundColor: 'rgba(255,255,255,0)' }, { backgroundColor: 'rgba(255,255,255,0.25)' }, { backgroundColor: 'rgba(255,255,255,0)' }], { delay: t0 + 1400, duration: 360, fill: 'none' });
+    fade(c, q('.emenu'), 1, 0, t0 + 1700, 200);
+    fade(c, q('.shdim'), 0, 1, t0 + 1700, 300);
+    if (c.reduced) fade(c, q('.shs'), 0, 1, t0 + 1700, 240);
+    else an(c, q('.shs'), [{ transform: 'translateY(105%)' }, { transform: 'translateY(0)' }], { delay: t0 + 1700, duration: 480, easing: PUSH });
+    const u = t0 + 2200 + (hold || 600);
+    press(c, q('.s-uc'), u, 0.84);
+    if (c.reduced) fade(c, q('.shs'), 1, 0, u + 300, 220);
+    else an(c, q('.shs'), [{ transform: 'translateY(0)' }, { transform: 'translateY(105%)' }], { delay: u + 300, duration: 380, easing: EIN });
+    fade(c, q('.shdim'), 1, 0, u + 300, 300);
+    const chip = q('.c-out');
+    an(c, chip, [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.7)' }, { opacity: 1, transform: 'none' }], { delay: u + 420, duration: 360, easing: EOUT });
+    fade(c, q('.al'), 0, 1, u + 450, 300);
+    travel(c, chip, 'translate(0px, 0px)', 'translate(-188px, -13px)', u + 700, 820);
+    fade(c, q('.pcok'), 0, 1, u + 1500, 400);
+    fade(c, chip, 1, 0, u + 1600, 300);
+    fade(c, q('.al'), 1, 0, u + 1600, 300);
+    return u + 1900;
+  }
+
+  /* W1 */
+  Kit.register('#W1', (c) => {
+    openStory(c, c.$('.c1 .scn'), 700);
+    shareStory(c, c.$('.c2 .scn'), 4400, 600);
+    const sc = c.$('.w1scroll'), dy = 'translateY(-236px)';
+    if (c.reduced) {
+      fade(c, sc, 1, 0, 9600, 200);
+      an(c, sc, [{ transform: dy }, { transform: dy }], { delay: 9800, duration: 1 });
+      fade(c, sc, 0, 1, 9820, 240);
+    } else an(c, sc, [{ transform: 'none' }, { transform: dy }], { delay: 9600, duration: 900, easing: EIO });
+    fade(c, c.$('.w1bar'), 0, 1, 9900, 300);
+    fade(c, c.$('.w1it'), 0, 1, 10000, 320);
+    roll(c, c.$('.tip .roll'), 11300);
+  });
+
+  /* W2 */
+  Kit.register('#W2', (c) => {
+    const tr = c.$('.w2track');
+    const page = (n, at) => {
+      const to = 'translateX(' + (-393 * (n - 1)) + 'px)', from = 'translateX(' + (-393 * (n - 2)) + 'px)';
+      if (c.reduced) {
+        fade(c, tr, 1, 0, at, 200);
+        an(c, tr, [{ transform: to }, { transform: to }], { delay: at + 200, duration: 1 });
+        fade(c, tr, 0, 1, at + 220, 240);
+      } else an(c, tr, [{ transform: from }, { transform: to }], { delay: at, duration: 620, easing: PUSH });
+      fade(c, c.$('.d' + (n - 1) + ' b'), 1, 0, at + 100, 300);
+      fade(c, c.$('.d' + n + ' b'), 0, 1, at + 100, 300);
+    };
+    openStory(c, c.$('.p1 .scn'), 600);
+    press(c, c.$('.w2c'), 4300);
+    page(2, 4500);
+    shareStory(c, c.$('.p2 .scn'), 5300, 600);
+    press(c, c.$('.w2c'), 10200);
+    page(3, 10400);
+    fade(c, c.$('.w2skip'), 1, 0, 10500, 300);
+    fade(c, c.$('.fa'), 1, 0, 10500, 220);
+    fade(c, c.$('.fb'), 0, 1, 10650, 360);
+    fade(c, c.$('.r-allow .rhl'), 0, 1, 11800, 160);
+    fade(c, c.$('.k1'), 1, 0, 11900, 200);
+    an(c, c.$('.k2'), [{ opacity: 0, transform: c.reduced ? 'none' : 'scale(0.6)' }, { opacity: 1, transform: 'none' }], { delay: 12000, duration: 380, easing: EOUT });
+    fade(c, c.$('.r-allow .rhl'), 1, 0, 12100, 400);
+  });
+
+  /* W3 */
+  Kit.register('#W3', (c) => {
+    const s = c.$('.scn'), q = (x) => s.querySelector(x);
+    const step = (n, at) => {
+      if (c.reduced) fade(c, c.$('.g' + n + ' b'), 0, 1, at, 300);
+      else an(c, c.$('.g' + n + ' b'), [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { delay: at, duration: 600, easing: EIO });
+      if (n > 1) {
+        const y = c.reduced ? 0 : 1;
+        an(c, c.$('.k' + (n - 1)), [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(' + (-8 * y) + 'px)' }], { delay: at, duration: 220, easing: EIN });
+        an(c, c.$('.k' + n), [{ opacity: 0, transform: 'translateY(' + (8 * y) + 'px)' }, { opacity: 1, transform: 'none' }], { delay: at + 180, duration: 460, easing: EOUT });
+      }
+    };
+    step(1, 300);
+    openStory(c, s, 1000);
+    // The open story starts with the copy on the PC; caption 2 comes when the app is tapped.
+    step(2, 1800);
+    step(3, 5600);
+    fade(c, q('.c-in'), 1, 0, 5600, 300);
+    fade(c, q('.oth'), 0, 1, 5700, 380);
+    shareStory(c, s, 5800, 1050);
+    step(4, 9000);
+    step(5, 11800);
+    fade(c, q('.pcok'), 1, 0, 11800, 400);
+    fade(c, q('.sets'), 0, 1, 11900, 400);
+    roll(c, q('.st-v'), 13000);
+    fade(c, q('.st-hl'), 0, 1, 13000, 400);
+  });
+})();
+</script>
+</body>
+</html>
