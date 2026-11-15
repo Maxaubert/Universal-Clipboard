@@ -266,6 +266,40 @@ html.dark .gal-tools button[aria-pressed='true'] { background: #F2F0ED; color: #
 @media (max-width: 720px) { .gal-grid, .gal-grid.actual { --s: 0.62; } }
 @media (max-width: 380px) { .gal-grid, .gal-grid.actual { --s: 0.56; } }
 
+/* ---------- iPad (2026-11-15) ----------
+   <div class="tablet land|port"><div class="screen pad"> ... </div></div>
+   iPad Air 11 inch: 1180 x 820 pt landscape, 820 x 1180 portrait. Safe area: top 24, bottom 20.
+   Status bar is 24 pt with the date; no Dynamic Island. Use .safe-pad for the safe area. */
+.tablet { position: relative; flex: none; box-sizing: border-box; border-radius: 40px; background: var(--frame); padding: 18px;
+  box-shadow: 0 0 0 1.5px #3A3734 inset, 0 2px 4px rgba(40,35,30,0.12), 0 28px 60px rgba(40,35,30,0.22); }
+.tablet.land { width: 1216px; height: 856px; }
+.tablet.port { width: 856px; height: 1216px; }
+.tablet .screen { border-radius: 22px; }
+.tablet.land .screen { width: 1180px; height: 820px; }
+.tablet.port .screen { width: 820px; height: 1180px; }
+.screen.pad .sbar { height: 24px; padding: 0 22px 0 24px; font-size: 15px; font-weight: 600; }
+.screen.pad .sbar .sic svg { transform: scale(0.85); }
+.screen.pad .homebar { width: 320px; margin-left: -160px; bottom: 7px; }
+.safe-pad { padding-top: 24px; padding-bottom: 20px; box-sizing: border-box; }
+/* Split view: sidebar 320 pt + detail. */
+.split { position: absolute; inset: 0; display: flex; }
+.split .side { width: 320px; flex: none; position: relative; background: var(--bg); border-right: 0.5px solid var(--sep); display: flex; flex-direction: column; }
+.split .detail { flex: 1; position: relative; min-width: 0; background: var(--bg); display: flex; flex-direction: column; }
+/* Form sheet: centered card, 580 x 640 in landscape. */
+.formsheet { position: absolute; z-index: 31; left: 50%; top: 50%; width: 580px; height: 640px; margin: -320px 0 0 -290px;
+  background: var(--sheet); border-radius: 38px; box-shadow: 0 20px 60px rgba(0,0,0,0.25); overflow: hidden; display: flex; flex-direction: column; }
+.tablet.port .formsheet { height: 720px; margin-top: -360px; }
+/* Popover (share sheet on iPad): arrow-less floating card. */
+.popover { position: absolute; z-index: 31; width: 360px; background: var(--sheet); border-radius: 26px; box-shadow: 0 12px 48px rgba(0,0,0,0.22); overflow: hidden; }
+/* Gallery size for iPad pages: <main class="gal-grid ipad-grid land|port" data-pick="none">. */
+.gal-grid.ipad-grid.land { --sw: 1260px; --sh: 900px; --s: 0.55; }
+.gal-grid.ipad-grid.port { --sw: 900px; --sh: 1260px; --s: 0.55; }
+.gal-grid.ipad-grid.mixed { --s: 0.55; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 48px 40px; }
+.gal-grid.ipad-grid .opt-frame > .stage { padding: 22px; }
+.gal-grid.ipad-grid .opt.port { --sw: 900px; --sh: 1260px; }
+.gal-grid.ipad-grid .opt.land { --sw: 1260px; --sh: 900px; }
+.gal-grid.ipad-grid.actual { --s: 1; }
+
 /* "Pick one" banner, option tags and "or" between options (ios.js markChoices). */
 .pick {
   grid-column: 1 / -1; display: flex; align-items: center; gap: 14px 18px; flex-wrap: wrap;

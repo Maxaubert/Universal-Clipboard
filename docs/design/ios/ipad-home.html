@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPad Home</title>
+<link rel="stylesheet" href="kit.css">
+<link rel="stylesheet" href="ios.css">
+<style>
+  /* Page-local: iPad Home (H3 Pinned) and its settings (T3 On Home). */
+  .gal-grid.ipad-grid.mixed { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 48px 40px; }
+  .pre { opacity: 0; }
+  /* T3: Home is already open; nothing rises in. */
+  #t3-l .pre, #t3-p .pre { opacity: 1; }
+  .dim0 { opacity: 0; }
+  .nav.end { justify-content: flex-end; }
+  .st { display: flex; align-items: center; gap: 6px; }
+  .rv { white-space: nowrap; }
+  .tint { color: var(--tint); font-weight: 600 !important; }
+  .row .lg svg { width: 24px; height: 24px; }
+  .row .lg { color: var(--label); }
+  .row .tbtn { font-weight: 600; padding: 0 4px; margin-right: -4px; }
+  html.reduce .sw, html.reduce .sw::after { transition-duration: 160ms; }
+
+  /* The ticker under "Working" (desktop A3): items stack, one shows. */
+  .tk { position: relative; height: 22px; overflow: hidden; }
+  .tk > span { position: absolute; left: 0; right: 0; top: 0; height: 22px; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .tk > span.n { opacity: 0; }
+  .tk .ar { display: flex; width: 16px; height: 16px; flex: none; }
+  .tk .ar svg { width: 16px; height: 16px; }
+  .tsub { margin-top: 2px; }
+
+  /* This iPad: the dark card pinned under the title (desktop H3). */
+  .pin { position: relative; margin: 4px 16px 0; border-radius: 28px; overflow: hidden; background: var(--dark-bar); color: var(--on-dark); padding: 14px 18px 15px 14px; flex: none; box-shadow: 0 1px 2px rgba(40,35,30,0.10), 0 10px 26px rgba(40,35,30,0.18); }
+  html.dark .pin { box-shadow: 0 0 0 0.5px rgba(255,255,255,0.08); }
+  .me-a { display: flex; align-items: center; gap: 12px; }
+  .me-g { position: relative; width: 44px; height: 44px; border-radius: 22px; background: var(--dark-bar-2); display: flex; align-items: center; justify-content: center; flex: none; color: #fff; }
+  .me-g svg { width: 22px; height: 22px; fill: currentColor; }
+  .me-ring { position: absolute; inset: -5px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.7); opacity: 0; }
+  .me-t { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .me-t b { font-weight: 600; font-size: 17px; line-height: 22px; letter-spacing: -0.43px; }
+  .me-t span { font-size: 13px; line-height: 18px; color: var(--on-dark-2); }
+  .me-a .chev { width: 8px; height: 14px; color: var(--on-dark-2); flex: none; }
+  .me-b { margin-top: 12px; padding-top: 11px; border-top: 0.5px solid rgba(255,255,255,0.16); }
+  .me-b .lab { display: block; font-size: 13px; line-height: 18px; color: var(--on-dark-2); }
+  .me-b .tk { height: 24px; margin-top: 2px; color: var(--on-dark); }
+  .me-b .tk > span { height: 24px; font-weight: 600; font-size: 16px; letter-spacing: -0.31px; }
+  .me-line { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: rgba(255,255,255,0.8); opacity: 0; transform-origin: left center; }
+  .me-line.rtl { transform-origin: right center; }
+
+  /* Other devices: a plain list. */
+  .plh { padding: 0 20px 6px; font: 600 17px/22px var(--sf); letter-spacing: -0.43px; }
+  .plain .row { min-height: 60px; padding: 0 20px; }
+  .plain .row + .row::before { left: 70px; }
+  .plain .row.add { color: var(--tint); }
+  .plain .row.add .dlogo { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fill-2); }
+  .plain .row.add .dlogo svg { fill: none; width: 20px; height: 20px; }
+  .plain .rule { height: 0.5px; background: var(--sep); margin-left: 70px; }
+  .plain .row .rt .t-sub { display: flex; align-items: center; gap: 6px; }
+  .pfoot { padding: 10px 20px 0; }
+
+  /* Landscape: split view. Sidebar 320 pt, detail with a readable column. */
+  .side .scol { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .detail .nav { justify-content: center; }
+  .dscv { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+  .dcol { width: 560px; margin: 0 auto; }
+
+  /* Portrait: one column, 600 pt, centered. */
+  .pscv { position: absolute; left: 0; right: 0; top: 68px; bottom: 20px; overflow: hidden; }
+  .pnav { position: absolute; z-index: 20; top: 24px; left: 0; right: 0; }
+  .pnav .nav { width: 600px; margin: 0 auto; box-sizing: border-box; }
+  .pcol { width: 600px; margin: 0 auto; }
+  .fadetop { position: absolute; z-index: 19; left: 0; right: 0; top: 0; height: 84px; background: linear-gradient(to bottom, var(--bg) 60%, transparent); pointer-events: none; }
+  .fadebot { position: absolute; z-index: 19; left: 0; right: 0; bottom: 0; height: 60px; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }
+
+  /* T3: the one-time Updated card. */
+  .ucard { margin: 0 16px 20px; height: 128px; box-sizing: border-box; border-radius: 26px; background: var(--cell); padding: 16px 16px 14px 18px; display: flex; flex-direction: column; justify-content: space-between; opacity: 0; }
+  .uc-top { display: flex; gap: 14px; align-items: flex-start; }
+  .uc-top svg.ub { width: 40px; height: 40px; flex: none; }
+  .uc-tx { display: flex; flex-direction: column; gap: 2px; padding-top: 1px; }
+  .uc-acts { display: flex; justify-content: flex-end; }
+  .uc-acts .pbtn { height: 40px; border-radius: 20px; font-size: 15px; padding: 0 22px; }
+  .tick { stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .t3below { transform: translateY(-148px); }
+
+  /* Form sheet for this iPad: rises from below the screen. */
+  .tablet.land { --fsy: 760px; }
+  .tablet.port { --fsy: 960px; }
+  .fs0 { transform: translateY(var(--fsy)); }
+  html.reduce .fs0 { transform: none; opacity: 0; }
+  .formsheet { background: var(--bg); }
+  .formsheet .nav { height: 60px; padding: 0 16px; }
+  .formsheet .nav .nav-title { font-weight: 600; }
+  .fhead { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 20px 26px; flex: none; }
+  .fhead .big { width: 96px; height: 96px; border-radius: 28px; background: var(--dark-bar); color: var(--on-dark); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+  .fhead .big svg { width: 52px; height: 52px; }
+  .formsheet .list { margin: 0 24px; }
+  .formsheet .lfoot { padding: 7px 44px 0; }
+
+  /* The confirmation alert. Long labels stack, as iOS does. */
+  .alert .ab.stack { flex-direction: column; gap: 8px; }
+  .alert .ab.stack button { flex: none; width: 100%; }
+  .alert .ab button.red { color: var(--bad); }
+  .al0 { opacity: 0; }
+</style>
+</head>
+<body class="gallery">
+<header class="gal-head">
+  <div class="gal-titles">
+    <a class="gal-back" href="index.html">All iPhone pages</a>
+    <h1>iPad Home and settings</h1>
+    <p class="gal-note">These are the iPad versions of Max's picks H3 Pinned and T3 On Home, in landscape and portrait. They are not alternatives: check them, there is nothing to choose. Landscape is a split view: Home in the sidebar, the settings in the pane on the right. Portrait is one column with the settings under the devices. The iPad syncs like the iPhone: when you open the app or use the Share sheet.</p>
+  </div>
+  <div class="gal-tools"></div>
+</header>
+<main class="gal-grid ipad-grid mixed" data-pick="none">
+
+  <figure class="opt land" id="h3-l" data-loop="14000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>H3</b> Pinned, landscape</div>
+      <p class="opt-desc">The app opens. The newest copy from Max's PC arrives (arrow down), then the iPad's own copy is sent (arrow up). The line under "Working" rolls to each copy and back. The dark card for this iPad shows the last copy, with a light line and a ring each time.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt port" id="h3-p" data-loop="14000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>H3</b> Pinned, portrait</div>
+      <p class="opt-desc">The same story in one column. The settings start under the devices.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt land" id="t3-l" data-loop="14500">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>T3</b> On Home, landscape</div>
+      <p class="opt-desc">After an App Store update, "Updated to 0.2.0" shows once, then Done. Sync images turns off. The dark card opens a form sheet with the name, Rename and Remove. Remove asks first; this time it is Cancel, then the sheet closes.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+  <figure class="opt port" id="t3-p" data-loop="17000">
+    <div class="opt-frame"><div class="stage"></div></div>
+    <figcaption><div class="opt-label"><b>T3</b> On Home, portrait</div>
+      <p class="opt-desc">The same story in one column. Home scrolls down to Sync images and back up to the dark card.</p>
+      <button class="opt-replay"></button></figcaption>
+  </figure>
+
+</main>
+<script src="art.js"></script>
+<script src="ios.js"></script>
+<script src="kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const I = IOS.ic;
+  const IPAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2.5" width="16" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg>';
+
+  /* ---------- shared iPad Home parts ---------- */
+  const DEV = [
+    ['windows', 'Max\'s PC', true],
+    ['apple', 'Mac mini', true],
+    ['iphone', 'Max\'s iPhone', false],
+    ['linux', 'Ubuntu laptop', true],
+  ];
+  const status = (on) => on ? '<span class="dt ok"></span>Connected' : '<span class="dt off"></span>Asleep';
+  const DOWN = '<span class="ar">' + I.down + '</span>', UP = '<span class="ar">' + I.up + '</span>';
+  const F0 = 'Text, from Mac mini, 1 hour ago', F1 = 'Text, from Max\'s PC, just now', F2 = 'Image, sent, just now';
+
+  const ticker =
+    '<div class="tk"><span class="i0"><span class="dt ok"></span>3 devices connected</span>' +
+    '<span class="i1 n">' + DOWN + F1 + '</span><span class="i2 n">' + UP + F2 + '</span></div>';
+  const facts = (last) => last
+    ? '<div class="tk fk"><span class="f0">' + last + '</span></div>'
+    : '<div class="tk fk"><span class="f0">' + F0 + '</span><span class="f1 n">' + F1 + '</span><span class="f2 n">' + F2 + '</span></div>';
+
+  const barBtns = '<div class="nav end"><div class="bbs"><button class="bb" aria-label="Pause">' + I.pause + '</button><button class="bb" aria-label="Settings">' + I.gear + '</button></div></div>';
+  const title = '<div class="largetitle pre ttl"><h1 class="t-large">Working</h1><div class="tsub t-callout c2">' + ticker + '</div></div>';
+  const pinCard = (last) =>
+    '<div class="pin pre pinc"><span class="me-line"></span>' +
+    '<div class="me-a"><div class="me-g"><i data-logo="ipad" data-size="22"></i><span class="me-ring"></span></div>' +
+    '<div class="me-t"><b>Max\'s iPad</b><span>This iPad</span></div>' + I.chev + '</div>' +
+    '<div class="me-b"><span class="lab">Last copy</span>' + facts(last) + '</div></div>';
+  const others =
+    '<div class="plh pre lh">Other devices</div>' +
+    '<div class="plain">' + DEV.map((d) =>
+      '<div class="row ic pre dr"><div class="dlogo"><i data-logo="' + d[0] + '"></i></div>' +
+      '<div class="rt"><b>' + d[1] + '</b><span class="t-sub c2">' + status(d[2]) + '</span></div>' + I.chev + '</div>').join('') +
+    '<div class="row ic add pre dr"><div class="dlogo">' + I.plus + '</div><div class="rt"><b>Add a device</b></div></div>' +
+    '<div class="rule pre dr"></div></div>' +
+    '<div class="lfoot pfoot pre lf">This iPad syncs each time you open the app.</div>';
+
+  /* Settings (T3): one scroll. */
+  const head = (t) => '<div class="lhead">' + t + '</div>';
+  const foot = (t, cls) => '<div class="lfoot ' + (cls || '') + '">' + t + '</div>';
+  const list = (rows, cls) => '<div class="list ' + (cls || '') + '">' + rows + '</div>';
+  const gap = '<div class="gap"></div>';
+  const row = (inner, cls) => '<div class="row ' + (cls || '') + '">' + inner + '</div>';
+  const rt = (t, sub) => '<span class="rt"><b>' + t + '</b>' + (sub ? '<span class="t-sub c2">' + sub + '</span>' : '') + '</span>';
+  const settings = (v) =>
+    head('Sync') + list(
+      row(rt('Sync images') + '<span class="sw on s-sw"></span>', 's-row') +
+      row(rt('Largest image') + '<span class="rv">25 MB</span>', 's-max')) +
+    foot('<span class="s-f">Text and images up to 25 MB are synced.</span>') + gap +
+    list(
+      row('<span class="lg">' + I.paste + '</span>' + rt('Paste from Other Apps', 'Set it to Allow so the app does not ask each time.'), 'ic') +
+      row('<span class="rt"><b class="tint">Open Settings</b></span>')) + gap +
+    list(row('<span class="lg">' + I.info + '</span>' + rt('How it works') + I.chev, 'ic')) + gap +
+    head('About') + list(row(rt('Version ' + v))) + foot('Updates come from the App Store.');
+
+  const tickSvg = '<svg class="ub" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="var(--cell)" stroke="var(--ok)" stroke-width="2.4"/><path class="tick" pathLength="1" d="M12.5 20.5l5 5 10-10.5" stroke="var(--ok)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ucard =
+    '<div class="ucard"><div class="uc-top">' + tickSvg + '<div class="uc-tx"><span class="t-head">Updated to 0.2.0</span><span class="t-sub c2">You have the newest version.</span></div></div>' +
+    '<div class="uc-acts"><button class="pbtn grey auto uc-done">Done</button></div></div>';
+
+  /* The form sheet for this iPad, and its confirmation. */
+  const formSheet =
+    '<div class="dimmer fs-dim dim0"></div>' +
+    '<div class="formsheet fs fs0">' +
+    '<div class="nav"><button class="bb fs-x" aria-label="Close">' + I.x + '</button><span class="nav-title">This iPad</span><span style="width:44px"></span></div>' +
+    '<div class="fhead"><span class="big">' + IPAD + '</span><h2 class="t-title2">Max\'s iPad</h2><p class="t-sub c2 st"><span class="dt ok"></span>3 devices connected</p></div>' +
+    list(row('<span class="lg">' + IPAD + '</span>' + rt('Max\'s iPad', 'Your other devices see this name.') + '<button class="tbtn">Rename</button>', 'ic')) + gap +
+    list(row(rt('Remove this iPad and forget everything'), 'danger fs-rem')) +
+    foot('It leaves your devices. To sync again, add it with a code.') +
+    '</div>' +
+    '<div class="dimmer al-dim dim0" style="z-index:40"></div>' +
+    '<div class="alert al al0"><h3>Remove this iPad and forget everything?</h3><p>It leaves your devices and forgets them.</p>' +
+    '<div class="ab stack"><button class="red al-yes">Remove and forget</button><button class="al-no">Cancel</button></div></div>';
+
+  const tablet = (o, html) => '<div class="tablet ' + o + '"><div class="screen pad">' + html + '</div></div>';
+  const fill = (id, html) => { document.querySelector('#' + id + ' .stage').innerHTML = html; };
+
+  // Landscape: sidebar (Home) + detail (settings).
+  const land = (t3) => tablet('land',
+    '<div class="split">' +
+    '<div class="side safe-pad"><div class="scol">' + barBtns + title + '<div class="gap s"></div>' +
+    pinCard(t3 ? 'Text, from Max\'s PC, just now' : null) + '<div class="gap"></div>' + others + '</div></div>' +
+    '<div class="detail safe-pad"><div class="nav"><span class="nav-title">Settings</span></div>' +
+    '<div class="dscv"><div class="dcol sc pre dpane"><div class="gap s"></div>' +
+    (t3 ? ucard + '<div class="t3below">' : '<div>') + settings(t3 ? '0.2.0' : '0.1.0') + '</div></div></div></div>' +
+    '</div>' + (t3 ? formSheet : ''));
+
+  // Portrait: one column, settings under the devices.
+  const port = (t3) => tablet('port',
+    '<div class="app">' +
+    '<div class="fadetop"></div><div class="pnav">' + barBtns + '</div>' +
+    '<div class="pscv"><div class="pcol sc">' + title + '<div class="gap s"></div>' +
+    (t3 ? ucard + '<div class="t3below">' : '<div>') +
+    pinCard(t3 ? 'Text, from Max\'s PC, just now' : null) + '<div class="gap"></div>' + others +
+    '<div class="gap l"></div><div class="pre dpane"><div class="plh">Settings</div><div class="gap s"></div>' + settings(t3 ? '0.2.0' : '0.1.0') + '</div>' +
+    '<div style="height:40px"></div></div></div></div>' +
+    '<div class="fadebot"></div></div>' + (t3 ? formSheet : ''));
+
+  fill('h3-l', land(false));
+  fill('h3-p', port(false));
+  fill('t3-l', land(true));
+  fill('t3-p', port(true));
+  IOS.decorate(document);
+
+  /* ---------- helpers (from home.html and settings.html) ---------- */
+  const EIO = 'cubic-bezier(0.65, 0, 0.35, 1)', EOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', EIN = 'cubic-bezier(0.4, 0, 1, 1)';
+  const PUSH = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  // Forwards only: a later animation must not hold its start value before it begins.
+  const an = (c, el, kf, o) => c.anim(el, kf, Object.assign({ fill: 'forwards' }, typeof o === 'number' ? { duration: o } : o));
+  const fade = (c, el, a, b, at, d) => an(c, el, [{ opacity: a }, { opacity: b }], { delay: at, duration: d || 220 });
+  const rise = (c, el, at, dy, d) => {
+    if (!el) return;
+    if (c.reduced) an(c, el, [{ opacity: 0 }, { opacity: 1 }], { delay: at, duration: 320 });
+    else an(c, el, [{ opacity: 0, transform: 'translateY(' + (dy || 12) + 'px)' }, { opacity: 1, transform: 'none' }], { delay: at, duration: d || 560, easing: EOUT });
+  };
+  const roll = (c, out, inn, at) => {
+    if (c.reduced) {
+      an(c, out, [{ opacity: 1 }, { opacity: 0 }], { delay: at, duration: 260 });
+      an(c, inn, [{ opacity: 0, transform: 'none' }, { opacity: 1, transform: 'none' }], { delay: at + 200, duration: 300 });
+      return;
+    }
+    an(c, out, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-22px)' }], { delay: at, duration: 520, easing: EIO });
+    an(c, inn, [{ opacity: 0, transform: 'translateY(22px)' }, { opacity: 1, transform: 'none' }], { delay: at + 60, duration: 560, easing: EIO });
+  };
+  const touch = (c, root, at, rtl) => {
+    const line = root.querySelector('.me-line'), ring = root.querySelector('.me-ring');
+    c.after(at - 10, () => line.classList.toggle('rtl', !!rtl));
+    if (c.reduced) {
+      an(c, line, [{ opacity: 0, transform: 'none' }, { opacity: 1, transform: 'none', offset: 0.35 }, { opacity: 0, transform: 'none' }], { delay: at, duration: 1400, easing: 'ease-in-out' });
+      an(c, ring, [{ opacity: 0, transform: 'none' }, { opacity: 0.8, transform: 'none', offset: 0.4 }, { opacity: 0, transform: 'none' }], { delay: at + 200, duration: 1400, easing: 'ease-in-out' });
+      return;
+    }
+    an(c, line, [{ opacity: 1, transform: 'scaleX(0)' }, { opacity: 1, transform: 'scaleX(1)', offset: 0.55 }, { opacity: 0, transform: 'scaleX(1)' }], { delay: at, duration: 1700, easing: EIO });
+    an(c, ring, [{ opacity: 0.9, transform: 'scale(0.9)' }, { opacity: 0, transform: 'scale(1.35)' }], { delay: at + 500, duration: 1100, easing: EOUT });
+  };
+  const press = (c, el, at, s) => { if (!c.reduced) an(c, el, [{ transform: 'scale(1)' }, { transform: 'scale(' + (s || 0.95) + ')', offset: 0.4 }, { transform: 'scale(1)' }], { delay: at, duration: 320, easing: EIO, fill: 'none' }); };
+  const hi = (c, el, at) => an(c, el, [{ backgroundColor: 'var(--cell)' }, { backgroundColor: 'var(--cell-hi)', offset: 0.3 }, { backgroundColor: 'var(--cell-hi)', offset: 0.7 }, { backgroundColor: 'var(--cell)' }], { delay: at, duration: 520, fill: 'none' });
+  const dimBtn = (c, el, at) => an(c, el, [{ filter: 'brightness(1)' }, { filter: 'brightness(0.8)' }, { filter: 'brightness(1)' }], { delay: at, duration: 340, fill: 'none' });
+  // Move a block by y. Reduced: fade out, jump (a style change, no 1 ms animation), fade in.
+  const shift = (c, el, from, to, at, d, ease) => {
+    if (c.reduced) {
+      fade(c, el, 1, 0, at, 180);
+      c.after(at + 190, () => { el.style.transform = 'translateY(' + to + 'px)'; });
+      an(c, el, [{ opacity: 0 }, { opacity: 1 }], { delay: at + 200, duration: 240 });
+      return;
+    }
+    an(c, el, [{ transform: 'translateY(' + from + 'px)' }, { transform: 'translateY(' + to + 'px)' }], { delay: at, duration: d || 1400, easing: ease || EIO });
+  };
+
+  /* H3: the open-the-app sync story. */
+  const h3 = (c, port) => {
+    const RECV = 2200, SEND = 6800;
+    rise(c, c.$('.ttl'), 100, 8);
+    rise(c, c.$('.pinc'), 260, 24, 760);
+    rise(c, c.$('.lh'), 620, 10);
+    c.$$('.dr').forEach((r, i) => rise(c, r, 680 + i * 70, 12));
+    rise(c, c.$('.lf'), 1100, 8);
+    rise(c, c.$('.dpane'), port ? 1200 : 500, 16, 700);
+    const $t = (s) => c.$('.ttl ' + s), $f = (s) => c.$('.pin .fk ' + s);
+    roll(c, $t('.i0'), $t('.i1'), RECV);
+    roll(c, $t('.i1'), $t('.i0'), RECV + 3000);
+    roll(c, $t('.i0'), $t('.i2'), SEND);
+    roll(c, $t('.i2'), $t('.i0'), SEND + 3000);
+    roll(c, $f('.f0'), $f('.f1'), RECV + 200);
+    roll(c, $f('.f1'), $f('.f2'), SEND + 200);
+    touch(c, c.$('.pin'), RECV + 100, false);
+    touch(c, c.$('.pin'), SEND + 100, true);
+  };
+  Kit.register('#h3-l', (c) => h3(c, false));
+  Kit.register('#h3-p', (c) => h3(c, true));
+
+  /* T3: updated card, Sync images off, this iPad's form sheet, Remove asks, Cancel, close. */
+  const t3 = (c, port) => {
+    const card = c.$('.ucard'), below = c.$('.t3below');
+    const FY = port ? 960 : 760;
+    // The card arrives once, after an App Store update.
+    if (c.reduced) {
+      c.after(480, () => { below.style.transform = 'none'; });
+      fade(c, card, 0, 1, 500, 260);
+      c.after(500, () => { c.$('.tick').style.strokeDashoffset = '0'; });
+    } else {
+      an(c, card, [{ opacity: 0, transform: 'translateY(-10px) scale(0.98)' }, { opacity: 1, transform: 'none' }], { delay: 600, duration: 600, easing: EOUT });
+      an(c, below, [{ transform: 'translateY(-148px)' }, { transform: 'translateY(0)' }], { delay: 500, duration: 700, easing: EOUT });
+      an(c, c.$('.tick'), [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { delay: 1100, duration: 520, easing: EOUT });
+    }
+    press(c, c.$('.uc-done'), 2900);
+    if (c.reduced) {
+      fade(c, card, 1, 0, 3100, 200);
+      shift(c, below, 0, -148, 3100);
+    } else {
+      an(c, card, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.97)' }], { delay: 3100, duration: 280, easing: EIN });
+      an(c, below, [{ transform: 'translateY(0)' }, { transform: 'translateY(-148px)' }], { delay: 3200, duration: 560, easing: EIO });
+    }
+    // Sync images off. Portrait scrolls down to it first, then back up.
+    let T = 4100;
+    const sc = c.$('.sc');
+    let S = 0;
+    if (port) {
+      S = Math.max(0, sc.offsetHeight - 148 - c.$('.pscv').clientHeight);
+      shift(c, sc, 0, -S, 4000, 1500);
+      T = 5900;
+    }
+    hi(c, c.$('.s-row'), T);
+    c.after(T + 200, () => { c.$('.s-sw').classList.remove('on'); c.$('.s-f').textContent = 'Only text is synced.'; });
+    an(c, c.$('.s-max'), [{ opacity: 1 }, { opacity: 0.4 }], { delay: T + 200, duration: 300 });
+    let O = 5600;
+    if (port) { shift(c, sc, -S, 0, 7000, 1300); O = 8600; }
+    // This iPad: its form sheet.
+    press(c, c.$('.pinc'), O, 0.98);
+    fade(c, c.$('.fs-dim'), 0, 1, O + 200, 340);
+    if (c.reduced) fade(c, c.$('.fs'), 0, 1, O + 200, 260);
+    else an(c, c.$('.fs'), [{ transform: 'translateY(' + FY + 'px)' }, { transform: 'translateY(0)' }], { delay: O + 200, duration: 620, easing: PUSH });
+    // Remove asks first. Cancel.
+    hi(c, c.$('.fs-rem'), O + 2000);
+    fade(c, c.$('.al-dim'), 0, 1, O + 2300, 260);
+    if (c.reduced) fade(c, c.$('.al'), 0, 1, O + 2300, 240);
+    else an(c, c.$('.al'), [{ opacity: 0, transform: 'translateY(-50%) scale(1.1)' }, { opacity: 1, transform: 'translateY(-50%) scale(1)' }], { delay: O + 2300, duration: 380, easing: EOUT });
+    dimBtn(c, c.$('.al-no'), O + 4400);
+    fade(c, c.$('.al-dim'), 1, 0, O + 4600, 260);
+    fade(c, c.$('.al'), 1, 0, O + 4600, 220);
+    // Close.
+    press(c, c.$('.fs-x'), O + 5600);
+    fade(c, c.$('.fs-dim'), 1, 0, O + 5800, 380);
+    if (c.reduced) fade(c, c.$('.fs'), 1, 0, O + 5800, 240);
+    else an(c, c.$('.fs'), [{ transform: 'translateY(0)' }, { transform: 'translateY(' + FY + 'px)' }], { delay: O + 5800, duration: 460, easing: EIN });
+  };
+  Kit.register('#t3-l', (c) => t3(c, false));
+  Kit.register('#t3-p', (c) => t3(c, true));
+})();
+</script>
+</body>
+</html>

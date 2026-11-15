@@ -66,7 +66,10 @@
       if (s.dataset.chrome === 'none' || s.dataset.done) return;
       s.dataset.done = '1';
       const light = s.dataset.sbar === 'light';
-      s.insertAdjacentHTML('beforeend', sbar(light) + '<div class="island"></div><div class="homebar' + (light ? ' light' : '') + '"></div>');
+      // iPad (.screen.pad): no Dynamic Island, the date next to the time.
+      const pad = s.classList.contains('pad');
+      const bar = pad ? sbar(light).replace('<span>9:41</span>', '<span>9:41&nbsp;&nbsp;Mon 15 Nov</span>') : sbar(light);
+      s.insertAdjacentHTML('beforeend', bar + (pad ? '' : '<div class="island"></div>') + '<div class="homebar' + (light ? ' light' : '') + '"></div>');
     });
     root.querySelectorAll('i[data-ic]').forEach((el) => { if (!el.innerHTML) el.innerHTML = ic[el.dataset.ic] || ''; el.style.display = 'contents'; });
     root.querySelectorAll('i[data-logo]').forEach((el) => {
@@ -105,7 +108,7 @@
      A "Pick one" banner above the grid, an "Option X, n of N" tag on each, and "or" between them. */
   function markChoices() {
     const grid = document.querySelector('.gal-grid');
-    if (!grid || grid.querySelector('.pick')) return;
+    if (!grid || grid.querySelector('.pick') || grid.dataset.pick === 'none') return;
     const opts = Array.from(grid.querySelectorAll('figure.opt'));
     if (opts.length < 2) return;
     const ids = opts.map((o) => { const b = o.querySelector('.opt-label b'); return b ? b.textContent.trim() : o.id.toUpperCase(); });
