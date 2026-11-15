@@ -6,6 +6,10 @@ use std::io::Cursor;
 pub const MAX_SIDE: u32 = 16_384;
 /// At most this many pixels in total (100 megapixels).
 pub const MAX_PIXELS: u64 = 100_000_000;
+/// An interlaced PNG must be decoded whole (4 bytes per pixel), so it gets a lower limit:
+/// 16 megapixels is 64 MB. Clipboards on Windows, macOS and Linux write non-interlaced PNGs,
+/// so only odd files hit this.
+pub const MAX_INTERLACED_PIXELS: u64 = 16_000_000;
 
 const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -54,6 +58,22 @@ pub fn check_header(png: &[u8]) -> Result<(u32, u32), ImageError> {
         return Err(ImageError::TooManyPixels { width, height });
     }
     Ok((width, height))
+}
+
+/// The extra check for an image read from this device's clipboard (not for received ones, so
+/// older peers are not refused): an interlaced PNG must be at most [`MAX_INTERLACED_PIXELS`].
+/// A broken header passes here; the normal checks refuse it later with their own reason.
+pub fn check_local(png: &[u8]) -> Result<(), ImageError> {
+    let Ok((width, height)) = check_header(png) else {
+        return Ok(());
+    };
+    // IHDR: signature 8, length 4, type 4, width 4, height 4, depth, color, compression,
+    // filter, interlace (byte 28).
+    let interlaced = png.get(28).copied().unwrap_or(0) == 1;
+    if interlaced && u64::from(width) * u64::from(height) > MAX_INTERLACED_PIXELS {
+        return Err(ImageError::TooManyPixels { width, height });
+    }
+    Ok(())
 }
 
 /// Feed the decoded pixels (width, height, then RGBA8 rows) into `hasher`.
@@ -243,5 +263,22 @@ pub(crate) mod tests {
             v.append(&mut bytes);
             let _ = pixel_hash(&v);
         }
+    }
+
+    fn ihdr(width: u32, height: u32, interlace: u8) -> Vec<u8> {
+        let mut v = SIGNATURE.to_vec();
+        v.extend_from_slice(&13u32.to_be_bytes());
+        v.extend_from_slice(b"IHDR");
+        v.extend_from_slice(&width.to_be_bytes());
+        v.extend_from_slice(&height.to_be_bytes());
+        v.extend_from_slice(&[8, 6, 0, 0, interlace]);
+        v
+    }
+
+    #[test]
+    fn a_big_interlaced_local_image_is_refused_but_not_a_normal_one() {
+        assert!(check_local(&ihdr(5000, 5000, 1)).is_err());
+        assert!(check_local(&ihdr(5000, 5000, 0)).is_ok());
+        assert!(check_local(&ihdr(1000, 1000, 1)).is_ok());
     }
 }

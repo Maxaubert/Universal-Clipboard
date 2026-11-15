@@ -29,7 +29,8 @@ Date: 2026-11-14. Crates: `uc-clip-win`, `tools/winhost` (crate `uc-winhost`). P
   is taken as opaque, because many programs leave that byte at zero.
 
 ## Skip rules
-- **Private** (plan 3.10): `ExcludeClipboardContentFromMonitorProcessing` present,
+- **Private** (plan 3.10): `ExcludeClipboardContentFromMonitorProcessing` or the legacy
+  `Clipboard Viewer Ignore` present (KeePass 1.x and older tools; added 2026-11-15),
   `CanIncludeInClipboardHistory` = 0, or `CanUploadToCloudClipboard` = 0. A marker that is listed
   but cannot be read, or is shorter than 4 bytes, counts as private.
 - **Exception:** when our origin marker is present, `CanUploadToCloudClipboard` = 0 is ignored,
@@ -68,3 +69,12 @@ Date: 2026-11-14. Crates: `uc-clip-win`, `tools/winhost` (crate `uc-winhost`). P
   format list of such a copy, so the check is one recorded format list away. Until then, the
   content hash (echo layer 4) is the protection.
 - Write of `CF_HTML`: M11.
+
+## Reads that hang (2026-11-15)
+- `WinClipboard::read` runs on its own reader thread and gives up after `READ_TIMEOUT` (2 s).
+  A program that offers a format but does not render it (delayed rendering) can block
+  `GetClipboardData`; the agent no longer waits with it. While that read is stuck, the next read
+  returns `Busy` at once, and the reader keeps the clipboard open until the owner answers (the OS
+  works that way; other programs see a busy clipboard for that time too).
+- The agent tries a failed read 4 more times (0.5, 1, 2, 4 s), then notes "Another app kept the
+  clipboard busy." in Last activity. Tests: `crates/uc-clip-win/tests/hostile.rs`.

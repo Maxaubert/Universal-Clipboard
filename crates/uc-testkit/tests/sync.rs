@@ -124,6 +124,27 @@ fn html_that_is_not_utf8_still_sends_the_text() {
 }
 
 #[test]
+fn a_broken_image_does_not_take_the_text_with_it() {
+    let mut net = FakeNet::full_mesh(2);
+    // A valid PNG signature with garbage after it, next to good text.
+    let mut bad = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    bad.extend_from_slice(&[0u8; 40]);
+    net.copy(
+        0,
+        vec![
+            (Format::TextPlain, b"caption".to_vec()),
+            (Format::ImagePng, bad),
+        ],
+    );
+    net.run();
+    assert!(has(&net, 0, |e| *e
+        == Event::PartInvalid {
+            format: Format::ImagePng
+        }));
+    assert_eq!(net.text(1).as_deref(), Some("caption"));
+}
+
+#[test]
 fn html_without_text_is_empty_not_too_large() {
     let mut net = FakeNet::full_mesh(2);
     net.copy(0, vec![(Format::TextHtml, b"<b>x</b>".to_vec())]);

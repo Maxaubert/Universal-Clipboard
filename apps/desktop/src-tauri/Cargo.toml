@@ -1,6 +1,6 @@
 [package]
 name = "uc-desktop"
-version = "0.1.2"
+version = "0.1.3"
 description = "Universal Clipboard: the settings window (Tauri 2). It only talks to the local agent."
 edition = "2024"
 license = "MIT OR Apache-2.0"

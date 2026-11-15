@@ -41,6 +41,9 @@ const SECRET_NAME: &str = "group-secret";
 const PREV_SECRET_NAME: &str = "group-secret-prev";
 /// Settle time after a clipboard change (plan 3.8).
 const SETTLE: Duration = Duration::from_millis(150);
+/// After a failed read (clipboard held by another program, or a read that timed out), try
+/// again this many times, waiting 0.5 s, 1 s, 2 s, 4 s.
+const READ_RETRIES: u32 = 4;
 /// Time given to queued frames before a link to a removed device closes.
 const FLUSH: Duration = Duration::from_millis(1000);
 
@@ -170,6 +173,9 @@ enum Wake {
     Resume,
 }
 
+/// IPC calls that change saved settings. Their reply says so when the save failed.
+const CHANGE_CALLS: &[&str] = &["devices.rename", "pause.set", "settings.set", "setup.step"];
+
 /// Status reason and pairing error when no interface can carry sync traffic.
 const NO_LAN_TEXT: &str = "This device found no network it can use.";
 
@@ -250,6 +256,14 @@ pub struct Core {
     dirty: bool,
     /// Save the address book at the next tick (a link came up).
     book_due: bool,
+    /// Re-reads done since the last clipboard change, after failed reads.
+    read_retries: u32,
+    /// The last state save failed (cleared by the next good save).
+    save_error: Option<String>,
+    /// How many state saves failed in this run (to tell an IPC change that its save failed).
+    save_failures: u64,
+    /// `state.json` could not be read at start and was set aside as `state.json.bad`.
+    state_damaged: bool,
     /// Self-update (Windows exe and macOS dmg builds; test feeds in test profiles). It checks
     /// once, shortly after start, and never installs without the user.
     updater: Option<crate::update::Updater>,
@@ -334,8 +348,20 @@ impl Core {
         let store = uc_keys::open_store(profile.keystore_name(), &dir);
         let key = DeviceKey::load_or_create(&*store)
             .map_err(|e| StartError(format!("key store: {e}")))?;
-        let state = StateFile::load(&dir);
+        let (state, mut state_damaged) = StateFile::load_checked(&dir);
         let graph = load_graph(&state);
+        if graph.is_none() && !state.group.is_empty() {
+            tracing::warn!("saved group could not be read, starting without it");
+            // Keep a copy before the next save writes an empty group over it.
+            let _ = std::fs::copy(dir.join("state.json"), dir.join("state.json.bad"));
+            state_damaged = true;
+        }
+        if let Some(g) = &graph
+            && !g.is_member(&key.public())
+            && !g.is_removed(&key.public())
+        {
+            tracing::warn!("this device's key is not in its saved group (key lost or replaced)");
+        }
         let secret = load_secret(&*store, SECRET_NAME);
         let prev_secret = load_secret(&*store, PREV_SECRET_NAME);
         let (clip, changes, clip_error) = match Backend::open(&profile) {
@@ -445,6 +471,10 @@ impl Core {
             started: Instant::now(),
             dirty: false,
             book_due: false,
+            read_retries: 0,
+            save_error: None,
+            save_failures: 0,
+            state_damaged,
             updater: crate::update::UpdateCfg::from_profile(&profile_for_update)
                 .map(|c| crate::update::Updater::new(c, profile_for_update.clone())),
             version: crate::update::current_version(&profile_for_update),
@@ -676,9 +706,22 @@ impl Core {
             .unwrap_or_default();
         self.state.port = self.port;
         if let Err(e) = self.state.save(&self.dir) {
-            tracing::error!(error = %e, "state save failed");
+            // Log the first failure loudly; the retries at each tick quietly.
+            if self.save_error.is_none() {
+                tracing::error!(error = %e, "state save failed");
+            } else {
+                tracing::debug!(error = %e, "state save failed again");
+            }
+            self.save_error = Some(e.to_string());
+            self.save_failures += 1;
+            // Keep it dirty, so the next tick tries again.
+            self.dirty = true;
+        } else {
+            if self.save_error.take().is_some() {
+                tracing::info!("state saved again");
+            }
+            self.dirty = false;
         }
-        self.dirty = false;
     }
 
     async fn save_book(&mut self) {
@@ -755,7 +798,10 @@ impl Core {
                 },
                 Some(m) = pair_rx.recv() => self.on_pair(m),
                 Some(w) = wake_rx.recv() => match w {
-                    Wake::ClipChanged => self.settle_at = Some(Instant::now() + SETTLE),
+                    Wake::ClipChanged => {
+                        self.read_retries = 0;
+                        self.settle_at = Some(Instant::now() + SETTLE);
+                    }
                     Wake::Resume => self.on_resume(),
                 },
                 _ = sleep_opt(settle) => {
@@ -768,6 +814,7 @@ impl Core {
                         let count = self.clip.change_count().unwrap_or(0);
                         let p = self.poller.on_poll(now_ms(), count);
                         if p.changed.is_some() {
+                            self.read_retries = 0;
                             self.settle_at = Some(Instant::now() + SETTLE);
                         }
                         poll_at = tokio::time::Instant::now() + p.next;
@@ -893,6 +940,13 @@ impl Core {
             return;
         }
         let evs = self.engine.on_local_change(&mut self.clip, now_ms());
+        if !evs
+            .iter()
+            .any(|e| matches!(e, EngineEvent::Skipped(SkipReason::ReadFailed)))
+        {
+            // The read worked: the next failure starts a fresh series of retries.
+            self.read_retries = 0;
+        }
         self.on_engine(evs);
     }
 
@@ -943,8 +997,42 @@ impl Core {
                     | SkipReason::SeenContent
                     | SkipReason::Paused),
                 ) => tracing::debug!(reason = ?r, "skipped"),
-                EngineEvent::Skipped(r @ (SkipReason::ReadFailed | SkipReason::Invalid(_))) => {
+                EngineEvent::Skipped(SkipReason::ReadFailed) => {
+                    if self.read_retries < READ_RETRIES {
+                        let wait = Duration::from_millis(500) * 2u32.pow(self.read_retries);
+                        self.read_retries += 1;
+                        tracing::info!(
+                            attempt = self.read_retries,
+                            wait_ms = wait.as_millis() as u64,
+                            "clipboard read failed, trying again"
+                        );
+                        // A newer change replaces this timer, and resets the count.
+                        if self.settle_at.is_none() {
+                            self.settle_at = Some(Instant::now() + wait);
+                        }
+                    } else {
+                        tracing::warn!("clipboard read failed, copy not sent");
+                        self.activity(
+                            "Copy",
+                            "not sent",
+                            None,
+                            Some("Another app kept the clipboard busy.".into()),
+                        );
+                    }
+                }
+                EngineEvent::Skipped(r @ SkipReason::Invalid(_)) => {
                     tracing::warn!(reason = ?r, "skipped")
+                }
+                EngineEvent::PartInvalid { format } => {
+                    tracing::warn!(format = ?format, "part could not be read, left out");
+                    if format == uc_clip::Format::ImagePng {
+                        self.activity(
+                            "Image",
+                            "not sent",
+                            None,
+                            Some("The image could not be read. The text was sent.".into()),
+                        );
+                    }
                 }
                 EngineEvent::Skipped(r) => tracing::info!(reason = ?r, "skipped"),
                 EngineEvent::OwnClockAhead { .. } => self.clock_ahead = true,
@@ -954,6 +1042,9 @@ impl Core {
                 }
                 EngineEvent::WriteFailed => tracing::warn!("clipboard write failed"),
                 EngineEvent::RefusedFutureStamp { .. } => tracing::info!("refused a future stamp"),
+                EngineEvent::BadClip { peer, error } => {
+                    tracing::warn!(peer = %short_id(&peer.0), error = ?error, "received clip could not be read");
+                }
                 _ => {}
             }
         }
@@ -1574,6 +1665,7 @@ impl Core {
             return;
         }
         let pending = Pending { id, reply };
+        let fails_before = self.save_failures;
         let r = match call {
             "subscribe" => {
                 self.subscribers.push(events);
@@ -1636,6 +1728,7 @@ impl Core {
                 match self.clip.debug_copy(t) {
                     Ok(seq) => {
                         if matches!(self.clip, Backend::Fake(_)) {
+                            self.read_retries = 0;
                             self.settle_at = Some(Instant::now() + SETTLE);
                         }
                         Ok(json!({"seq": seq}))
@@ -1653,6 +1746,25 @@ impl Core {
                 Ok(json!({}))
             }
             _ => Err(IpcError::new("unknown-call", "Unknown call.")),
+        };
+        // A change the user made must be on disk before we say it worked.
+        let r = if CHANGE_CALLS.contains(&call) && r.is_ok() {
+            if self.dirty {
+                self.save();
+            }
+            if self.save_failures > fails_before {
+                Err(IpcError::new(
+                    "save-failed",
+                    format!(
+                        "The change could not be saved, so it is lost after a restart ({}).",
+                        self.save_error.clone().unwrap_or_default()
+                    ),
+                ))
+            } else {
+                r
+            }
+        } else {
+            r
         };
         pending.answer(r);
     }
@@ -2154,6 +2266,32 @@ impl Core {
                 "The app is running from the disk image or Downloads.".into(),
                 "Quit it, drag Universal Clipboard into the Applications folder, and open it from there."
                     .into(),
+            ));
+        }
+        if self.state_damaged && self.graph.is_none() {
+            return Some((
+                "state-damaged",
+                "This device's saved settings were damaged, so it was reset.".into(),
+                "Set it up again: \"uc pair enter\" with a code from another device. The old file is state.json.bad."
+                    .into(),
+            ));
+        }
+        if let Some(g) = &self.graph
+            && !g.is_member(&self.me().0)
+            && !g.is_removed(&self.me().0)
+        {
+            return Some((
+                "key-lost",
+                "This device lost its key, so your other devices no longer know it.".into(),
+                "On another device, remove this one. Then set it up again with \"uc pair enter\"."
+                    .into(),
+            ));
+        }
+        if let Some(e) = &self.save_error {
+            return Some((
+                "save-failed",
+                format!("Settings could not be saved ({e})."),
+                "Check that the disk has free space, then run \"uc diagnostics\".".into(),
             ));
         }
         if let Some(e) = &self.net_error {

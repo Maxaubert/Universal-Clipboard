@@ -167,6 +167,12 @@ pub enum Event {
     Skipped(SkipReason),
     /// One part of a local copy was over its cap and left out.
     PartDropped(Dropped),
+    /// A part could not be read (for example a broken image) and was left out. The other parts
+    /// were still sent.
+    PartInvalid {
+        /// Which part.
+        format: Format,
+    },
     /// A clip from a peer was put on the clipboard.
     Applied {
         /// Wire ID.
@@ -448,6 +454,10 @@ impl Engine {
                     }
                 },
                 Format::ImagePng if !self.cfg.sync_images => {}
+                // A local image that would be too costly to check is left out; the rest goes.
+                Format::ImagePng if crate::image::check_local(&data).is_err() => {
+                    out.push(Event::PartInvalid { format });
+                }
                 Format::ImagePng if data.len() > self.cfg.image_max => {
                     out.push(Event::PartDropped(Dropped {
                         format,
@@ -474,8 +484,33 @@ impl Engine {
             }));
             return out;
         }
+        // If the image turns out broken, the text must still go: keep the other parts aside
+        // (text is small; the image is not copied).
+        let without_image: Vec<RawPart> = if parts.len() > 1 {
+            parts
+                .iter()
+                .filter(|(f, _)| *f != Format::ImagePng)
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
         let clip = match Clip::from_parts(parts) {
             Ok(c) => c,
+            Err(ClipError::Image(_)) if !without_image.is_empty() => {
+                match Clip::from_parts(without_image) {
+                    Ok(c) => {
+                        out.push(Event::PartInvalid {
+                            format: Format::ImagePng,
+                        });
+                        c
+                    }
+                    Err(e) => {
+                        out.push(Event::Skipped(SkipReason::Invalid(e)));
+                        return out;
+                    }
+                }
+            }
             Err(e) => {
                 out.push(Event::Skipped(SkipReason::Invalid(e)));
                 return out;
