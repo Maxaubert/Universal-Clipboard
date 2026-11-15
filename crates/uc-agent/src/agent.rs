@@ -169,6 +169,9 @@ impl Pending {
 /// Inputs from other threads.
 enum Wake {
     ClipChanged,
+    /// The clipboard watcher ended. Only an error while the agent still runs (at a normal
+    /// quit the watcher ends too, after the main loop has stopped reading).
+    ClipWatchStopped,
     #[cfg_attr(not(windows), allow(dead_code))]
     Resume,
 }
@@ -388,10 +391,7 @@ impl Core {
                                 return;
                             }
                         }
-                        // The clipboard watcher ended while the agent still runs.
-                        tracing::error!(
-                            "clipboard watching stopped; local copies will not sync until a restart"
-                        );
+                        let _ = tx.send(Wake::ClipWatchStopped);
                     })
                     .map_err(|e| StartError(format!("thread: {e}")))?;
             }
@@ -803,6 +803,13 @@ impl Core {
                         self.settle_at = Some(Instant::now() + SETTLE);
                     }
                     Wake::Resume => self.on_resume(),
+                    Wake::ClipWatchStopped => {
+                        if !self.shutdown {
+                            tracing::error!(
+                                "clipboard watching stopped; local copies will not sync until a restart"
+                            );
+                        }
+                    }
                 },
                 _ = sleep_opt(settle) => {
                     self.settle_at = None;
