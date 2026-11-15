@@ -12,7 +12,7 @@
 #   /usr/bin/uc-agent                       link
 #   /usr/bin/uc or /usr/bin/uclip           link made by postinst (plan 3.2 name rule)
 #   /usr/share/applications/...desktop      only with the window
-#   /usr/share/icons/hicolor/256x256/apps/universal-clipboard.png
+#   /usr/share/icons/hicolor/{16x16..512x512}/apps/universal-clipboard.png, scalable/.../.svg
 # Start at login is per user (XDG autostart in ~/.config/autostart), set by "uc setup" or the
 # window, never by the package: a package must not write into home folders.
 set -eu
@@ -32,8 +32,7 @@ done
 mkdir -p "$OUT"
 D=$(mktemp -d)/$PKG
 LIB=$D/usr/lib/$PKG
-mkdir -p "$LIB" "$D/usr/bin" "$D/DEBIAN" "$D/usr/share/doc/$PKG" \
-  "$D/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "$LIB" "$D/usr/bin" "$D/DEBIAN" "$D/usr/share/doc/$PKG"
 install -m 0755 "$BIN/uc-agent" "$BIN/uc" "$LIB/"
 strip "$LIB/uc-agent" "$LIB/uc" 2>/dev/null || true
 ln -s ../lib/$PKG/uc-agent "$D/usr/bin/uc-agent"
@@ -52,8 +51,10 @@ Categories=Utility;
 Terminal=false
 EOF
 fi
-install -m 0644 "$ROOT/packaging/assets/icon-256.png" \
-  "$D/usr/share/icons/hicolor/256x256/apps/universal-clipboard.png"
+# The icon theme files, rendered from the SVG (packaging/assets/icon/render.mjs).
+for f in "$ROOT"/packaging/assets/linux/hicolor/*/apps/universal-clipboard.*; do
+  install -D -m 0644 "$f" "$D/usr/share/icons/${f#"$ROOT/packaging/assets/linux/"}"
+done
 cat > "$D/usr/share/doc/$PKG/copyright" <<EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Universal Clipboard
