@@ -244,7 +244,10 @@ updates N to a good N+1. The real-VM version (`win-b`, `mac-b`) waits for the la
   `latest.json` at 10% and makes a **draft** release. Without the secret there is no
   `latest.json`, so nothing auto-updates to that release.
 - `rollout.yml` (run by hand): re-signs `latest.json` of a tag with a new percentage, for
-  example 100 after two quiet days.
+  example 100 after two quiet days. Start it from the tag, because the `release` environment
+  only accepts tags `v*`: `gh workflow run rollout.yml --ref v0.1.0 -f tag=v0.1.0 -f percent=100`
+  (from main it fails with "Branch main is not allowed to deploy to release"). v0.1.0 went to
+  100% on 2026-11-15.
 - Local signing, if ever needed: `uc-release manifest --key <file> --version V --rollout 10
   --base-url URL --out latest.json windows-x86_64:nsis:<setup.exe> macos-aarch64:tar:<app.tar.gz>`.
 
