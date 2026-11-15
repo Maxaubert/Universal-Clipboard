@@ -1,8 +1,8 @@
 /* Universal Clipboard iPhone kit script (2026-11-15).
    Load order at the end of <body>:
-     <script src="../desktop/motion/art.js"></script>
+     <script src="art.js"></script>
      <script src="ios.js"></script>
-     <script src="../desktop/motion/kit.js"></script>
+     <script src="kit.js"></script>
      <script> page script: Kit.register(...) </script>
    It runs before kit.js snapshots the stages, so the chrome it adds is part of every replay.
 

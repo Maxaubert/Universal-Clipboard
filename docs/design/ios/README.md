@@ -29,8 +29,9 @@ Reduced motion, Pause all, Dark Mode and Actual size at the top. URL switches: `
 
 - `ios.css`: the phone frame (393 x 852 pt), iOS parts and tokens for light and dark.
 - `ios.js`: status bar, Dynamic Island and home indicator on every screen, icons, Dark Mode.
-- Reused from the desktop: `../desktop/motion/kit.css` (gallery), `kit.js` (replay, reduced
-  motion, seek) and `art.js` (device logos, QR).
+- Copied from the desktop: `kit.css` (gallery), `kit.js` (replay, reduced motion, seek), `art.js`
+  (device logos, QR) and `fonts/`, from `../desktop/motion/`. Copies, because Safari does not
+  load files from a parent folder when a page is opened from disk.
 
 ## Carried over
 
