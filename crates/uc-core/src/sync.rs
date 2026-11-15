@@ -436,7 +436,12 @@ impl Engine {
             }
             match format {
                 Format::TextPlain | Format::TextHtml => match text::to_wire(&data) {
+                    // Empty text is no copy: sending it would wipe every other clipboard.
+                    Some(s) if s.is_empty() => {}
                     Some(s) => parts.push((format, s.into_bytes())),
+                    // HTML in another encoding (UTF-16 from some apps) is only extra: leave it
+                    // out and still send the plain text.
+                    None if format == Format::TextHtml => {}
                     None => {
                         out.push(Event::Skipped(SkipReason::Invalid(ClipError::NotUtf8)));
                         return out;
@@ -457,9 +462,16 @@ impl Engine {
             return out;
         }
         let (parts, dropped) = caps::fit(parts);
+        let over_cap = dropped.iter().any(|d| d.size > caps::cap(d.format));
         out.extend(dropped.into_iter().map(Event::PartDropped));
         if parts.is_empty() {
-            out.push(Event::Skipped(SkipReason::TooLarge));
+            // Only "too large" when a part really was over its cap. HTML with no text twin
+            // is left out by rule, which is an empty copy, not a large one.
+            out.push(Event::Skipped(if over_cap {
+                SkipReason::TooLarge
+            } else {
+                SkipReason::Empty
+            }));
             return out;
         }
         let clip = match Clip::from_parts(parts) {

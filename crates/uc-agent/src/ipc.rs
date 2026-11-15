@@ -20,7 +20,7 @@ use std::io;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::profile::Profile;
@@ -204,7 +204,13 @@ where
     let mut buf = String::new();
     loop {
         buf.clear();
-        match reader.read_line(&mut buf).await {
+        // Read at most one byte over the limit, so a client that never sends a newline cannot
+        // grow the buffer without bound.
+        match (&mut reader)
+            .take(MAX_LINE as u64 + 1)
+            .read_line(&mut buf)
+            .await
+        {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
         }

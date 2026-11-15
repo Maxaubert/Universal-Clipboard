@@ -492,13 +492,18 @@ impl WinClipboard {
             return Ok(raw);
         }
         if raw.formats.contains(&formats::CF_UNICODETEXT) {
-            raw.text = Some(get_bytes(formats::CF_UNICODETEXT)?);
-            if raw.formats.contains(&ids.html) {
+            // A listed text that cannot be read (a delayed-render owner that failed) must not
+            // lose an image that reads fine: read on without it.
+            raw.text = get_bytes(formats::CF_UNICODETEXT).ok();
+            if raw.text.is_some() && raw.formats.contains(&ids.html) {
                 raw.html = get_bytes(ids.html).ok();
             }
         }
         if raw.formats.contains(&ids.png) {
-            raw.png = get_bytes(ids.png).ok();
+            // A "PNG" that is not a PNG must not hide the DIB fallback.
+            raw.png = get_bytes(ids.png)
+                .ok()
+                .filter(|b| png_signature(dib::trim_png(b)));
         }
         if raw.png.is_none() {
             if raw.formats.contains(&formats::CF_DIBV5) {
