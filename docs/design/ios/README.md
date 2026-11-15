@@ -48,3 +48,9 @@ through the Share sheet. Updates come from the App Store. Real paste prompts wai
 ## How to choose
 
 Reply with the ids you like, for example "F1, W2, H1, X3, P1, E1, T2". Mixing is fine.
+
+## Max's picks (2026-11-15)
+
+F1 One shape, W3 One story, H3 Pinned, X1 Quick, P1 Bar button, E3 Sheet, T3 On Home.
+The code-entry errors follow desktop E1 in every option. iPad gets these seven next, in its
+wider layout.
