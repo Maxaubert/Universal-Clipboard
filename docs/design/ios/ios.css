@@ -1,5 +1,5 @@
 /* Universal Clipboard iPhone kit (2026-11-15).
-   Load after ../desktop/motion/kit.css (gallery, motion tokens, replay controls).
+   Load after kit.css (gallery, motion tokens, replay controls).
    Part 1: phone frame (iPhone 16 / 17, 393 x 852 pt) with status bar, Dynamic Island, home indicator.
    Part 2: iOS tokens. Warm desktop colors mapped to iOS roles, light and dark.
    Part 3: iOS parts: nav bars, large titles, inset grouped lists, switches, capsule buttons,
