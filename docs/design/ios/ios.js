@@ -50,8 +50,9 @@
     laptop: S('<rect x="4.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 18.5h19"/>'),
     appstore: S('<circle cx="12" cy="12" r="9"/><path d="M9.5 7.5L14.5 16M14.5 7.5L9.5 16M7.5 13.5h9"/>'),
   };
-  /* The app icon: two stacked rounded sheets, the front one with a check-free "paste" mark. */
-  ic.app = '<svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="12" y="6" width="20" height="24" rx="4.5" stroke="#8A857E" stroke-width="2.4"/><rect x="7" y="11" width="20" height="24" rx="4.5" fill="#1D1C1A" stroke="#F7F6F4" stroke-width="2.4"/><path d="M12 19.5h10M12 24.5h7" stroke="#F7F6F4" stroke-width="2.4" stroke-linecap="round"/></svg>';
+  /* The app icon "Paper Layers" (PR #31, packaging/assets/icon/source/paper-layers.svg). It fills its box;
+     the box gives the rounded corners. */
+  ic.app = '<svg class="appicon" viewBox="0 0 1024 1024" fill="none" aria-hidden="true"><defs><linearGradient id="ucTile" x2=".74" y2="1"><stop stop-color="#34373f"/><stop offset="1" stop-color="#101116"/></linearGradient></defs><rect width="1024" height="1024" fill="url(#ucTile)"/><path d="M281 408L512 303L743 408L512 513Z M281 516L512 621L743 516M281 620L512 725L743 620" stroke="#fff" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/><rect x="437" y="278" width="150" height="66" rx="26" fill="#9b9da6"/></svg>';
 
   const sbar = (light) =>
     '<div class="sbar' + (light ? ' light' : '') + '" aria-hidden="true"><span>9:41</span><span class="sic">' +

@@ -238,6 +238,9 @@ html.dark .numpad span.blank { background: transparent; box-shadow: none; }
 /* The app icon: ink rounded square with two stacked sheets. */
 .uc-icon { width: 64px; height: 64px; border-radius: 15px; background: #1D1C1A; display: flex; align-items: center; justify-content: center; flex: none; }
 .uc-icon svg { width: 40px; height: 40px; }
+/* The real icon fills the box (beats page sizes). */
+.uc-icon, .ucapp { overflow: hidden; }
+.uc-icon svg.appicon, .ucapp svg.appicon { width: 100% !important; height: 100% !important; display: block; }
 
 /* Device row logo boxes. */
 .dlogo { width: 36px; height: 36px; border-radius: 10px; background: var(--fill); display: flex; align-items: center; justify-content: center; flex: none; color: var(--label); }
