@@ -360,19 +360,21 @@ async fn put(
 }
 
 /// Send one file copy on a new data stream to the receiver of `link`: the head and the
-/// manifest, then each file's bytes in manifest order (spec 3).
+/// manifest, then each file's bytes in manifest order (spec 3). `rate` (bytes per second) is
+/// for test profiles only (`UCLIP_TEST_SEND_RATE`); the real app sends as fast as QUIC goes.
 pub async fn serve(
     link: Link,
     id: FilesId,
     copy: Arc<Prepared>,
     progress: Arc<Progress>,
     mut cancel: watch::Receiver<u32>,
+    rate: Option<u64>,
 ) -> Result<(), SendError> {
     let mut stream = tokio::select! {
         s = link.open_stream() => s.map_err(SendError::Stream)?,
         _ = cancelled(&mut cancel) => return Err(SendError::Cancelled),
     };
-    let r = serve_on(&mut stream, id, &copy, &progress, &mut cancel).await;
+    let r = serve_on(&mut stream, id, &copy, &progress, &mut cancel, rate).await;
     match r {
         Ok(()) => tokio::select! {
             r = stream.finish() => r.map_err(SendError::Stream),
@@ -397,7 +399,10 @@ async fn serve_on(
     copy: &Prepared,
     progress: &Progress,
     cancel: &mut watch::Receiver<u32>,
+    rate: Option<u64>,
 ) -> Result<(), Result<u32, SendError>> {
+    let started = tokio::time::Instant::now();
+    let mut sent = 0u64;
     let stream_err = |e: Result<u32, StreamError>| e.map_err(SendError::Stream);
     let start = core_files::stream_start(&id, &copy.manifest);
     put(stream, &start, cancel).await.map_err(stream_err)?;
@@ -426,6 +431,14 @@ async fn serve_on(
             put(stream, &buf[..n], cancel).await.map_err(stream_err)?;
             left -= n as u64;
             progress.add(n as u64);
+            sent += n as u64;
+            if let Some(rate) = rate.filter(|r| *r > 0) {
+                let due = started + Duration::from_secs_f64(sent as f64 / rate as f64);
+                tokio::select! {
+                    _ = tokio::time::sleep_until(due) => {}
+                    c = cancelled(cancel) => return Err(Ok(c)),
+                }
+            }
         }
         progress.file_done();
     }

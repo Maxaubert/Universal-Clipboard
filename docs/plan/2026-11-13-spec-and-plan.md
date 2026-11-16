@@ -78,7 +78,9 @@ works without attention.
 
 ### Non-goals for v1
 - No clipboard history. The app holds only the newest clip, in memory.
-- No file sync (copied files or folders are ignored). LocalSend does that job.
+- ~~No file sync (copied files or folders are ignored).~~ **Changed 2026-11-16 (Max): files and
+  folders sync from 0.2.0** (small copies by themselves, bigger ones through Copy files... or
+  `uc copy`). Spec: `docs/plan/2026-11-16-file-sync.md`.
 - No accounts, no web app, no browser extension.
 - No sharing between different people. A group is one person's devices.
 - No automatic iPhone to computer sync without a tap. iOS does not allow it.
@@ -631,8 +633,10 @@ behind does no harm: the hybrid clock never goes below the highest stamp it has 
    clips, so an older item copied again never synced. See `docs/core.md`.)
 
 **Copied files:** if the clipboard holds a file reference (`CF_HDROP` on Windows, `public.file-url`
-on macOS, `text/uri-list` with `file://` on Linux), the whole clip is skipped. The file name text
-and the icon image that some apps add next to it are not synced.
+on macOS, `text/uri-list` with `file://` on Linux), the copy is a file copy. The file name text
+and the icon image that some apps add next to it are not synced. ~~The whole clip is skipped.~~
+**Changed 2026-11-16 (0.2.0):** file copies sync on their own data streams, never in `Latest` or
+`Clip`; see `docs/plan/2026-11-16-file-sync.md`.
 
 **Settle time:** apps often write the clipboard in several steps. The agent waits 150 ms after the
 last change event before it reads. If another app holds the clipboard, it retries 5 times over 500 ms.
@@ -709,7 +713,7 @@ marker is synced like any text. The help page says so.
 | HTML | Up to 2 MB. Larger: the HTML part is dropped, the plain text is still sent. |
 | Image | Sent as PNG. Up to 25 MB. Larger: not synced. |
 | Image safety | Before decode: check the PNG header, at most 16,384 px per side and 100 megapixels. Decoding uses memory-safe Rust crates only. |
-| Files, folders | Never synced in v1 (section 3.8). |
+| Files, folders | ~~Never synced in v1 (section 3.8).~~ From 0.2.0: automatic up to a setting (default 100 MB, checked on the copying device), any size through Copy files... or `uc copy`. Spec: `docs/plan/2026-11-16-file-sync.md`. |
 | Mixed clips | Text plus image (for example from Office or a browser): all parts are sent within the caps. |
 
 **Rich text decision:** sync `text/html` with a `text/plain` copy. Windows needs the `CF_HTML`

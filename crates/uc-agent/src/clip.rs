@@ -211,6 +211,15 @@ impl Backend {
         files.iter().map(|p| p.display().to_string()).collect()
     }
 
+    /// Test profiles: the PNG next to the current clip, if any. Only the fake clipboard.
+    pub fn debug_png(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Backend::Fake(f) => f.part(Format::ImagePng).map(<[u8]>::to_vec),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
     /// Test profiles: the current text, if any.
     pub fn debug_text(&mut self) -> Option<String> {
         // Our own writes carry the marker, and the macOS and Linux backends do not read the

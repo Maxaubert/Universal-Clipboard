@@ -127,6 +127,9 @@ pub(super) struct FileState {
     shown: Option<Value>,
     /// Something changed: send the view at the next progress tick.
     dirty: bool,
+    /// Test profiles: sends go no faster than this many bytes per second
+    /// (`UCLIP_TEST_SEND_RATE`), so a test can act while a transfer runs.
+    pub(super) send_rate: Option<u64>,
 }
 
 impl FileState {
@@ -148,6 +151,7 @@ impl FileState {
                 last_error: None,
                 shown: None,
                 dirty: false,
+                send_rate: None,
             },
             rx,
         )
@@ -472,8 +476,9 @@ impl Core {
         );
         self.files.dirty = true;
         let tx = self.files.tx.clone();
+        let rate = self.files.send_rate;
         tokio::spawn(async move {
-            let result = files::serve(link, id, copy, progress, rx).await;
+            let result = files::serve(link, id, copy, progress, rx, rate).await;
             let _ = tx.send(Xfer::Served {
                 peer,
                 id,
@@ -775,7 +780,10 @@ impl Core {
         }
         let name = self.name_of(&peer);
         let note = match reason {
-            CancelReason::Superseded | CancelReason::Requested => {
+            // The sender's `FilesCancel` for a newer copy can come before that copy does.
+            CancelReason::Superseded
+            | CancelReason::Requested
+            | CancelReason::ByPeer(uc_core::files::CODE_SUPERSEDED) => {
                 "A newer copy replaced these files.".to_string()
             }
             CancelReason::Stopped => "Stopped.".into(),

@@ -79,6 +79,11 @@ Spec: `docs/plan/2026-11-16-file-sync.md` sections 2.4 and 6. Pure code in `src/
   virtual copy.
 - **Not tested here:** a real OneDrive online-only file, and pasting our list into Explorer
   (that needs the visible desktop; the install test on the PC covers it).
+- **Received files** go to `%LOCALAPPDATA%\Temp\Universal Clipboard[-profile]\<8-char id>\`, a
+  short root so deep trees fit. A path over 259 characters is still written, and the activity
+  note says "Some paths are too long for Windows Explorer". The `.part` to final rename retries
+  for up to 2 s while Defender or the indexer hold the new files. End to end with two agents:
+  `crates/uc-cli/tests/agents.rs` (`docs/agent.md`, "File copies").
 
 ## winhost (tests on the real clipboard)
 - `uc_winhost::isolated_test(name, body)`: the test binary starts itself again with

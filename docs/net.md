@@ -164,6 +164,13 @@ Plan: `docs/plan/2026-11-16-file-sync.md` sections 3 and 6. Code: `link.rs`, `no
   never as a short clean end. The receiver asks again on the new link (plan 2.2.7).
 - Measured 2026-11-16 (`one_gigabyte_crosses_a_data_stream`, debug build, Windows 11
   loopback): 1 GiB in 8.9 s, 115 MiB/s; a clipboard frame sent halfway arrived in 21 ms.
+- **Network lab rows 11 and 12** (`crates/uc-cli/tests/netns_files.rs`, run by
+  `tools/netsim/run-wsl.sh`): two real agents in namespaces, paired through `uc`. Row 11:
+  200 MiB by `uc copy` over "lossy Wi-Fi" (netem 5 ms delay and 0.5% loss each way). Row 12:
+  200 MiB at 80 Mbit/s, the receiver is stopped (`SIGSTOP`) for 40 s in the middle; after
+  wake the link is redialled and the receiver asks again from the start. 2026-11-16 (debug,
+  WSL): row 11 in 30 s (6.6 MiB/s), row 12 intact 67 s after the copy, with 2 asks. Table:
+  `docs/spikes/s1-interfaces.md`.
 
 ## Path state and the VPN rule
 

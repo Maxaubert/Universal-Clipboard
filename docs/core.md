@@ -60,6 +60,38 @@ can change a choice, but then they change this page too.
 - Membership and address messages are passed through as opaque bytes for M2 and M3. The agent
   must only `connect` peers that are valid members.
 
+## File copies (0.2.0, 2026-11-16)
+
+Spec: `docs/plan/2026-11-16-file-sync.md` sections 2 to 4. Code: `uc-core/src/files.rs`
+(manifest), `sync.rs` (engine), `msg.rs` (codec). Tests: `uc-testkit/tests/files.rs`.
+
+- **Wire.** `Format` and `ClipHeader` did not change: files never appear in `Latest` or `Clip`
+  (a 0.1.x peer closes the link on an unknown format). While the current copy is files,
+  `Latest { header: None }` goes out. New types 9 to 11: `FilesOffer`, `FilesWant`,
+  `FilesCancel`. Both `Hello`s carry `HelloExt { features }` after the old body (bit 0 =
+  files); a peer without it reads as features 0. Every later `Hello` field goes into `HelloExt`.
+- **Current copy** is `Clip` or `Files`; both carry a clock stamp, highest stamp wins.
+- **Walk generation.** A local file copy gives `Event::WalkFiles { gen }`; any newer copy bumps
+  the generation, and `on_local_files` drops a stale one. The stamp is taken only after the
+  walk and the hashes, so text copied during a long walk is newer.
+- **Only the origin offers and serves**, and only after the peer's engine `Hello` shows bit 0.
+  A peer without the bit gets nothing and stays connected (`SkipReason::PeerNoFiles`).
+- **Receiving.** One pending offer; fetched only if it is the newest copy (and not older than
+  1 hour, not paused, Sync files on, enough free space). `files_applied` makes it current and
+  sets the own-write sequence, so received files are never offered again.
+- **Sends.** At most 2 run at once, more wait in a FIFO queue. A new `FilesWant` for the same
+  copy from the same peer resets the old stream. A newer current copy cancels every send.
+- **Cancel and retry.** Any newer copy cancels the pending fetch (`Event::CancelTransfer`). A
+  fetch cut by a lost link is asked again from the start when the origin is back, at most 3
+  times. Stop (`stop_transfer`) is never retried.
+- **Echo layer 4** for files: BLAKE3 over `uclip/files/1` and the manifest, so the same folder
+  copied twice is not sent twice.
+- **Manifest rules** (both sides, before anything touches disk): relative `/` paths in NFC,
+  no `..`, no absolute or drive paths, no empty parts, no NUL, 255 bytes per name, 4,096 per
+  path, depth 64, 100,000 entries, at most 16 MiB encoded. Windows receivers make names safe
+  (`< > : " | ? *` and control characters become `_`, reserved names get `_`) and number
+  duplicates ` (2)`.
+
 ## Tests (plan 6.1)
 - Codec: round trip of every message, random and mutated bytes never panic.
 - Clock: causality property, future-stamp refusal, behind clock, tie-break.
@@ -67,3 +99,7 @@ can change a choice, but then they change this page too.
   `PROPTEST_CASES` for more), with random clipboard managers and Windows line endings, plus all
   720 delivery orders of three copies at the same moment.
 - Clipboard-manager ping-pong: text and image managers on every device, exactly one send per copy.
+- File copies (`uc-testkit/tests/files.rs`, fake net): small copy syncs, over the limit
+  skipped, picked copy over the limit syncs, text during a walk wins, offers only after the
+  engine `Hello`, old peer, cancel both ways, no re-offer, no double send, FIFO with 3
+  receivers, retry and give-up, hostile manifests, stop, pause, Sync files off, no space.

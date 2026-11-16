@@ -12,12 +12,13 @@ Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 macOS clipboard backend (M5): `docs/clip-mac.md`.
 Agent, IPC and the `uc` CLI (M7), test switches, measurements: `docs/agent.md`.
 Installers, firewall helper, self-update, keys and releases (M9): `docs/install.md`.
+File and folder sync (0.2.0): spec `docs/plan/2026-11-16-file-sync.md`, agent part `docs/agent.md` "File copies".
 
 ## Rules
 - Code goes on a branch and a PR. Never push code to main. `docs/*.md` may go to main.
 - Tests run headless. Never touch the real clipboard; use the fake clipboard and `UCLIP_PROFILE=dev`.
 - Rust copies and worktrees share ONE `CARGO_TARGET_DIR`.
-- No "send" or "get" actions in the UI or CLI: the latest copy is on every device automatically.
+- No "send" or "get" actions in the UI or CLI: the latest copy is on every device automatically. Copy files... and `uc copy` are copies (they make the items the latest copy, like Ctrl+C), not sends.
 - The `uc` CLI is a full user interface: every settings-window action must also work from `uc` (plan 3.2).
 
 ## Build, test, release

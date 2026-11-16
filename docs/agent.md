@@ -26,6 +26,7 @@ This page lists where the plan left room, and the choice M7 made.
 | Log | `agent.log` in the state folder, rotates at 256 KB to `agent.log.1`. Level: `UCLIP_LOG` (`trace`/`debug`/`info`/`warn`/`error`, any case; default `info`). At `info`: start (version, OS), link up/down and path changes (4-byte device ID prefix only), every skipped copy with its reason (own echoes stay at `debug`), parts not sent, panics, start failures, a dead clipboard watcher. The diagnostic report takes the last 100 lines across both files. Review 2026-11-15: `research/universal-clipboard/2026-11-15-copy-cases-and-network-review.md`. |
 | IPC | Windows `\\.\pipe\uclip-<SID>[-profile]`; macOS `<state>/agent.sock`; Linux `$XDG_RUNTIME_DIR/uclip[-profile]/agent.sock` |
 | Single agent | lock file `agent.lock` (held for the whole run) plus the first-instance pipe or the socket check. A second agent exits with code 3. |
+| Received files (0.2.0) | Windows `%LOCALAPPDATA%\Temp\Universal Clipboard[-profile]`, macOS `~/Library/Caches/Universal Clipboard[-profile]`, Linux `$XDG_CACHE_HOME/Universal Clipboard[-profile]` (else `~/.cache`); test profiles `<state>/files`. One folder per copy (8-character ID), `.part` while it arrives. |
 
 **Plan 3.12 says the group secret is in `state.json`, wrapped with a key from the key
 store.** M7 keeps it in the key store itself. The result is the same or stronger (the secret
@@ -36,10 +37,11 @@ never touches `state.json`), and it needs no extra cipher.
 JSON lines: request `{"id","call","params"}`, reply `{"id","ok","result"|"error"}`, events
 `{"event","data"}` after `subscribe`. Calls: the plan's list plus `setup.status`,
 `setup.step`, `firewall.check` (looks at the Windows rule again; `uc firewall check|add`),
-`version`, and `update.status`, `update.apply`, `update.later` (`uc update [--install | now |
+`version`, `files.copy` and `transfer.stop` (file sync, below), and `update.status`, `update.apply`, `update.later` (`uc update [--install | now |
 later]`; the agent checks once at start and never installs without the user, see
-`docs/install.md` "Self-update"). Event `update` carries the `update.status` reply. Test profiles also accept `debug.copy`, `debug.clipboard`,
-`debug.wake` and `debug.shutdown`; the real app refuses them.
+`docs/install.md` "Self-update"). Event `update` carries the `update.status` reply. Test profiles also accept `debug.copy`, `debug.copy_files`,
+`debug.clipboard` (text, file paths, and the BLAKE3 of the PNG next to them), `debug.wake` and
+`debug.shutdown`; the real app refuses them.
 
 Hardening:
 - Windows: `FILE_FLAG_FIRST_PIPE_INSTANCE`, DACL `D:P(A;;GA;;;<user SID>)`, remote clients
@@ -111,6 +113,35 @@ only), `device-name` (a `rename` change when in a group).
   (`set_read_remote_content(false)`), and the engine skips it (`SkipReason::Remote`). The
   setting turns both on.
 
+## File copies (0.2.0, 2026-11-16)
+
+Spec: `docs/plan/2026-11-16-file-sync.md` section 5. Code: `src/files.rs` (walk, hash, send,
+receive, files folder), `src/agent/transfers.rs` (jobs, notes, `transfer` view).
+
+- **Off the main loop.** The walk and hashing run in `spawn_blocking` (BLAKE3, mmap and
+  multithreaded from 16 MiB); sends and receives are tokio tasks. The core only sees their
+  results, by generation or serial number, so a stale one is dropped.
+- **Settings:** `sync-files` (`on`/`off`, default on) and `file-limit-mb` (1 to 10,240, default
+  100: the largest automatic file copy, checked on the copying device only).
+- **Copy action:** IPC `files.copy { paths, picked: true }` and `uc copy <path>...` (paths made
+  absolute by the CLI; a missing path fails at once). It makes the items the latest copy, like
+  Ctrl+C, so the "no send or get" rule holds. The agent puts the picked items on its own
+  clipboard with our marker, so the watcher never treats them as a new automatic copy.
+- **Stop:** `transfer.stop` and `uc transfer stop` end the walk, the fetch and every send. The
+  other side shows "<device> stopped sending the files." or "Stopped.". A newer copy of anything
+  cancels too ("A newer copy replaced these files.", also when the sender's `FilesCancel`
+  arrives before the newer copy).
+- **Status:** `uc status --json` has `transfer` (`{id, phase: preparing|sending|receiving,
+  device, done, total, files}` or null) and `last_transfer_error`. The window gets the same as
+  the `transfer` event, at most 4 per second.
+- **Files folder:** the last 3 received copies are kept, and never a folder that is current,
+  pending or a send source. At start, `.part` leftovers and folders older than 7 days go. On
+  Windows the final rename retries for up to 2 s (Defender, the indexer).
+- **Activity and logs:** counts and sizes only ("3 files, 12 MB"), never a file or folder name.
+- **Test switches:** `UCLIP_TEST_SEND_RATE=<bytes/s>` slows sends so a test can act during
+  one; `UCLIP_TEST_NO_FILES=1` sends no feature bits (a 0.1.x peer). `UCLIP_TEST_LOOPBACK` may
+  also be a LAN address (`10.77.0.n` in the network lab), which counts as a physical /24.
+
 ## OS hooks
 
 | | Windows | macOS | Linux |
@@ -149,7 +180,7 @@ only), `device-name` (a `rename` change when in a group).
 Only test profiles (any `UCLIP_PROFILE` that is not empty) read these; see `profile.rs`.
 `UCLIP_STATE_DIR`, `UCLIP_TEST_KEYSTORE=file`, `UCLIP_TEST_CLIPBOARD=os`,
 `UCLIP_TEST_PASTEBOARD`, `UCLIP_TEST_LOOPBACK`, `UCLIP_TEST_PAIR_ADDRS` (read by `uc`),
-`UCLIP_TEST_FAST`, `UCLIP_TEST_FIREWALL_RULE` (`present` or `absent`: fakes the Windows rule
+`UCLIP_TEST_FAST`, `UCLIP_TEST_SEND_RATE`, `UCLIP_TEST_NO_FILES`, `UCLIP_TEST_FIREWALL_RULE` (`present` or `absent`: fakes the Windows rule
 check; without it a test profile needs no rule), `UCLIP_TEST_NO_LAN=1` (only a Hyper-V internal
 switch, no socket: the "no network it can use" path). **A test profile never opens the user's clipboard:** the OS backend only
 inside `tools/winhost` (Windows), on a named pasteboard (macOS), or on a display the test
@@ -161,6 +192,8 @@ started (Linux, Docker). Elsewhere it refuses, and two tests check that.
 |---|---|
 | `uc-cli` unit: every settings-window action maps to a `uc` command; every IPC call is reachable; `--json` everywhere; no send/get | PC, Mac, WSL |
 | `agents.rs`: 3 agents paired through the CLI (third from the second device), copy matrix, rename, pause and resume, settings, remove (the removed device learns it), leave, no content in logs or report; restart and reconnect, newest clip after reconnect, single agent; wrong code; start at login on by default in the sandbox and kept off after a restart; a missing firewall rule is a note, not a setup step | PC, Mac, WSL |
+| `agents.rs`, file sync (2026-11-16): `uc copy` of a folder and a file; an automatic folder tree with nested files, an empty folder, the exec bit (macOS, Linux) and a zip; the over-limit note; `uc copy` of a 300 MB file; a newer copy on either side cancels; `uc transfer stop` on either side; keep-3; Sync files off on the receiver; the single-image companion (and none with Sync images off); a 0.1.x peer (`UCLIP_TEST_NO_FILES`) stays connected and the sender says it needs an update; no file names in logs | PC |
+| `netns_files.rs` (network lab rows 11 and 12): 200 MiB over lossy Wi-Fi; receiver asleep 40 s mid-transfer, asked again after wake | WSL (`tools/netsim/run-wsl.sh`) |
 | `winhost.rs`: one agent on the real Windows clipboard in a private window station, paired with a fake-clipboard agent, copy matrix both ways | PC |
 | `macpb.rs`: one agent on the real macOS backend with a named pasteboard, copy matrix | Mac over ssh, no prompt, nothing on screen |
 | `linux_live.rs`: an X11 agent (Xvfb) and a Wayland agent (headless Sway), copy matrix | Docker (`live/docker.sh`), CI `linux-clipboard` |

@@ -83,6 +83,16 @@ pub fn own_device_type() -> u8 {
     }
 }
 
+/// The engine settings for this device. Test profiles with `UCLIP_TEST_NO_FILES=1` send no
+/// feature bits, so they act as a 0.1.x peer that cannot receive files.
+fn engine_config(profile: &Profile, rec: DeviceRecord) -> Config {
+    let mut cfg = Config::new(rec, Role::Full);
+    if profile.test_env("UCLIP_TEST_NO_FILES").as_deref() == Some("1") {
+        cfg.features = 0;
+    }
+    cfg
+}
+
 fn kind_of_type(t: u8) -> DeviceKind {
     match t {
         1 => DeviceKind::Windows,
@@ -429,14 +439,17 @@ impl Core {
             name: String::new(),
             kind: kind_of_type(own_device_type()),
         };
-        let engine = Engine::new(Config::new(rec, Role::Full));
+        let engine = Engine::new(engine_config(&profile, rec));
         let port = if state.port != 0 {
             state.port
         } else {
             profile.default_port()
         };
         let host = Host::with_lockout(Lockout::from(state.pair_lockout).loaded(now_ms()));
-        let (files, xfer_rx) = FileState::new(profile.files_dir());
+        let (mut files, xfer_rx) = FileState::new(profile.files_dir());
+        files.send_rate = profile
+            .test_env("UCLIP_TEST_SEND_RATE")
+            .and_then(|v| v.parse().ok());
         let mut core = Core {
             profile,
             dir,
@@ -538,7 +551,7 @@ impl Core {
         };
         let paused = self.engine.is_paused();
         self.files_reset();
-        self.engine = Engine::new(Config::new(rec, Role::Full));
+        self.engine = Engine::new(engine_config(&self.profile, rec));
         // A fresh engine has no transfers to cancel.
         let _ = self.engine.set_paused(paused);
         self.apply_settings();
@@ -636,9 +649,15 @@ impl Core {
         let disc: Arc<dyn uc_net::Discovery>;
         let binder: Arc<dyn uc_net::SocketBinder>;
         if let Some(ip) = self.profile.test_env("UCLIP_TEST_LOOPBACK") {
-            let Ok(ip) = ip.parse() else {
+            let Ok(ip) = ip.parse::<std::net::IpAddr>() else {
                 self.net_error = Some("UCLIP_TEST_LOOPBACK is not an address".into());
                 return;
+            };
+            // The network lab (Linux namespaces) passes a LAN address: a physical /24 there.
+            let (kind, prefix) = if ip.is_loopback() {
+                (Kind::Loopback, 8)
+            } else {
+                (Kind::Physical, 24)
             };
             self.policy = Policy {
                 allow_loopback: true,
@@ -648,9 +667,9 @@ impl Core {
                 name: "lo-test".into(),
                 index: 1,
                 description: "test loopback".into(),
-                kind: Kind::Loopback,
+                kind,
                 up: true,
-                addrs: vec![IfAddr { ip, prefix: 8 }],
+                addrs: vec![IfAddr { ip, prefix }],
             }];
             self.ifaces = list.clone();
             cfg.ifaces = Some(Arc::new(move || list.clone()));
@@ -1812,6 +1831,7 @@ impl Core {
             "debug.clipboard" => Ok(json!({
                 "text": self.clip.debug_text(),
                 "files": self.clip.debug_files(),
+                "png": self.clip.debug_png().map(|b| HEXLOWER.encode(blake3::hash(&b).as_bytes())),
             })),
             "debug.wake" => {
                 self.on_resume();

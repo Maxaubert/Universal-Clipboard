@@ -54,6 +54,10 @@ Only the file list is read; the name text and icons next to it are ignored.
 - A file list that cannot be read still counts as a file copy (so a file name is never synced
   as text), with no paths; the core skips it.
 
+**Received files** go to `$XDG_CACHE_HOME/Universal Clipboard[-profile]/` (else `~/.cache`;
+never `/tmp`, which is often RAM). Files get mode `0o755` when the sender's exec bit was set,
+else `0o644` (tested end to end in `crates/uc-cli/tests/agents.rs`).
+
 **Write** (`write_files`, received files): in one owner change, with our marker:
 
 | Type | Value |

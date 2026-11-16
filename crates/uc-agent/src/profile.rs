@@ -9,10 +9,12 @@
 //! | `UCLIP_STATE_DIR` | state folder (tests use temp folders) |
 //! | `UCLIP_TEST_KEYSTORE=file` | file key store (`uc-keys`) |
 //! | `UCLIP_TEST_CLIPBOARD=os` | the OS backend, but only an isolated one: a private window station (Windows), a named pasteboard (`UCLIP_TEST_PASTEBOARD`, macOS), any display (Linux, for Docker). Else a fake clipboard. |
-//! | `UCLIP_TEST_LOOPBACK=127.0.0.n` | bind only this loopback address, no mDNS |
+//! | `UCLIP_TEST_LOOPBACK=127.0.0.n` | bind only this loopback address, no mDNS (the network lab passes its namespace's LAN address, `10.77.0.n`, which counts as a physical /24) |
 //! | `UCLIP_TEST_PAIR_ADDRS=ip:port,...` | where a joiner looks for the inviter (no mDNS on loopback) |
 //! | `UCLIP_TEST_FAST=1` | short timers |
 //! | `UCLIP_TEST_NO_LAN=1` | the only interface is a Hyper-V internal switch: no socket, the "no network it can use" path (used when `UCLIP_TEST_LOOPBACK` is not set) |
+//! | `UCLIP_TEST_NO_FILES=1` | no feature bits in the `Hello` extension: acts as a 0.1.x peer that cannot receive files |
+//! | `UCLIP_TEST_SEND_RATE=<bytes/s>` | file sends go no faster than this, so a test can act while one runs |
 
 use std::path::PathBuf;
 
