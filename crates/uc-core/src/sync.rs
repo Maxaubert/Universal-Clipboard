@@ -491,6 +491,10 @@ struct Pending {
     fetch: Fetch,
     /// Fetches cut by a lost link so far.
     interruptions: u32,
+    /// A break was counted and no new link or stream came since. The broken stream and the
+    /// link going down are often both reported for one blip (in either order), and the ask
+    /// in between goes out on the dying link: that is still one break.
+    charged: bool,
 }
 
 /// The sync state machine of one device.
@@ -681,6 +685,10 @@ impl Engine {
         if self.peers.remove(&id).is_some() {
             self.link_lost(id, &mut out);
         }
+        // A new link to the origin: the next break of a fetch from it counts again.
+        if let Some(p) = self.pending.as_mut().filter(|p| p.offer.origin == id) {
+            p.charged = false;
+        }
         self.peers.insert(
             id,
             PeerState {
@@ -747,6 +755,12 @@ impl Engine {
             out.push(Event::Skipped(SkipReason::Private));
             return out;
         }
+        // Decision 8 holds for file copies too: what Apple's Universal Clipboard brought is
+        // not forwarded unless the setting says so.
+        if snap.remote && !self.cfg.forward_remote {
+            out.push(Event::Skipped(SkipReason::Remote));
+            return out;
+        }
         // A file copy: its text and image parts (a file name, an icon) are ignored.
         if snap.has_files || snap.files_virtual || !snap.files.is_empty() {
             if !self.cfg.sync_files {
@@ -756,10 +770,6 @@ impl Engine {
             } else {
                 out.push(self.start_walk(snap.files, false));
             }
-            return out;
-        }
-        if snap.remote && !self.cfg.forward_remote {
-            out.push(Event::Skipped(SkipReason::Remote));
             return out;
         }
         let mut parts: Vec<RawPart> = Vec::with_capacity(snap.parts.len());
@@ -1161,6 +1171,35 @@ impl Engine {
         out
     }
 
+    /// The stream the receiver asked for came and was accepted: a later break of it counts
+    /// as a new one.
+    pub fn stream_started(&mut self, peer: DeviceId, id: FilesId) {
+        if let Some(p) = self
+            .pending
+            .as_mut()
+            .filter(|p| p.offer.id == id && p.offer.origin == peer && p.fetch == Fetch::Wanted)
+        {
+            p.charged = false;
+        }
+    }
+
+    /// A send failed before its stream could tell the receiver anything (no data link, the
+    /// copy is gone here, or the stream could not be opened). The receiver gets a
+    /// `FilesCancel` (aborted), so it does not wait for a stream that never comes; then the
+    /// next queued send starts.
+    pub fn serve_failed(&mut self, peer: DeviceId, id: FilesId) -> Vec<Event> {
+        let mut out = Vec::new();
+        if self.running.contains(&(peer, id)) || self.queue.contains(&(peer, id)) {
+            let cancel = Message::FilesCancel {
+                id,
+                reason: files::CODE_ABORTED,
+            };
+            self.send(peer, &cancel, &mut out);
+        }
+        out.extend(self.serve_done(peer, id));
+        out
+    }
+
     /// A send ended (done, failed or reset). The next queued send starts.
     pub fn serve_done(&mut self, peer: DeviceId, id: FilesId) -> Vec<Event> {
         let mut out = Vec::new();
@@ -1347,8 +1386,10 @@ impl Engine {
         let Some(p) = self.pending.as_mut() else {
             return;
         };
-        if p.fetch == Fetch::Wanted {
+        // One blip is counted once, even when both the stream and the link report it.
+        if p.fetch == Fetch::Wanted && !p.charged {
             p.interruptions += 1;
+            p.charged = true;
         }
         if p.interruptions > FETCH_RETRIES {
             p.fetch = Fetch::Remembered;
@@ -1463,6 +1504,7 @@ impl Engine {
             offer,
             fetch: Fetch::Remembered,
             interruptions: 0,
+            charged: false,
         });
         if fetch_now {
             self.ask(out);

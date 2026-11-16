@@ -9,11 +9,11 @@
 //! Nothing here logs or returns a file name: notes and logs hold counts and sizes only.
 //!
 //! The files folder ([`crate::profile::Profile::files_dir`]) holds one folder per received
-//! copy, named by the copy's short ID. A copy is written to `<id>.part` first and renamed when
+//! copy, named by the copy's short ID. A copy is written to `<id>-<attempt>.part` first and renamed when
 //! every file is in and checked. The last [`KEEP`] copies are kept; at agent start `.part`
 //! leftovers and folders older than [`MAX_AGE`] go.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -162,7 +162,7 @@ pub fn walk(
     progress: &Progress,
 ) -> Result<Walked, PrepError> {
     let mut out = Walked::default();
-    let mut top = BTreeSet::new();
+    let mut top = core_files::Names::new();
     for p in paths {
         // The copied item itself is followed if it is a link: the user picked it.
         let meta = std::fs::metadata(p).map_err(|_| PrepError::Unreadable)?;
@@ -345,6 +345,9 @@ pub enum SendError {
     Changed,
     /// The stream failed (the receiver stopped it, or the link broke).
     Stream(StreamError),
+    /// The stream could not be opened (no stream credit in time, or the link is closed): the
+    /// receiver has not heard anything of this send.
+    Open(StreamError),
 }
 
 /// Write `buf`, unless the agent cancels first.
@@ -371,7 +374,7 @@ pub async fn serve(
     rate: Option<u64>,
 ) -> Result<(), SendError> {
     let mut stream = tokio::select! {
-        s = link.open_stream() => s.map_err(SendError::Stream)?,
+        s = link.open_stream() => s.map_err(SendError::Open)?,
         _ = cancelled(&mut cancel) => return Err(SendError::Cancelled),
     };
     let r = serve_on(&mut stream, id, &copy, &progress, &mut cancel, rate).await;
@@ -475,6 +478,9 @@ pub struct RecvJob {
     /// The largest image to put next to a single image file (spec 2.2.5), or `None` when
     /// "Sync images" is off.
     pub image_max: Option<u64>,
+    /// The attempt (the agent's fetch serial). Each attempt writes its own `.part` folder, so
+    /// an old attempt that is slow to stop never deletes the files of a newer one.
+    pub attempt: u64,
 }
 
 /// A received copy, in its final folder.
@@ -525,21 +531,36 @@ fn stream_err(e: StreamError) -> RecvError {
     }
 }
 
+/// Where a receive reads its bytes: the data stream (a buffer in tests).
+trait ByteSource: Send {
+    /// Some bytes; `Ok(None)` at the clean end.
+    fn next_bytes(
+        &mut self,
+        buf: &mut [u8],
+    ) -> impl std::future::Future<Output = Result<Option<usize>, StreamError>> + Send;
+}
+
+impl ByteSource for RecvStream {
+    async fn next_bytes(&mut self, buf: &mut [u8]) -> Result<Option<usize>, StreamError> {
+        self.read(buf).await
+    }
+}
+
 /// Read some bytes, unless the agent cancels first. `Ok(None)` at the clean end.
-async fn take(
-    s: &mut RecvStream,
+async fn take<S: ByteSource>(
+    s: &mut S,
     buf: &mut [u8],
     cancel: &mut watch::Receiver<u32>,
 ) -> Result<Option<usize>, Result<u32, RecvError>> {
     tokio::select! {
-        r = s.read(buf) => r.map_err(|e| Err(stream_err(e))),
+        r = s.next_bytes(buf) => r.map_err(|e| Err(stream_err(e))),
         c = cancelled(cancel) => Err(Ok(c)),
     }
 }
 
 /// Fill `buf`, unless the agent cancels first. An early end is bad data.
-async fn take_exact(
-    s: &mut RecvStream,
+async fn take_exact<S: ByteSource>(
+    s: &mut S,
     buf: &mut [u8],
     cancel: &mut watch::Receiver<u32>,
 ) -> Result<(), Result<u32, RecvError>> {
@@ -560,7 +581,8 @@ fn utf16_len(p: &Path) -> usize {
 
 /// Receive one file copy from a stream whose head was read: the manifest (checked against the
 /// offer before any file byte is written), then each file, checked against its hash, into
-/// `<dir>/<short id>.part`, which is renamed to `<dir>/<short id>` at the end (spec 2.2.3).
+/// `<dir>/<short id>-<attempt>.part`, which is renamed to `<dir>/<short id>` at the end (spec
+/// 2.2.3).
 pub async fn receive(
     mut stream: RecvStream,
     manifest_len: usize,
@@ -568,8 +590,7 @@ pub async fn receive(
     progress: Arc<Progress>,
     mut cancel: watch::Receiver<u32>,
 ) -> Result<Received, RecvError> {
-    let short = job.id.short();
-    let part = job.dir.join(format!("{short}.part"));
+    let part = part_folder(&job);
     let r = receive_into(
         &mut stream,
         manifest_len,
@@ -595,8 +616,40 @@ pub async fn receive(
     r
 }
 
-async fn receive_into(
-    stream: &mut RecvStream,
+/// The partial folder of one receive attempt.
+fn part_folder(job: &RecvJob) -> PathBuf {
+    job.dir
+        .join(format!("{}-{}.part", job.id.short(), job.attempt))
+}
+
+/// Make a new file for a received entry. A file that is already there was made by an
+/// earlier entry under another name the file system treats as the same (a Windows 8.3 short
+/// name, a case-folding Linux mount): it is never overwritten, the copy is refused.
+async fn create_file(path: &Path) -> Result<tokio::fs::File, RecvError> {
+    match tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .await
+    {
+        Ok(f) => Ok(f),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(RecvError::BadData),
+        Err(e) => Err(write_err(e)),
+    }
+}
+
+/// Count `n` more bytes written. More than `cap` in all is bad data (the sender declared
+/// less), checked before the bytes are written.
+fn charge(written: &mut u64, n: usize, cap: u64) -> Result<(), RecvError> {
+    *written = written.saturating_add(n as u64);
+    if *written > cap {
+        return Err(RecvError::BadData);
+    }
+    Ok(())
+}
+
+async fn receive_into<S: ByteSource>(
+    stream: &mut S,
     manifest_len: usize,
     job: &RecvJob,
     part: &Path,
@@ -618,14 +671,23 @@ async fn receive_into(
     }
     tokio::fs::create_dir_all(part).await.map_err(we)?;
     let mut buf = vec![0u8; CHUNK];
+    // Bytes written in all: never more than the offer declared, whatever an entry says.
+    let mut written = 0u64;
     for (e, local) in manifest.entries().iter().zip(&locals) {
         let path = local.split('/').fold(part.to_path_buf(), |p, s| p.join(s));
         if e.kind == EntryKind::Folder {
-            tokio::fs::create_dir(&path).await.map_err(we)?;
+            match tokio::fs::create_dir(&path).await {
+                Ok(()) => {}
+                Err(x) if x.kind() == io::ErrorKind::AlreadyExists => {
+                    return Err(Err(RecvError::BadData));
+                }
+                Err(x) => return Err(Err(write_err(x))),
+            }
             continue;
         }
-        let mut f = tokio::fs::File::create(&path).await.map_err(we)?;
+        let mut f = create_file(&path).await.map_err(Err)?;
         let mut h = blake3::Hasher::new();
+        // Each entry gets at most its declared size: the read is never larger than that.
         let mut left = e.size;
         while left > 0 {
             let want = left.min(CHUNK as u64) as usize;
@@ -633,6 +695,7 @@ async fn receive_into(
                 Some(n) => n,
                 None => return Err(Err(RecvError::BadData)),
             };
+            charge(&mut written, n, job.total).map_err(Err)?;
             h.update(&buf[..n]);
             f.write_all(&buf[..n]).await.map_err(we)?;
             left -= n as u64;
@@ -1101,5 +1164,199 @@ mod tests {
         assert!(out.starts_with(b"\x89PNG"));
         assert_eq!(companion_png(b"not an image", "jpg", 1 << 20), None);
         assert_eq!(companion_png(&png, "svg", 1 << 20), None);
+    }
+
+    // ------------------------------------------------------------ receive (no network)
+
+    /// A data stream in memory: the bytes come in uneven pieces.
+    struct Feed {
+        data: Vec<u8>,
+        at: usize,
+    }
+
+    impl ByteSource for Feed {
+        async fn next_bytes(&mut self, buf: &mut [u8]) -> Result<Option<usize>, StreamError> {
+            if self.at >= self.data.len() {
+                return Ok(None);
+            }
+            let n = buf.len().min(self.data.len() - self.at).min(7777);
+            buf[..n].copy_from_slice(&self.data[self.at..self.at + n]);
+            self.at += n;
+            Ok(Some(n))
+        }
+    }
+
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// A manifest for `files` (name, bytes) and the stream body: manifest, then the bytes.
+    fn copy_of(files: &[(&str, &[u8])]) -> (Manifest, Vec<u8>) {
+        let entries = files
+            .iter()
+            .map(|(n, b)| Entry::file(*n, b.len() as u64, *blake3::hash(b).as_bytes(), false))
+            .collect();
+        let m = Manifest::new(entries).unwrap();
+        let mut body = m.bytes().to_vec();
+        for e in m.entries() {
+            let (_, b) = files.iter().find(|(n, _)| *n == e.path).unwrap();
+            body.extend_from_slice(b);
+        }
+        (m, body)
+    }
+
+    fn job_for(m: &Manifest, dir: &Path, attempt: u64) -> RecvJob {
+        RecvJob {
+            id: FilesId([7; 32]),
+            peer: DeviceId([1; 32]),
+            manifest_hash: m.hash(),
+            total: m.total(),
+            count: m.file_count(),
+            dir: dir.to_path_buf(),
+            image_max: None,
+            attempt,
+        }
+    }
+
+    /// Run [`receive_into`] on `body`; a cancel shows as `Cancelled`.
+    fn run_receive(m: &Manifest, job: &RecvJob, body: Vec<u8>) -> Result<Manifest, RecvError> {
+        rt().block_on(async {
+            let mut feed = Feed { data: body, at: 0 };
+            let (_tx, mut rx) = watch::channel(0u32);
+            let part = part_folder(job);
+            receive_into(
+                &mut feed,
+                m.bytes().len(),
+                job,
+                &part,
+                &Progress::default(),
+                &mut rx,
+            )
+            .await
+            .map_err(|e| e.err().unwrap_or(RecvError::Cancelled))
+        })
+    }
+
+    #[test]
+    fn receive_writes_each_file_into_the_part_folder() {
+        let t = tempfile::tempdir().unwrap();
+        let (m, body) = copy_of(&[("a.txt", b"hello"), ("b.bin", &[9u8; 20_000])]);
+        let job = job_for(&m, t.path(), 1);
+        assert_eq!(run_receive(&m, &job, body), Ok(m.clone()));
+        let part = part_folder(&job);
+        assert_eq!(std::fs::read(part.join("a.txt")).unwrap(), b"hello");
+        assert_eq!(
+            std::fs::read(part.join("b.bin")).unwrap(),
+            vec![9u8; 20_000]
+        );
+    }
+
+    /// Security S2: the manifest's total and file count must be the offer's, or the copy is
+    /// refused before anything touches the disk.
+    #[test]
+    fn a_manifest_that_differs_from_the_offer_is_refused() {
+        let t = tempfile::tempdir().unwrap();
+        let (m, body) = copy_of(&[("a.txt", b"hello")]);
+        let mut job = job_for(&m, t.path(), 1);
+        job.total += 1;
+        assert_eq!(run_receive(&m, &job, body.clone()), Err(RecvError::BadData));
+        let mut job = job_for(&m, t.path(), 2);
+        job.count += 1;
+        assert_eq!(run_receive(&m, &job, body), Err(RecvError::BadData));
+        assert_eq!(
+            std::fs::read_dir(t.path()).unwrap().count(),
+            0,
+            "nothing written"
+        );
+    }
+
+    /// Security S2: bytes are capped at each entry's declared size (a sender that sends more
+    /// is refused, and no file grows past its size) and at the declared total.
+    #[test]
+    fn bytes_are_capped_per_entry_and_in_total() {
+        let t = tempfile::tempdir().unwrap();
+        let (m, mut body) = copy_of(&[("a.txt", b"hello"), ("b.txt", b"world")]);
+        body.extend_from_slice(b"more than declared");
+        let job = job_for(&m, t.path(), 1);
+        assert_eq!(run_receive(&m, &job, body), Err(RecvError::BadData));
+        let part = part_folder(&job);
+        assert_eq!(std::fs::read(part.join("a.txt")).unwrap(), b"hello");
+        assert_eq!(std::fs::read(part.join("b.txt")).unwrap(), b"world");
+
+        // The running total: at the cap is fine, one byte over is bad data.
+        let mut written = 0;
+        assert_eq!(charge(&mut written, 6, 10), Ok(()));
+        assert_eq!(charge(&mut written, 4, 10), Ok(()));
+        assert_eq!(charge(&mut written, 1, 10), Err(RecvError::BadData));
+        let mut near_max = u64::MAX - 1;
+        assert_eq!(
+            charge(&mut near_max, 5, u64::MAX - 1),
+            Err(RecvError::BadData)
+        );
+    }
+
+    /// Review fix 4: a file that is already there (another entry's name that the file system
+    /// treats as the same) is never truncated or overwritten.
+    #[test]
+    fn a_received_file_is_never_overwritten() {
+        let t = tempfile::tempdir().unwrap();
+        let p = t.path().join("longfilename.txt");
+        std::fs::write(&p, b"verified").unwrap();
+        let r = rt().block_on(create_file(&p));
+        assert_eq!(r.err(), Some(RecvError::BadData));
+        assert_eq!(std::fs::read(&p).unwrap(), b"verified");
+        assert!(
+            rt().block_on(create_file(&t.path().join("new.txt")))
+                .is_ok()
+        );
+    }
+
+    /// Review fix 4 on a real alias: a Windows 8.3 short name of an earlier entry. Runs only
+    /// where the volume makes short names.
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_short_name_alias_is_refused() {
+        let probe = tempfile::tempdir().unwrap();
+        std::fs::write(probe.path().join("longfilename.txt"), b"x").unwrap();
+        if !probe.path().join("LONGFI~1.TXT").exists() {
+            return; // No 8.3 names on this volume.
+        }
+        let t = tempfile::tempdir().unwrap();
+        let (m, body) = copy_of(&[("longfi~1.txt", b"evil"), ("longfilename.txt", b"good")]);
+        // Sorted: "longfi~1.txt" comes after "longfilename.txt" ('n' < '~').
+        assert_eq!(m.entries()[0].path, "longfilename.txt");
+        let job = job_for(&m, t.path(), 1);
+        assert_eq!(run_receive(&m, &job, body), Err(RecvError::BadData));
+        let part = part_folder(&job);
+        assert_eq!(
+            std::fs::read(part.join("longfilename.txt")).unwrap(),
+            b"good"
+        );
+    }
+
+    /// Review fix 5: each attempt for one copy has its own partial folder, which the start
+    /// sweep still finds.
+    #[test]
+    fn each_attempt_has_its_own_part_folder() {
+        let t = tempfile::tempdir().unwrap();
+        let (m, body) = copy_of(&[("a.txt", b"hello")]);
+        let (one, two) = (job_for(&m, t.path(), 1), job_for(&m, t.path(), 2));
+        assert_ne!(part_folder(&one), part_folder(&two));
+        // Attempt 2 is under way when attempt 1 starts again and fails.
+        std::fs::create_dir_all(part_folder(&two)).unwrap();
+        std::fs::write(part_folder(&two).join("a.txt"), b"hel").unwrap();
+        let mut bad = body.clone();
+        bad.pop();
+        assert_eq!(run_receive(&m, &one, bad), Err(RecvError::BadData));
+        let _ = std::fs::remove_dir_all(part_folder(&one));
+        assert_eq!(
+            std::fs::read(part_folder(&two).join("a.txt")).unwrap(),
+            b"hel"
+        );
+        assert_eq!(sweep(t.path(), SystemTime::now()), 1);
+        assert_eq!(std::fs::read_dir(t.path()).unwrap().count(), 0);
     }
 }

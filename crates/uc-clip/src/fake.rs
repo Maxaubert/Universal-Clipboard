@@ -87,6 +87,12 @@ impl FakeClipboard {
         self.state.seq
     }
 
+    /// The current content came from another Apple device (Apple's Universal Clipboard sets
+    /// `com.apple.is-remote-clipboard`). The next change clears it again.
+    pub fn mark_remote(&mut self) {
+        self.state.remote = true;
+    }
+
     /// The next `n` reads fail with [`ClipboardError::Busy`].
     pub fn fail_reads(&mut self, n: u32) {
         self.failing_reads = n;

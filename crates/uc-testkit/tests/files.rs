@@ -646,3 +646,160 @@ fn a_want_for_a_copy_we_moved_on_from_gets_a_cancel() {
     );
     assert!(net.devices[0].engine.running_sends().is_empty());
 }
+
+/// Review fix 3: one blip is often reported twice, first by the broken stream (the receive
+/// task) and then by the link going down. The ask in between goes out on the dying link.
+/// That is one break, not two, so three blips are still allowed (spec 2.2.7).
+#[test]
+fn a_blip_seen_by_the_stream_and_the_link_counts_once() {
+    let mut net = FakeNet::full_mesh(2);
+    net.hold_streams = true;
+    let f = net.add_file(0, "a.bin", 20 * MB);
+    net.copy_paths(0, &[f]);
+    net.run();
+    let id = net.current_files(0).unwrap();
+    let failed = |net: &FakeNet| {
+        has(net, 1, |e| {
+            *e == Event::TransferFailed {
+                id,
+                peer: device_id(0),
+                failure: TransferFailure::Retries,
+            }
+        })
+    };
+    for blip in 0..FETCH_RETRIES {
+        assert_eq!(net.streams.len(), 1, "blip {blip}");
+        // The stream breaks first: the receiver asks again at once, on the dying link.
+        net.break_stream(0);
+        assert_eq!(net.devices[1].engine.fetching(), Some(id));
+        // Then the link goes down and comes back.
+        net.disconnect(0, 1);
+        net.connect(0, 1);
+        net.run();
+        assert!(!failed(&net), "blip {blip} counted twice");
+    }
+    // One more blip is one too many.
+    net.break_stream(0);
+    net.disconnect(0, 1);
+    assert!(failed(&net));
+    assert_eq!(net.devices[1].engine.fetching(), None);
+}
+
+/// The other order, a fourth time: a link drop with no broken stream report still counts.
+#[test]
+fn link_drops_alone_still_count_every_time() {
+    let mut net = FakeNet::full_mesh(2);
+    net.hold_streams = true;
+    let f = net.add_file(0, "a.bin", 20 * MB);
+    net.copy_paths(0, &[f]);
+    net.run();
+    for _ in 0..FETCH_RETRIES {
+        // The stream report comes after the link is gone: it changes nothing.
+        net.disconnect(0, 1);
+        net.connect(0, 1);
+        net.run();
+    }
+    net.disconnect(0, 1);
+    assert!(has(&net, 1, |e| matches!(
+        e,
+        Event::TransferFailed {
+            failure: TransferFailure::Retries,
+            ..
+        }
+    )));
+}
+
+/// Review fix 2: a send that fails before its stream opens tells the receiver (FilesCancel,
+/// aborted), so the receiver does not wait for a stream that never comes. The next queued
+/// send starts.
+#[test]
+fn a_send_that_fails_before_its_stream_tells_the_receiver() {
+    let mut net = FakeNet::full_mesh(4);
+    net.hold_streams = true;
+    let f = net.add_file(0, "a.bin", 20 * MB);
+    net.copy_paths(0, &[f]);
+    net.run();
+    let id = net.current_files(0).unwrap();
+    assert_eq!(net.streams.len(), SERVE_MAX);
+    let k = net.streams.iter().position(|s| s.to == 1).unwrap();
+    assert_eq!(net.devices[1].engine.fetching(), Some(id));
+
+    net.fail_send(k);
+    net.run();
+    assert!(has(&net, 1, |e| *e
+        == Event::CancelTransfer {
+            id,
+            peer: device_id(0),
+            reason: CancelReason::ByPeer(CODE_ABORTED),
+            sending: false
+        }));
+    assert_eq!(net.devices[1].engine.fetching(), None);
+    // Its slot went to the queued receiver.
+    assert_eq!(
+        net.devices[0].engine.running_sends(),
+        &[(device_id(2), id), (device_id(3), id)]
+    );
+    assert!(net.devices[0].engine.queued_sends().is_empty());
+    net.hold_streams = false;
+    net.run();
+    for i in [2, 3] {
+        assert_eq!(net.current_files(i), Some(id), "device {i}");
+    }
+    assert_eq!(net.current_files(1), None);
+}
+
+/// Review fix 1 (engine side): when a running receiver goes away (removed from the group,
+/// or its link drops), the queued send starts in the same call, so the agent must run the
+/// events of that `disconnect`.
+#[test]
+fn a_receiver_that_goes_away_starts_the_queued_send() {
+    let mut net = FakeNet::full_mesh(4);
+    net.hold_streams = true;
+    let f = net.add_file(0, "a.bin", 20 * MB);
+    net.copy_paths(0, &[f]);
+    net.run();
+    let id = net.current_files(0).unwrap();
+    assert_eq!(
+        net.devices[0].engine.queued_sends(),
+        vec![(device_id(3), id)]
+    );
+
+    let ev = net.devices[0].engine.disconnect(device_id(1));
+    assert!(
+        ev.contains(&Event::ServeFiles {
+            peer: device_id(3),
+            id
+        }),
+        "{ev:?}"
+    );
+    assert_eq!(
+        net.devices[0].engine.running_sends(),
+        &[(device_id(2), id), (device_id(3), id)]
+    );
+    assert!(net.devices[0].engine.queued_sends().is_empty());
+}
+
+/// Review fix 8: decision 8 holds for file copies. Files that Apple's Universal Clipboard
+/// brought are not walked or offered unless forwarding is on.
+#[test]
+fn file_copies_from_apple_universal_clipboard_are_not_forwarded() {
+    let mut net = FakeNet::full_mesh(2);
+    let f = net.add_file(0, "from-iphone.jpg", 5);
+    net.devices[0].clip.copy_paths(std::slice::from_ref(&f));
+    net.devices[0].clip.mark_remote();
+    net.local_change(0);
+    net.run();
+    assert!(skipped(&net, 0, SkipReason::Remote));
+    assert!(!has(&net, 0, |e| matches!(e, Event::WalkFiles { .. })));
+    assert_eq!(net.current_files(0), None);
+    assert_eq!(net.devices[1].engine.pending_files(), None);
+
+    // With forwarding on, it goes.
+    net.devices[0].engine.set_forward_remote(true);
+    net.devices[0].clip.copy_paths(std::slice::from_ref(&f));
+    net.devices[0].clip.mark_remote();
+    net.local_change(0);
+    net.run();
+    let id = net.current_files(0).expect("forwarded");
+    assert_eq!(net.current_files(1), Some(id));
+}

@@ -15,6 +15,7 @@
 //! | `UCLIP_TEST_NO_LAN=1` | the only interface is a Hyper-V internal switch: no socket, the "no network it can use" path (used when `UCLIP_TEST_LOOPBACK` is not set) |
 //! | `UCLIP_TEST_NO_FILES=1` | no feature bits in the `Hello` extension: acts as a 0.1.x peer that cannot receive files |
 //! | `UCLIP_TEST_SEND_RATE=<bytes/s>` | file sends go no faster than this, so a test can act while one runs |
+//! | `UCLIP_TEST_SERVE_REFUSED=1` | every file send fails before its stream opens, as if the receiver granted no stream |
 
 use std::path::PathBuf;
 

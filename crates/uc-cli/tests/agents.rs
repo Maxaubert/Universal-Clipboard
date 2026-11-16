@@ -1016,3 +1016,176 @@ fn files_reach_the_other_agent() {
         assert!(!r.contains("walrus") && !r.contains("zebra"));
     }
 }
+
+/// Review fix 1: removing a device whose send runs starts the send that waited in the queue
+/// (at most 2 run at once). Before the fix the agent dropped the engine's start event, so
+/// the waiting device showed "Receiving" with 0 bytes for good.
+#[test]
+fn removing_a_receiver_starts_the_queued_send() {
+    let mut a = Agent::new(111);
+    a.extra_env
+        .push(("UCLIP_TEST_SEND_RATE".into(), "2000000".into()));
+    a.start();
+    a.uc_json(&["settings", "set", "device-name", "Alpha"]);
+    let mut others = Vec::new();
+    for (n, name) in [(112, "Bravo"), (113, "Charlie"), (114, "Delta")] {
+        let mut x = Agent::new(n);
+        x.start();
+        x.uc_json(&["settings", "set", "device-name", name]);
+        pair(&a, &mut x);
+        others.push((x, name));
+    }
+    assert!(
+        until(Duration::from_secs(15), || {
+            a.uc_json(&["status"])["connected"] == 3
+                && others
+                    .iter()
+                    .all(|(x, _)| x.uc_json(&["status"])["connected"] == 3)
+        }),
+        "not all connected:\n{}",
+        a.log()
+    );
+    let src = tempfile::tempdir().unwrap();
+    let f = src.path().join("eight.bin");
+    write_big(&f, 8);
+    a.uc_json(&["copy", f.to_str().unwrap()]);
+
+    // Two sends run, one waits: its receiver asked but has no bytes.
+    let mut running = Vec::new();
+    assert!(
+        until(Duration::from_secs(20), || {
+            running = others
+                .iter()
+                .enumerate()
+                .filter(|(_, (x, _))| transfer(x)["done"].as_u64().unwrap_or(0) > 0)
+                .map(|(i, _)| i)
+                .collect();
+            running.len() == 2
+        }),
+        "two sends did not start:\n{}",
+        a.log()
+    );
+    let waiting = (0..3).find(|i| !running.contains(i)).unwrap();
+    let w = transfer(&others[waiting].0);
+    assert_eq!(w["phase"], "receiving", "{w}");
+    assert_eq!(w["done"], 0, "{w}");
+
+    // Remove a device whose send runs: the waiting one starts and finishes.
+    let (gone, keep) = (running[0], running[1]);
+    a.uc_json(&["remove", others[gone].1, "--yes"]);
+    for i in [waiting, keep] {
+        let (x, name) = &others[i];
+        assert!(
+            until(Duration::from_secs(30), || files_on(x)
+                .first()
+                .is_some_and(|p| p.ends_with("eight.bin"))),
+            "{name} did not get the files: {}\nA:\n{}\n{name}:\n{}",
+            transfer(x),
+            a.log(),
+            x.log()
+        );
+        assert_eq!(file_hash(&files_on(x)[0]), file_hash(&f));
+    }
+    assert!(until(Duration::from_secs(10), || transfer(&a).is_null()));
+}
+
+/// Review fix 2: a send that fails before its stream opens (here: the test switch makes
+/// every stream open fail, as if the receiver granted no stream) tells the receiver, which
+/// stops waiting instead of showing "Receiving" with 0 bytes for good.
+#[test]
+fn a_send_that_cannot_open_its_stream_tells_the_receiver() {
+    let (a, b) = alpha_bravo(115, &[("UCLIP_TEST_SERVE_REFUSED", "1")], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let f = src.path().join("small.txt");
+    std::fs::write(&f, b"never arrives").unwrap();
+    a.call("debug.copy_files", json!({ "paths": [f] }));
+    assert!(
+        until(Duration::from_secs(10), || has_note(
+            &b,
+            "Alpha stopped sending the files."
+        )),
+        "{}\nA:\n{}\nB:\n{}",
+        b.uc_json(&["status"]),
+        a.log(),
+        b.log()
+    );
+    assert!(until(Duration::from_secs(5), || {
+        transfer(&a).is_null() && transfer(&b).is_null()
+    }));
+    assert!(files_on(&b).is_empty());
+    assert!(received_folders(&b).is_empty());
+    copy_matrix(&[&a, &b], "after a refused send");
+}
+
+/// Review item 10 (spec 2.5): keep-3 never deletes a received folder that was copied again
+/// on this device (the source of its sends), even when 3 newer copies arrive after it.
+#[test]
+fn keep_3_never_deletes_a_received_folder_that_is_copied_again() {
+    let (a, b) = alpha_bravo(117, &[], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let send = |name: &str| {
+        let f = src.path().join(name);
+        std::fs::write(&f, name.as_bytes()).unwrap();
+        a.call("debug.copy_files", json!({ "paths": [f] }));
+        assert!(
+            until(Duration::from_secs(15), || files_on(&b)
+                .first()
+                .is_some_and(|p| p.ends_with(name))),
+            "{name} did not arrive:\nA:\n{}\nB:\n{}",
+            a.log(),
+            b.log()
+        );
+        files_on(&b)[0].clone()
+    };
+    let folder = |p: &Path| {
+        p.parent()
+            .and_then(|d| d.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap()
+    };
+    let first = send("first.txt");
+    let second = send("second.txt");
+    let (f1, f2) = (folder(&first), folder(&second));
+
+    // B copies the first received file again: B now sends it from its files folder.
+    b.uc_json(&["copy", first.to_str().unwrap()]);
+    assert!(
+        until(Duration::from_secs(15), || files_on(&a)
+            .first()
+            .is_some_and(
+                |p| p.ends_with("first.txt") && p.starts_with(a.dir.join("files"))
+            )),
+        "A did not get B's copy:\nA:\n{}\nB:\n{}",
+        a.log(),
+        b.log()
+    );
+
+    // Three newer copies reach B.
+    for name in ["third.txt", "fourth.txt", "fifth.txt"] {
+        send(name);
+    }
+    assert!(
+        until(Duration::from_secs(5), || !received_folders(&b)
+            .contains(&f2)),
+        "the unused older copy goes: {:?}",
+        received_folders(&b)
+    );
+    let left = received_folders(&b);
+    assert!(left.contains(&f1), "the send source was deleted: {left:?}");
+    assert_eq!(left.len(), 4, "{left:?}");
+    assert_eq!(std::fs::read(&first).unwrap(), b"first.txt");
+
+    // Review fix 7: `files.copy` does not look at the disk on the main loop; a path that is
+    // not there fails in the walk, with a note.
+    let missing = src.path().join("not-there.txt");
+    let r = b.call("files.copy", json!({ "paths": [missing] }));
+    assert_eq!(r["preparing"], true, "{r}");
+    assert!(
+        until(Duration::from_secs(10), || has_note(
+            &b,
+            "The files could not be read, so they were not sent."
+        )),
+        "{}",
+        b.uc_json(&["status"])
+    );
+}

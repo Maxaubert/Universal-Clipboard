@@ -139,7 +139,9 @@ receive, files folder), `src/agent/transfers.rs` (jobs, notes, `transfer` view).
   Windows the final rename retries for up to 2 s (Defender, the indexer).
 - **Activity and logs:** counts and sizes only ("3 files, 12 MB"), never a file or folder name.
 - **Test switches:** `UCLIP_TEST_SEND_RATE=<bytes/s>` slows sends so a test can act during
-  one; `UCLIP_TEST_NO_FILES=1` sends no feature bits (a 0.1.x peer). `UCLIP_TEST_LOOPBACK` may
+  one; `UCLIP_TEST_NO_FILES=1` sends no feature bits (a 0.1.x peer);
+  `UCLIP_TEST_SERVE_REFUSED=1` makes every file send fail before its stream opens (the
+  receiver must get a `FilesCancel`). `UCLIP_TEST_LOOPBACK` may
   also be a LAN address (`10.77.0.n` in the network lab), which counts as a physical /24.
 
 ## OS hooks
@@ -180,7 +182,7 @@ receive, files folder), `src/agent/transfers.rs` (jobs, notes, `transfer` view).
 Only test profiles (any `UCLIP_PROFILE` that is not empty) read these; see `profile.rs`.
 `UCLIP_STATE_DIR`, `UCLIP_TEST_KEYSTORE=file`, `UCLIP_TEST_CLIPBOARD=os`,
 `UCLIP_TEST_PASTEBOARD`, `UCLIP_TEST_LOOPBACK`, `UCLIP_TEST_PAIR_ADDRS` (read by `uc`),
-`UCLIP_TEST_FAST`, `UCLIP_TEST_SEND_RATE`, `UCLIP_TEST_NO_FILES`, `UCLIP_TEST_FIREWALL_RULE` (`present` or `absent`: fakes the Windows rule
+`UCLIP_TEST_FAST`, `UCLIP_TEST_SEND_RATE`, `UCLIP_TEST_NO_FILES`, `UCLIP_TEST_SERVE_REFUSED`, `UCLIP_TEST_FIREWALL_RULE` (`present` or `absent`: fakes the Windows rule
 check; without it a test profile needs no rule), `UCLIP_TEST_NO_LAN=1` (only a Hyper-V internal
 switch, no socket: the "no network it can use" path). **A test profile never opens the user's clipboard:** the OS backend only
 inside `tools/winhost` (Windows), on a named pasteboard (macOS), or on a display the test
@@ -192,7 +194,7 @@ started (Linux, Docker). Elsewhere it refuses, and two tests check that.
 |---|---|
 | `uc-cli` unit: every settings-window action maps to a `uc` command; every IPC call is reachable; `--json` everywhere; no send/get | PC, Mac, WSL |
 | `agents.rs`: 3 agents paired through the CLI (third from the second device), copy matrix, rename, pause and resume, settings, remove (the removed device learns it), leave, no content in logs or report; restart and reconnect, newest clip after reconnect, single agent; wrong code; start at login on by default in the sandbox and kept off after a restart; a missing firewall rule is a note, not a setup step | PC, Mac, WSL |
-| `agents.rs`, file sync (2026-11-16): `uc copy` of a folder and a file; an automatic folder tree with nested files, an empty folder, the exec bit (macOS, Linux) and a zip; the over-limit note; `uc copy` of a 300 MB file; a newer copy on either side cancels; `uc transfer stop` on either side; keep-3; Sync files off on the receiver; the single-image companion (and none with Sync images off); a 0.1.x peer (`UCLIP_TEST_NO_FILES`) stays connected and the sender says it needs an update; no file names in logs | PC |
+| `agents.rs`, file sync (2026-11-16): `uc copy` of a folder and a file; an automatic folder tree with nested files, an empty folder, the exec bit (macOS, Linux) and a zip; the over-limit note; `uc copy` of a 300 MB file; a newer copy on either side cancels; `uc transfer stop` on either side; keep-3; Sync files off on the receiver; the single-image companion (and none with Sync images off); a 0.1.x peer (`UCLIP_TEST_NO_FILES`) stays connected and the sender says it needs an update; no file names in logs. Review fixes (2026-11-16): removing a receiver whose send runs starts the queued send (4 agents); a send that cannot open its stream (`UCLIP_TEST_SERVE_REFUSED`) tells the receiver; keep-3 never deletes a received folder copied again (a send source); `files.copy` with a missing path fails in the walk with a note | PC |
 | `netns_files.rs` (network lab rows 11 and 12): 200 MiB over lossy Wi-Fi; receiver asleep 40 s mid-transfer, asked again after wake | WSL (`tools/netsim/run-wsl.sh`) |
 | `winhost.rs`: one agent on the real Windows clipboard in a private window station, paired with a fake-clipboard agent, copy matrix both ways | PC |
 | `macpb.rs`: one agent on the real macOS backend with a named pasteboard, copy matrix | Mac over ssh, no prompt, nothing on screen |

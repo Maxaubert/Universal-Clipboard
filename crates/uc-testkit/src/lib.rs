@@ -636,7 +636,7 @@ impl FakeNet {
 
     /// The manifest of a walk over `paths`: top-level names made unique, as the agent does.
     fn walk_manifest(&self, paths: &[PathBuf]) -> Result<Manifest, uc_core::ManifestError> {
-        let mut taken = BTreeSet::new();
+        let mut taken = files::Names::new();
         let mut entries = Vec::new();
         for p in paths {
             let tree = &self.fs[p];
@@ -667,6 +667,24 @@ impl FakeNet {
             self.receive(s);
         }
         let ev = self.devices[s.from].engine.serve_done(to_id, s.id);
+        self.absorb(s.from, ev);
+    }
+
+    /// The `k`-th open data stream breaks while the link is still up (for now): the receiver
+    /// reports an interrupted fetch first, the sender ends its send. A real agent often sees
+    /// this before the link's `Down`.
+    pub fn break_stream(&mut self, k: usize) {
+        let s = self.streams.remove(k);
+        self.report_broken(vec![s]);
+    }
+
+    /// The `k`-th send fails before its stream opens (no stream credit, no data link): the
+    /// sender's agent reports [`Engine::serve_failed`]; the receiver never sees a stream.
+    pub fn fail_send(&mut self, k: usize) {
+        let s = self.streams.remove(k);
+        let ev = self.devices[s.from]
+            .engine
+            .serve_failed(device_id(s.to), s.id);
         self.absorb(s.from, ev);
     }
 

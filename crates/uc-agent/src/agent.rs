@@ -450,6 +450,7 @@ impl Core {
         files.send_rate = profile
             .test_env("UCLIP_TEST_SEND_RATE")
             .and_then(|v| v.parse().ok());
+        files.serve_refused = profile.test_env("UCLIP_TEST_SERVE_REFUSED").as_deref() == Some("1");
         let mut core = Core {
             profile,
             dir,
@@ -1432,12 +1433,14 @@ impl Core {
             .filter(|(d, p)| p.gate.data_allowed() && !members.contains(&d.0))
             .map(|(d, _)| *d)
             .collect();
+        let mut engine_evs = Vec::new();
         for d in &gone {
             if let Some(p) = self.peers.get(d) {
                 p.send(&Message::Removed);
             }
-            // Nothing to hand on: the removed peer's link closes, which ends its transfers.
-            let _ = self.engine.disconnect(*d);
+            // The removed peer's link closes, which ends its transfers. The engine may
+            // start a queued send for another peer here, so its events are handled below.
+            engine_evs.extend(self.engine.disconnect(*d));
             self.closing.push((Instant::now() + FLUSH, *d));
         }
         for p in self.peers.values_mut() {
@@ -1469,6 +1472,7 @@ impl Core {
         for d in gone {
             self.files_peer_gone(d);
         }
+        self.on_engine(engine_evs);
         self.emit("devices", json!({}));
         self.save();
     }

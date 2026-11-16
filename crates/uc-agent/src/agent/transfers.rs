@@ -9,7 +9,7 @@
 //! Notes and logs hold counts and sizes only, never a file name or a path.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -130,6 +130,9 @@ pub(super) struct FileState {
     /// Test profiles: sends go no faster than this many bytes per second
     /// (`UCLIP_TEST_SEND_RATE`), so a test can act while a transfer runs.
     pub(super) send_rate: Option<u64>,
+    /// Test profiles: every send fails as if the receiver granted no stream
+    /// (`UCLIP_TEST_SERVE_REFUSED=1`).
+    pub(super) serve_refused: bool,
 }
 
 impl FileState {
@@ -152,6 +155,7 @@ impl FileState {
                 shown: None,
                 dirty: false,
                 send_rate: None,
+                serve_refused: false,
             },
             rx,
         )
@@ -456,7 +460,9 @@ impl Core {
             .filter(|l| l.id == id)
             .map(|l| l.prepared.clone());
         let (Some(link), Some(copy)) = (link, copy) else {
-            let evs = self.engine.serve_done(peer, id);
+            // No stream will come: tell the receiver, or it waits for one forever.
+            tracing::info!(peer = %short_id(&peer.0), "send not started (no data link or copy)");
+            let evs = self.engine.serve_failed(peer, id);
             self.on_engine(evs);
             return;
         };
@@ -477,8 +483,13 @@ impl Core {
         self.files.dirty = true;
         let tx = self.files.tx.clone();
         let rate = self.files.send_rate;
+        let refused = self.files.serve_refused;
         tokio::spawn(async move {
-            let result = files::serve(link, id, copy, progress, rx, rate).await;
+            let result = if refused {
+                Err(SendError::Open(uc_net::StreamError::Refused))
+            } else {
+                files::serve(link, id, copy, progress, rx, rate).await
+            };
             let _ = tx.send(Xfer::Served {
                 peer,
                 id,
@@ -520,6 +531,13 @@ impl Core {
             Err(SendError::Stream(e)) => {
                 tracing::info!(peer = %short, error = %e, "send ended");
                 None
+            }
+            Err(SendError::Open(e)) => {
+                // The receiver never got a stream: it must hear that none comes.
+                tracing::info!(peer = %short, error = %e, "send not started");
+                let evs = self.engine.serve_failed(peer, id);
+                self.on_engine(evs);
+                return;
             }
         };
         let evs = self.engine.serve_done(peer, id);
@@ -628,12 +646,14 @@ impl Core {
             count: offer.count,
             dir: self.files.dir.clone(),
             image_max: s.sync_images.then(|| u64::from(s.image_limit_mb) << 20),
+            attempt: job.serial,
         };
         let (cancel, rx) = watch::channel(0u32);
         let (serial, progress) = (job.serial, job.progress.clone());
         if let Some(f) = &mut self.files.fetch {
             f.cancel = Some(cancel);
         }
+        self.engine.stream_started(peer, id);
         self.files.dirty = true;
         tracing::info!(peer = %short_id(&peer.0), "receiving files");
         let tx = self.files.tx.clone();
@@ -645,9 +665,11 @@ impl Core {
 
     fn on_received(&mut self, serial: u64, result: Result<Received, RecvError>) {
         let Some(job) = self.files.fetch.take_if(|f| f.serial == serial) else {
-            // Cancelled meanwhile: a finished folder that nobody wants goes.
+            // Cancelled meanwhile: a finished folder that nobody wants goes. Every attempt
+            // for one copy ends in the same folder, so not while it is the current copy's or
+            // a newer attempt for the same copy runs (that one replaces it when it ends).
             if let Ok(r) = result {
-                remove_later(r.folder);
+                self.remove_stale(r.folder);
             }
             return;
         };
@@ -675,12 +697,14 @@ impl Core {
                 };
                 let evs = self.engine.transfer_failed(id, failure);
                 self.on_engine(evs);
+                // A note the engine had no failure for must not show on a later one.
+                self.files.fail_note = None;
                 return;
             }
         };
         if !self.engine.stream_allowed(peer, id) {
             // A newer copy came while the last bytes landed.
-            remove_later(r.folder);
+            self.remove_stale(r.folder);
             return;
         }
         let seq = match uc_clip::Clipboard::write_files(&mut self.clip, &r.top, r.image.as_deref())
@@ -688,12 +712,13 @@ impl Core {
             Ok(seq) => seq,
             Err(e) => {
                 tracing::warn!(error = %e, "received files could not go on the clipboard");
-                remove_later(r.folder);
+                self.remove_stale(r.folder);
                 self.files.fail_note = Some("The files could not be put on the clipboard.".into());
                 let evs = self
                     .engine
                     .transfer_failed(id, TransferFailure::WriteFailed);
                 self.on_engine(evs);
+                self.files.fail_note = None;
                 return;
             }
         };
@@ -708,15 +733,11 @@ impl Core {
 
     /// Keep the last [`files::KEEP`] received copies, and every folder still in use.
     fn clean_files_folder(&self) {
-        let mut keep: HashSet<String> = HashSet::new();
-        keep.extend(self.files.current_folder.clone());
-        if let Some(l) = &self.files.local {
-            keep.extend(
-                l.roots
-                    .iter()
-                    .filter_map(|p| files::folder_of(&self.files.dir, p)),
-            );
-        }
+        let keep = in_use(
+            &self.files.dir,
+            self.files.current_folder.as_deref(),
+            self.files.local.as_ref().map(|l| l.roots.as_slice()),
+        );
         let dir = self.files.dir.clone();
         tokio::task::spawn_blocking(move || {
             let n = files::keep_last(&dir, &keep);
@@ -724,6 +745,20 @@ impl Core {
                 tracing::info!(folders = n, "old received files deleted");
             }
         });
+    }
+
+    /// Delete the folder of a receive whose result nobody wants, unless it is in use: the
+    /// current copy's folder (the same copy received again), or the folder a running fetch of
+    /// the same copy ends in (it replaces the folder itself when it ends).
+    fn remove_stale(&self, folder: PathBuf) {
+        let running = self.files.fetch.as_ref().map(|f| f.id.short());
+        if stale_removable(
+            &folder,
+            self.files.current_folder.as_deref(),
+            running.as_deref(),
+        ) {
+            remove_later(folder);
+        }
     }
 
     fn fetch_failed(&mut self, id: FilesId, peer: DeviceId, failure: TransferFailure) {
@@ -866,12 +901,8 @@ impl Core {
                     format!("\"{s}\" is not a full path."),
                 ));
             }
-            if std::fs::symlink_metadata(&path).is_err() {
-                return Err(IpcError::new(
-                    "not-found",
-                    format!("There is no file or folder \"{s}\"."),
-                ));
-            }
+            // No file system check here: on a hung network share it would block the main
+            // loop. `uc` checks the paths first; a missing one fails the walk (with a note).
             paths.push(path);
         }
         let n = paths.len();
@@ -1015,6 +1046,29 @@ impl Core {
     }
 }
 
+/// The folders of the files folder that keep-3 must never delete (spec 2.5): the current
+/// copy's folder, and every folder that holds an item of the local copy (a received copy
+/// copied again is the source of its sends).
+fn in_use(dir: &Path, current: Option<&str>, roots: Option<&[PathBuf]>) -> HashSet<String> {
+    let mut keep: HashSet<String> = current.map(str::to_owned).into_iter().collect();
+    keep.extend(
+        roots
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|p| files::folder_of(dir, p)),
+    );
+    keep
+}
+
+/// May the finished folder of an unwanted receive go? Not when it is the current copy's
+/// folder, or the folder a running fetch (of the same copy) ends in.
+fn stale_removable(folder: &Path, current: Option<&str>, running: Option<&str>) -> bool {
+    let Some(name) = folder.file_name().map(|n| n.to_string_lossy()) else {
+        return false;
+    };
+    current != Some(&*name) && running != Some(&*name)
+}
+
 /// Delete a folder off the main loop.
 fn remove_later(folder: PathBuf) {
     tokio::task::spawn_blocking(move || {
@@ -1052,5 +1106,51 @@ mod tests {
                 .contains("Copy it again")
         );
         assert_eq!(prep_note(PrepError::Cancelled), None);
+    }
+
+    /// Review fix 5: an old attempt that finished after it was replaced never deletes the
+    /// folder that the current copy or a newer attempt of the same copy uses.
+    #[test]
+    fn a_stale_receive_never_deletes_a_folder_in_use() {
+        let f = Path::new("files").join("ab12cd34");
+        assert!(stale_removable(&f, None, None));
+        assert!(stale_removable(&f, Some("ffff0000"), Some("eeee1111")));
+        assert!(!stale_removable(&f, Some("ab12cd34"), None), "current copy");
+        assert!(
+            !stale_removable(&f, None, Some("ab12cd34")),
+            "newer attempt"
+        );
+    }
+
+    /// Review item 10 (spec 2.5): keep-3 never deletes the current copy's folder or a
+    /// received folder that is copied again (a send source), even when both are older than
+    /// the newest 3.
+    #[test]
+    fn keep_3_never_deletes_the_current_folder_or_a_send_source() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        for n in ["src1", "cur1", "new1", "new2", "new3"] {
+            std::fs::create_dir(dir.join(n)).unwrap();
+            std::fs::write(dir.join(n).join("f.txt"), n).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        let roots = [dir.join("src1").join("f.txt")];
+        let keep = in_use(dir, Some("cur1"), Some(&roots));
+        assert_eq!(
+            keep,
+            ["cur1".to_string(), "src1".to_string()]
+                .into_iter()
+                .collect()
+        );
+        assert_eq!(files::keep_last(dir, &keep), 0);
+        for n in ["src1", "cur1", "new1", "new2", "new3"] {
+            assert!(dir.join(n).is_dir(), "{n} was deleted");
+        }
+        // Once neither is in use, the oldest two go.
+        assert_eq!(files::keep_last(dir, &in_use(dir, None, None)), 2);
+        assert!(!dir.join("src1").exists() && !dir.join("cur1").exists());
+        // An item outside the files folder protects nothing.
+        let outside = [std::env::temp_dir().join("elsewhere")];
+        assert!(in_use(dir, None, Some(&outside)).is_empty());
     }
 }

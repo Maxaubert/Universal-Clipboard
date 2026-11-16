@@ -13,7 +13,7 @@
 //!   its children. A folder has size 0, a zero hash and no exec bit.
 //! - The encoded manifest is at most [`MANIFEST_MAX`] bytes.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use unicode_normalization::{UnicodeNormalization, is_nfc};
@@ -359,10 +359,8 @@ impl Manifest {
     /// Names are made safe for `rules` and duplicates within a folder get ` (2)`, ` (3)`, ...
     pub fn local_paths(&self, rules: LocalRules) -> Vec<String> {
         // Local path of each folder, and the names used in each local folder.
-        let mut folder_map: std::collections::HashMap<&str, String> =
-            std::collections::HashMap::new();
-        let mut used: std::collections::HashMap<String, BTreeSet<String>> =
-            std::collections::HashMap::new();
+        let mut folder_map: HashMap<&str, String> = HashMap::new();
+        let mut used: HashMap<String, Names> = HashMap::new();
         let mut out = Vec::with_capacity(self.entries.len());
         for e in &self.entries {
             let (parent, name) = match e.path.rsplit_once('/') {
@@ -414,10 +412,53 @@ impl LocalRules {
     }
 }
 
-const WINDOWS_RESERVED: [&str; 22] = [
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+/// Reserved Windows device names (compared without case, on the part before the first dot
+/// with trailing spaces and dots trimmed). The superscript digits count as digits there.
+const WINDOWS_RESERVED: [&str; 32] = [
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "CONIN$",
+    "CONOUT$",
+    "COM0",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "COM\u{b9}",
+    "COM\u{b2}",
+    "COM\u{b3}",
+    "LPT0",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+    "LPT\u{b9}",
+    "LPT\u{b2}",
+    "LPT\u{b3}",
 ];
+
+/// If `name` (one path part) is a reserved Windows device name, with or without an
+/// extension: the length of its reserved stem.
+fn windows_reserved(name: &str) -> Option<usize> {
+    let stem = &name[..name.find('.').unwrap_or(name.len())];
+    let stem = stem.trim_end_matches(['.', ' ']);
+    WINDOWS_RESERVED
+        .iter()
+        .any(|r| r.eq_ignore_ascii_case(stem))
+        .then_some(stem.len())
+}
 
 /// Make one name safe for Windows (see [`LocalRules::windows`]).
 pub fn windows_name(name: &str) -> String {
@@ -437,27 +478,36 @@ pub fn windows_name(name: &str) -> String {
     } else {
         trimmed.to_owned()
     };
-    // "CON", "con.txt" and "Com1.tar.gz" are all reserved: the part before the first dot.
-    let stem_len = s.find('.').unwrap_or(s.len());
-    if WINDOWS_RESERVED
-        .iter()
-        .any(|r| r.eq_ignore_ascii_case(&s[..stem_len]))
-    {
+    // "CON", "con.txt", "CON .txt" and "Com1.tar.gz" are all reserved: the part before the
+    // first dot, without trailing spaces and dots.
+    if let Some(stem_len) = windows_reserved(&s) {
         s.insert(stem_len, '_');
     }
     s
 }
 
+/// The names already used in one folder, for [`unique_name`].
+#[derive(Clone, Debug, Default)]
+pub struct Names {
+    /// Used names (folded when `fold_case`).
+    taken: HashSet<String>,
+    /// The next number to try for each (stem, extension), so that many equal names cost
+    /// linear time, not quadratic (a hostile manifest must not tie up a thread).
+    next: HashMap<(String, String), u64>,
+}
+
+impl Names {
+    /// No names used yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 /// `name`, or `name (2)`, `name (3)`, ... (before the extension for a file), whichever is not
-/// in `taken` yet. The chosen name is added to `taken`. With `fold_case`, names that differ
+/// in `names` yet. The chosen name is added to `names`. With `fold_case`, names that differ
 /// only in case count as the same. The sender uses it for top-level names, the receiver for
 /// every folder.
-pub fn unique_name(
-    name: &str,
-    is_file: bool,
-    fold_case: bool,
-    taken: &mut BTreeSet<String>,
-) -> String {
+pub fn unique_name(name: &str, is_file: bool, fold_case: bool, names: &mut Names) -> String {
     let key = |s: &str| {
         if fold_case {
             s.to_lowercase()
@@ -465,20 +515,23 @@ pub fn unique_name(
             s.to_owned()
         }
     };
-    if taken.insert(key(name)) {
+    if names.taken.insert(key(name)) {
         return name.to_owned();
     }
     let (stem, ext) = match name.rfind('.') {
         Some(i) if is_file && i > 0 => (&name[..i], &name[i..]),
         _ => (name, ""),
     };
-    for n in 2u64.. {
+    // Numbers below the counter are all used (nothing is ever removed), so the search starts
+    // there. Each used name is passed over at most once per (stem, extension).
+    let n = names.next.entry((key(stem), key(ext))).or_insert(2);
+    loop {
         let candidate = format!("{stem} ({n}){ext}");
-        if taken.insert(key(&candidate)) {
+        *n += 1;
+        if names.taken.insert(key(&candidate)) {
             return candidate;
         }
     }
-    unreachable!("the counter never runs out")
 }
 
 /// The ID of a file copy: BLAKE3 over `uclip/files-id/1`, the manifest hash and the stamp.
@@ -727,11 +780,25 @@ mod tests {
         assert_eq!(windows_name("Com1.tar.gz"), "Com1_.tar.gz");
         assert_eq!(windows_name("CONSOLE.txt"), "CONSOLE.txt");
         assert_eq!(windows_name("back\\slash"), "back_slash");
+        // The reserved stem is the part before the first dot, with trailing spaces and dots
+        // trimmed, in any case; CONIN$, CONOUT$, COM0, LPT0 and the superscript digits too.
+        assert_eq!(windows_name("CON .txt"), "CON_ .txt");
+        assert_eq!(windows_name("con.tar.gz"), "con_.tar.gz");
+        assert_eq!(windows_name("NUL.."), "NUL_");
+        assert_eq!(windows_name("CONIN$"), "CONIN$_");
+        assert_eq!(windows_name("conout$.log"), "conout$_.log");
+        assert_eq!(windows_name("COM\u{b9}.txt"), "COM\u{b9}_.txt");
+        assert_eq!(windows_name("lpt\u{b3}"), "lpt\u{b3}_");
+        assert_eq!(windows_name("COM0"), "COM0_");
+        assert_eq!(windows_name("Lpt0.x"), "Lpt0_.x");
+        assert_eq!(windows_name("PRN  .a.b"), "PRN_  .a.b");
+        assert_eq!(windows_name("COM10.txt"), "COM10.txt");
+        assert_eq!(windows_name("CONIN.txt"), "CONIN.txt");
     }
 
     #[test]
     fn unique_names_get_a_number() {
-        let mut taken = BTreeSet::new();
+        let mut taken = Names::new();
         assert_eq!(unique_name("a.txt", true, true, &mut taken), "a.txt");
         assert_eq!(unique_name("A.TXT", true, true, &mut taken), "A (2).TXT");
         assert_eq!(unique_name("a.txt", true, true, &mut taken), "a (3).txt");
@@ -742,9 +809,44 @@ mod tests {
             unique_name(".bashrc", true, true, &mut taken),
             ".bashrc (2)"
         );
-        let mut cs = BTreeSet::new();
+        let mut cs = Names::new();
         assert_eq!(unique_name("a", true, false, &mut cs), "a");
         assert_eq!(unique_name("A", true, false, &mut cs), "A");
+        // A name that is already used literally is passed over.
+        let mut lit = Names::new();
+        for n in ["x.txt", "x (2).txt", "x (4).txt"] {
+            assert_eq!(unique_name(n, true, false, &mut lit), n);
+        }
+        assert_eq!(unique_name("x.txt", true, false, &mut lit), "x (3).txt");
+        assert_eq!(unique_name("x.txt", true, false, &mut lit), "x (5).txt");
+    }
+
+    /// A hostile manifest: 50,000 names in one folder that all map to the same Windows name.
+    /// Picking unique names must take linear time, not quadratic (minutes before the fix).
+    #[test]
+    fn many_equal_names_are_numbered_quickly() {
+        const BAD: [char; 7] = ['<', '>', ':', '"', '|', '?', '*'];
+        let mut entries = vec![Entry::folder("d")];
+        for i in 0..50_000usize {
+            let mut name = String::from("d/f");
+            let mut k = i;
+            for _ in 0..6 {
+                name.push(BAD[k % BAD.len()]);
+                k /= BAD.len();
+            }
+            entries.push(Entry::file(name, 0, [0; 32], false));
+        }
+        let m = Manifest::new(entries).unwrap();
+        let start = std::time::Instant::now();
+        let local = m.local_paths(LocalRules {
+            windows: true,
+            fold_case: true,
+        });
+        let took = start.elapsed();
+        let unique: HashSet<&String> = local.iter().collect();
+        assert_eq!(unique.len(), local.len());
+        assert!(local.contains(&"d/f______ (50000)".to_string()));
+        assert!(took < std::time::Duration::from_secs(10), "took {took:?}");
     }
 
     #[test]
@@ -833,7 +935,7 @@ mod tests {
 
         #[test]
         fn local_paths_are_safe_and_unique(names in proptest::collection::vec("[a-zA-Z.:<> ?*]{1,6}", 1..12)) {
-            let mut taken = BTreeSet::new();
+            let mut taken = Names::new();
             let entries: Vec<Entry> = names
                 .iter()
                 .filter(|n| is_safe_path(n))
@@ -844,7 +946,7 @@ mod tests {
             let m = Manifest::new(entries).unwrap();
             let rules = LocalRules { windows: true, fold_case: true };
             let local = m.local_paths(rules);
-            let folded: BTreeSet<String> = local.iter().map(|s| s.to_lowercase()).collect();
+            let folded: HashSet<String> = local.iter().map(|s| s.to_lowercase()).collect();
             prop_assert_eq!(folded.len(), local.len());
             for p in &local {
                 prop_assert!(is_safe_path(p));
