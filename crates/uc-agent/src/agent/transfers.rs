@@ -39,11 +39,11 @@ pub(super) enum Xfer {
         generation: u64,
         result: Result<Prepared, PrepError>,
     },
-    /// A data stream came in and its head was read (`None`: no valid head in time).
+    /// A data stream came in and its head was read (or failed: broke, timed out, bad head).
     Head {
         peer: DeviceId,
         link: u64,
-        head: Option<(FilesId, usize)>,
+        head: Result<(FilesId, usize), RecvError>,
         stream: RecvStream,
     },
     /// A send ended.
@@ -113,7 +113,8 @@ pub(super) struct FileState {
     sends: HashMap<(DeviceId, FilesId), SendJob>,
     fetch: Option<FetchJob>,
     serial: u64,
-    /// The received copy that is the current copy: its folder is kept.
+    /// The folder name (`<short id>-<attempt>`) of the received copy that is the current copy:
+    /// it is kept.
     current_folder: Option<String>,
     /// The last received copy had a path too long for Windows Explorer.
     long_paths: bool,
@@ -618,11 +619,19 @@ impl Core {
         &mut self,
         peer: DeviceId,
         link: u64,
-        head: Option<(FilesId, usize)>,
+        head: Result<(FilesId, usize), RecvError>,
         stream: RecvStream,
     ) {
         // Only the stream we asked this peer for, on its current member link (spec 3).
         let current_link = self.peers.get(&peer).is_some_and(|p| p.link.id == link);
+        let head = match head {
+            Ok(h) => Some(h),
+            Err(e) => {
+                stream.stop(STREAM_ABORTED);
+                self.head_failed(peer, current_link, e);
+                return;
+            }
+        };
         let job = self.files.fetch.as_ref().filter(|f| {
             f.peer == peer
                 && f.cancel.is_none()
@@ -663,11 +672,49 @@ impl Core {
         });
     }
 
+    /// The head of a data stream could not be read. If the stream may be the one the
+    /// outstanding `FilesWant` to `peer` asked for (that peer, its current link, no stream
+    /// yet), the engine hears it as a failed fetch, so the retry rules apply and the fetch never
+    /// stays wanted for good. A stream reset as superseded is an older copy's: ignored.
+    fn head_failed(&mut self, peer: DeviceId, current_link: bool, e: RecvError) {
+        let id = self.files.fetch.as_ref().and_then(|f| {
+            (f.peer == peer
+                && f.cancel.is_none()
+                && current_link
+                && self.engine.stream_allowed(peer, f.id))
+            .then_some(f.id)
+        });
+        let (Some(id), Some(failure)) = (id, failure_of(e, true)) else {
+            tracing::debug!(peer = %short_id(&peer.0), error = ?e, "data stream without a head: stopped");
+            return;
+        };
+        tracing::info!(peer = %short_id(&peer.0), error = ?e, "data stream head failed");
+        self.drop_fetch();
+        self.report_recv_failure(id, peer, failure);
+    }
+
+    /// Tell the engine a fetch failed; `stopped`: the sender reset the stream, and the note
+    /// says so.
+    fn report_recv_failure(
+        &mut self,
+        id: FilesId,
+        peer: DeviceId,
+        (failure, stopped): (TransferFailure, bool),
+    ) {
+        if stopped {
+            let name = self.name_of(&peer);
+            self.files.fail_note = Some(format!("{name} stopped sending the files."));
+        }
+        let evs = self.engine.transfer_failed(id, failure);
+        self.on_engine(evs);
+        // A note the engine had no failure for must not show on a later one.
+        self.files.fail_note = None;
+    }
+
     fn on_received(&mut self, serial: u64, result: Result<Received, RecvError>) {
         let Some(job) = self.files.fetch.take_if(|f| f.serial == serial) else {
-            // Cancelled meanwhile: a finished folder that nobody wants goes. Every attempt
-            // for one copy ends in the same folder, so not while it is the current copy's or
-            // a newer attempt for the same copy runs (that one replaces it when it ends).
+            // Cancelled meanwhile: a finished folder that nobody wants goes. Each attempt has
+            // its own folder, so this never touches a newer attempt's or the current copy's.
             if let Ok(r) = result {
                 self.remove_stale(r.folder);
             }
@@ -679,26 +726,9 @@ impl Core {
             Ok(r) => r,
             Err(e) => {
                 tracing::info!(peer = %short_id(&peer.0), error = ?e, "receive ended");
-                let failure = match e {
-                    RecvError::Cancelled => return,
-                    RecvError::BadData => TransferFailure::BadData,
-                    RecvError::NoSpace => TransferFailure::NoSpace,
-                    RecvError::WriteFailed => TransferFailure::WriteFailed,
-                    RecvError::Interrupted => TransferFailure::Interrupted,
-                    // A sender that moved on: asking again gets its cancel, or the new copy.
-                    RecvError::Reset(c) if c == u32::from(uc_core::files::CODE_SUPERSEDED) => {
-                        TransferFailure::Interrupted
-                    }
-                    RecvError::Reset(_) => {
-                        let name = self.name_of(&peer);
-                        self.files.fail_note = Some(format!("{name} stopped sending the files."));
-                        TransferFailure::BadData
-                    }
-                };
-                let evs = self.engine.transfer_failed(id, failure);
-                self.on_engine(evs);
-                // A note the engine had no failure for must not show on a later one.
-                self.files.fail_note = None;
+                if let Some(f) = failure_of(e, false) {
+                    self.report_recv_failure(id, peer, f);
+                }
                 return;
             }
         };
@@ -722,8 +752,10 @@ impl Core {
                 return;
             }
         };
-        let short = id.short();
-        self.files.current_folder = Some(short);
+        self.files.current_folder = r
+            .folder
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned());
         self.files.long_paths = r.long_paths;
         let evs = self.engine.files_applied(id, &r.manifest, seq);
         self.on_engine(evs);
@@ -747,16 +779,16 @@ impl Core {
         });
     }
 
-    /// Delete the folder of a receive whose result nobody wants, unless it is in use: the
-    /// current copy's folder (the same copy received again), or the folder a running fetch of
-    /// the same copy ends in (it replaces the folder itself when it ends).
+    /// Delete the folder of a receive whose result nobody wants, unless it is in use (the
+    /// current copy's folder or a send source; with one folder per attempt neither should be
+    /// the case, but keep-3's rule holds here too).
     fn remove_stale(&self, folder: PathBuf) {
-        let running = self.files.fetch.as_ref().map(|f| f.id.short());
-        if stale_removable(
-            &folder,
+        let keep = in_use(
+            &self.files.dir,
             self.files.current_folder.as_deref(),
-            running.as_deref(),
-        ) {
+            self.files.local.as_ref().map(|l| l.roots.as_slice()),
+        );
+        if stale_removable(&folder, &keep) {
             remove_later(folder);
         }
     }
@@ -824,6 +856,10 @@ impl Core {
             CancelReason::Stopped => "Stopped.".into(),
             CancelReason::Paused => "Sync was paused.".into(),
             CancelReason::FilesOff => "Files are not synced (setting is off).".into(),
+            // The sender could not open the stream (serve_failed): not a user's Stop.
+            CancelReason::ByPeer(uc_core::files::CODE_FAILED) => {
+                format!("{name} could not send the files. Copy them again.")
+            }
             CancelReason::ByPeer(_) => format!("{name} stopped sending the files."),
         };
         self.activity(
@@ -1060,13 +1096,33 @@ fn in_use(dir: &Path, current: Option<&str>, roots: Option<&[PathBuf]>) -> HashS
     keep
 }
 
-/// May the finished folder of an unwanted receive go? Not when it is the current copy's
-/// folder, or the folder a running fetch (of the same copy) ends in.
-fn stale_removable(folder: &Path, current: Option<&str>, running: Option<&str>) -> bool {
-    let Some(name) = folder.file_name().map(|n| n.to_string_lossy()) else {
-        return false;
-    };
-    current != Some(&*name) && running != Some(&*name)
+/// What a receive error (or, with `head`, a failed stream head) means for the engine: the
+/// failure, and whether the sender stopped the stream (the note then says so). `None`: nothing
+/// to report: cancelled here, or a head reset as superseded (an older copy's stream, not the
+/// one asked for).
+fn failure_of(e: RecvError, head: bool) -> Option<(TransferFailure, bool)> {
+    Some(match e {
+        RecvError::Cancelled => return None,
+        RecvError::BadData => (TransferFailure::BadData, false),
+        RecvError::NoSpace => (TransferFailure::NoSpace, false),
+        RecvError::WriteFailed => (TransferFailure::WriteFailed, false),
+        RecvError::Interrupted => (TransferFailure::Interrupted, false),
+        // A sender that moved on: asking again gets its cancel, or the new copy.
+        RecvError::Reset(c) if c == u32::from(uc_core::files::CODE_SUPERSEDED) => {
+            if head {
+                return None;
+            }
+            (TransferFailure::Interrupted, false)
+        }
+        RecvError::Reset(_) => (TransferFailure::BadData, true),
+    })
+}
+
+/// May the finished folder of an unwanted receive go? Not when it is in use (see [`in_use`]).
+fn stale_removable(folder: &Path, in_use: &HashSet<String>) -> bool {
+    folder
+        .file_name()
+        .is_some_and(|n| !in_use.contains(&*n.to_string_lossy()))
 }
 
 /// Delete a folder off the main loop.
@@ -1108,18 +1164,42 @@ mod tests {
         assert_eq!(prep_note(PrepError::Cancelled), None);
     }
 
-    /// Review fix 5: an old attempt that finished after it was replaced never deletes the
-    /// folder that the current copy or a newer attempt of the same copy uses.
+    /// Review fix 5: an old attempt that finished after it was replaced never deletes a
+    /// folder in use (the current copy's, a send source).
     #[test]
     fn a_stale_receive_never_deletes_a_folder_in_use() {
-        let f = Path::new("files").join("ab12cd34");
-        assert!(stale_removable(&f, None, None));
-        assert!(stale_removable(&f, Some("ffff0000"), Some("eeee1111")));
-        assert!(!stale_removable(&f, Some("ab12cd34"), None), "current copy");
-        assert!(
-            !stale_removable(&f, None, Some("ab12cd34")),
-            "newer attempt"
+        let f = Path::new("files").join("ab12cd34-1");
+        let set = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<HashSet<_>>();
+        assert!(stale_removable(&f, &set(&[])));
+        assert!(stale_removable(&f, &set(&["ab12cd34-2", "ffff0000-3"])));
+        assert!(!stale_removable(&f, &set(&["ab12cd34-1"])), "current copy");
+    }
+
+    /// A data stream whose head fails is reported to the engine with the reason the retry
+    /// rules need: a broken or silent stream is asked again, a bad head ends the fetch, a
+    /// sender's stop says so, and an older copy's (superseded) stream is ignored.
+    #[test]
+    fn a_failed_stream_head_maps_to_an_engine_failure() {
+        let sup = u32::from(uc_core::files::CODE_SUPERSEDED);
+        let ab = u32::from(uc_core::files::CODE_ABORTED);
+        assert_eq!(
+            failure_of(RecvError::Interrupted, true),
+            Some((TransferFailure::Interrupted, false))
         );
+        assert_eq!(
+            failure_of(RecvError::BadData, true),
+            Some((TransferFailure::BadData, false))
+        );
+        assert_eq!(
+            failure_of(RecvError::Reset(ab), true),
+            Some((TransferFailure::BadData, true))
+        );
+        assert_eq!(failure_of(RecvError::Reset(sup), true), None);
+        assert_eq!(
+            failure_of(RecvError::Reset(sup), false),
+            Some((TransferFailure::Interrupted, false))
+        );
+        assert_eq!(failure_of(RecvError::Cancelled, false), None);
     }
 
     /// Review item 10 (spec 2.5): keep-3 never deletes the current copy's folder or a

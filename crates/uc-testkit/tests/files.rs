@@ -730,7 +730,7 @@ fn a_send_that_fails_before_its_stream_tells_the_receiver() {
         == Event::CancelTransfer {
             id,
             peer: device_id(0),
-            reason: CancelReason::ByPeer(CODE_ABORTED),
+            reason: CancelReason::ByPeer(files::CODE_FAILED),
             sending: false
         }));
     assert_eq!(net.devices[1].engine.fetching(), None);

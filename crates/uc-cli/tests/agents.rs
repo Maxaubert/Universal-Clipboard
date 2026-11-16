@@ -1102,7 +1102,7 @@ fn a_send_that_cannot_open_its_stream_tells_the_receiver() {
     assert!(
         until(Duration::from_secs(10), || has_note(
             &b,
-            "Alpha stopped sending the files."
+            "Alpha could not send the files. Copy them again."
         )),
         "{}\nA:\n{}\nB:\n{}",
         b.uc_json(&["status"]),

@@ -9,9 +9,13 @@
 //! Nothing here logs or returns a file name: notes and logs hold counts and sizes only.
 //!
 //! The files folder ([`crate::profile::Profile::files_dir`]) holds one folder per received
-//! copy, named by the copy's short ID. A copy is written to `<id>-<attempt>.part` first and renamed when
-//! every file is in and checked. The last [`KEEP`] copies are kept; at agent start `.part`
-//! leftovers and folders older than [`MAX_AGE`] go.
+//! copy attempt, named `<short id>-<attempt>`. A copy is written to `<short id>-<attempt>.part`
+//! first and renamed when every file is in and checked; no attempt ever touches the folder of
+//! another. The last [`KEEP`] copies are kept; at agent start `.part` leftovers and folders
+//! older than [`MAX_AGE`] go.
+//!
+//! Every received file (and on macOS every folder) is marked as coming from another computer
+//! before the rename: the `Zone.Identifier` stream on Windows, `com.apple.quarantine` on macOS.
 
 use std::collections::HashSet;
 use std::io;
@@ -450,14 +454,33 @@ async fn serve_on(
 
 // ------------------------------------------------------------------ receive
 
-/// Read the head of an incoming data stream: the copy ID and the manifest length.
-pub async fn read_head(stream: &mut RecvStream) -> Option<(FilesId, usize)> {
+/// Read the head of an incoming data stream: the copy ID and the manifest length. A stream
+/// that breaks or gives no head in [`HEAD_TIMEOUT`] is `Interrupted`, one reset by its sender
+/// is `Reset`, and one that ends early or has a bad head is `BadData`.
+pub async fn read_head(stream: &mut RecvStream) -> Result<(FilesId, usize), RecvError> {
+    read_head_from(stream).await
+}
+
+async fn read_head_from<S: ByteSource>(stream: &mut S) -> Result<(FilesId, usize), RecvError> {
     let mut head = [0u8; STREAM_HEAD_LEN];
-    tokio::time::timeout(HEAD_TIMEOUT, stream.read_exact(&mut head))
+    let fill = async {
+        let mut at = 0;
+        while at < head.len() {
+            match stream
+                .next_bytes(&mut head[at..])
+                .await
+                .map_err(stream_err)?
+            {
+                Some(n) => at += n,
+                None => return Err(RecvError::BadData),
+            }
+        }
+        Ok(())
+    };
+    tokio::time::timeout(HEAD_TIMEOUT, fill)
         .await
-        .ok()?
-        .ok()?;
-    core_files::parse_stream_head(&head).ok()
+        .map_err(|_| RecvError::Interrupted)??;
+    core_files::parse_stream_head(&head).map_err(|_| RecvError::BadData)
 }
 
 /// What a receive needs to know.
@@ -581,8 +604,8 @@ fn utf16_len(p: &Path) -> usize {
 
 /// Receive one file copy from a stream whose head was read: the manifest (checked against the
 /// offer before any file byte is written), then each file, checked against its hash, into
-/// `<dir>/<short id>-<attempt>.part`, which is renamed to `<dir>/<short id>` at the end (spec
-/// 2.2.3).
+/// `<dir>/<short id>-<attempt>.part`, which is renamed to `<dir>/<short id>-<attempt>` at the
+/// end (spec 2.2.3).
 pub async fn receive(
     mut stream: RecvStream,
     manifest_len: usize,
@@ -683,6 +706,7 @@ async fn receive_into<S: ByteSource>(
                 }
                 Err(x) => return Err(Err(write_err(x))),
             }
+            mark_from_elsewhere(&path, false).await;
             continue;
         }
         let mut f = create_file(&path).await.map_err(Err)?;
@@ -715,6 +739,7 @@ async fn receive_into<S: ByteSource>(
                 .await
                 .map_err(we)?;
         }
+        mark_from_elsewhere(&path, true).await;
         progress.file_done();
     }
     // The stream must end here: a sender that sends more than it declared is refused.
@@ -726,17 +751,11 @@ async fn receive_into<S: ByteSource>(
 }
 
 async fn finish(manifest: Manifest, job: &RecvJob, part: &Path) -> Result<Received, RecvError> {
-    let folder = job.dir.join(job.id.short());
-    let (p, f) = (part.to_path_buf(), folder.clone());
-    tokio::task::spawn_blocking(move || {
-        if f.exists() {
-            std::fs::remove_dir_all(&f)?;
-        }
-        rename_retry(&p, &f)
-    })
-    .await
-    .map_err(|_| RecvError::WriteFailed)?
-    .map_err(write_err)?;
+    let (p, dir, base) = (part.to_path_buf(), job.dir.clone(), final_name(job));
+    let folder = tokio::task::spawn_blocking(move || place(&p, &dir, &base))
+        .await
+        .map_err(|_| RecvError::WriteFailed)?
+        .map_err(write_err)?;
     let locals = manifest.local_paths(LocalRules::this_os());
     let mut top = Vec::new();
     let mut long_paths = false;
@@ -771,6 +790,84 @@ async fn finish(manifest: Manifest, job: &RecvJob, part: &Path) -> Result<Receiv
         long_paths,
         image,
     })
+}
+
+/// The final folder name of one receive attempt: `<short id>-<attempt>`. Each attempt has its
+/// own, so an old attempt that finishes late never replaces or deletes a newer one's folder.
+fn final_name(job: &RecvJob) -> String {
+    format!("{}-{}", job.id.short(), job.attempt)
+}
+
+/// Rename the finished `part` folder to `<dir>/<base>`. A folder of that name left by an
+/// earlier agent run (attempt numbers start again at each start) is never replaced: the name
+/// gets ` (2)`, ` (3)`... instead.
+fn place(part: &Path, dir: &Path, base: &str) -> io::Result<PathBuf> {
+    for n in 1..=100u32 {
+        let name = if n == 1 {
+            base.to_string()
+        } else {
+            format!("{base} ({n})")
+        };
+        let to = dir.join(name);
+        if std::fs::symlink_metadata(&to).is_ok() {
+            continue;
+        }
+        return rename_retry(part, &to).map(|()| to);
+    }
+    Err(io::Error::from(io::ErrorKind::AlreadyExists))
+}
+
+/// The `Zone.Identifier` stream of a received file on Windows: zone 3, the Internet zone, so
+/// SmartScreen and Office treat it like a download (spec 2.2.3).
+#[cfg(any(windows, test))]
+const ZONE_IDENTIFIER: &str = "[ZoneTransfer]\r\nZoneId=3\r\n";
+
+/// Mark a received file (or folder) as coming from another computer, before it is renamed
+/// into place: on Windows the `Zone.Identifier` stream on each file, on macOS the
+/// `com.apple.quarantine` attribute on each file and folder. Linux: nothing. Best effort: a
+/// volume without streams or attributes, or any other failure, is logged and the copy goes on.
+#[allow(unused_variables)]
+async fn mark_from_elsewhere(path: &Path, file: bool) {
+    #[cfg(windows)]
+    if file {
+        let mut ads = path.as_os_str().to_owned();
+        ads.push(":Zone.Identifier");
+        if let Err(e) = tokio::fs::write(PathBuf::from(ads), ZONE_IDENTIFIER).await {
+            tracing::debug!(error = %e, "received file not marked (Zone.Identifier)");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Err(e) = quarantine(path) {
+        tracing::debug!(error = %e, "received item not marked (quarantine)");
+    }
+}
+
+/// Set `com.apple.quarantine` in Apple's format: flags `0083`, the time in hex, the agent.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn quarantine(path: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let secs = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let value = format!("0083;{secs:08x};Universal Clipboard;");
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // SAFETY: `c` and the name are valid C strings; `value` is valid for its length.
+    let r = unsafe {
+        libc::setxattr(
+            c.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        )
+    };
+    if r != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// The PNG that goes on the clipboard next to a single image file (spec 2.2.5): a PNG as it is,
@@ -1358,5 +1455,148 @@ mod tests {
         );
         assert_eq!(sweep(t.path(), SystemTime::now()), 1);
         assert_eq!(std::fs::read_dir(t.path()).unwrap().count(), 0);
+    }
+
+    /// Receive `body` for `job` and finish it: the final folder.
+    fn receive_and_finish(m: &Manifest, job: &RecvJob, body: Vec<u8>) -> PathBuf {
+        assert_eq!(run_receive(m, job, body).as_ref(), Ok(m));
+        rt().block_on(finish(m.clone(), job, &part_folder(job)))
+            .unwrap()
+            .folder
+    }
+
+    /// Each attempt ends in its own final folder: an old attempt that finishes after a newer
+    /// one never replaces or deletes the newer one's folder, and a folder left by an earlier
+    /// agent run (attempt numbers start again) is never replaced.
+    #[test]
+    fn each_attempt_has_its_own_final_folder() {
+        let t = tempfile::tempdir().unwrap();
+        let (m, body) = copy_of(&[("a.txt", b"hello")]);
+        let (one, two) = (job_for(&m, t.path(), 1), job_for(&m, t.path(), 2));
+        let short = FilesId([7; 32]).short();
+        // Attempt 2 finishes first and becomes the current copy.
+        let f2 = receive_and_finish(&m, &two, body.clone());
+        assert_eq!(f2, t.path().join(format!("{short}-2")));
+        // The cancelled attempt 1 finishes late: its own folder, attempt 2's is untouched.
+        let f1 = receive_and_finish(&m, &one, body.clone());
+        assert_eq!(f1, t.path().join(format!("{short}-1")));
+        assert_eq!(std::fs::read(f2.join("a.txt")).unwrap(), b"hello");
+        // Its removal (the stale result) leaves attempt 2 alone.
+        std::fs::remove_dir_all(&f1).unwrap();
+        assert_eq!(std::fs::read(f2.join("a.txt")).unwrap(), b"hello");
+        // A new agent run numbers attempts from 1 again: the old `-2` folder stays.
+        std::fs::write(f2.join("mine.txt"), b"keep").unwrap();
+        let again = receive_and_finish(&m, &two, body);
+        assert_eq!(again, t.path().join(format!("{short}-2 (2)")));
+        assert_eq!(std::fs::read(f2.join("mine.txt")).unwrap(), b"keep");
+        assert_eq!(
+            folder_of(t.path(), &again.join("a.txt")),
+            Some(format!("{short}-2 (2)"))
+        );
+    }
+
+    /// A data stream that fails the error it gives each way.
+    struct Broken(StreamError);
+
+    impl ByteSource for Broken {
+        async fn next_bytes(&mut self, _: &mut [u8]) -> Result<Option<usize>, StreamError> {
+            Err(self.0)
+        }
+    }
+
+    /// The head of a data stream: a good one, one that ends early or is bad, one that breaks,
+    /// and one the sender reset.
+    #[test]
+    fn stream_heads_and_their_failures() {
+        let id = FilesId([9; 32]);
+        let (m, _) = copy_of(&[("a.txt", b"hello")]);
+        let head = core_files::stream_start(&id, &m);
+        let len = m.bytes().len();
+        rt().block_on(async {
+            let mut ok = Feed {
+                data: head.clone(),
+                at: 0,
+            };
+            assert_eq!(read_head_from(&mut ok).await, Ok((id, len)));
+            let mut short = Feed {
+                data: head[..10].to_vec(),
+                at: 0,
+            };
+            assert_eq!(read_head_from(&mut short).await, Err(RecvError::BadData));
+            let mut bad = head.clone();
+            bad[0] ^= 0xff;
+            let mut bad = Feed { data: bad, at: 0 };
+            assert_eq!(read_head_from(&mut bad).await, Err(RecvError::BadData));
+            let mut gone = Broken(StreamError::LinkClosed);
+            assert_eq!(read_head_from(&mut gone).await, Err(RecvError::Interrupted));
+            let mut reset = Broken(StreamError::Reset(2));
+            assert_eq!(read_head_from(&mut reset).await, Err(RecvError::Reset(2)));
+        });
+    }
+
+    /// Windows: every received file carries the `Zone.Identifier` stream with zone 3.
+    #[cfg(windows)]
+    #[test]
+    fn received_files_are_marked_as_from_another_computer() {
+        let t = tempfile::tempdir().unwrap();
+        let m = Manifest::new(vec![
+            Entry::folder("dir"),
+            Entry::file("dir/b.txt", 2, *blake3::hash(b"hi").as_bytes(), false),
+            Entry::file("a.txt", 5, *blake3::hash(b"hello").as_bytes(), false),
+        ])
+        .unwrap();
+        let mut body = m.bytes().to_vec();
+        for e in m.entries() {
+            body.extend_from_slice(match e.path.as_str() {
+                "a.txt" => b"hello".as_slice(),
+                "dir/b.txt" => b"hi".as_slice(),
+                _ => b"".as_slice(),
+            });
+        }
+        let folder = receive_and_finish(&m, &job_for(&m, t.path(), 1), body);
+        for f in ["a.txt", "dir\\b.txt"] {
+            let ads = format!("{}:Zone.Identifier", folder.join(f).display());
+            let zone = std::fs::read_to_string(&ads).unwrap();
+            assert_eq!(zone, ZONE_IDENTIFIER, "{f}");
+            assert!(zone.contains("ZoneId=3"));
+        }
+        // The file content itself is unchanged.
+        assert_eq!(std::fs::read(folder.join("a.txt")).unwrap(), b"hello");
+    }
+
+    /// macOS: every received file and folder carries `com.apple.quarantine` in Apple's format.
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[allow(unsafe_code)]
+    fn received_items_are_quarantined() {
+        use std::os::unix::ffi::OsStrExt;
+        let t = tempfile::tempdir().unwrap();
+        let m = Manifest::new(vec![
+            Entry::folder("dir"),
+            Entry::file("dir/b.txt", 2, *blake3::hash(b"hi").as_bytes(), false),
+        ])
+        .unwrap();
+        let mut body = m.bytes().to_vec();
+        body.extend_from_slice(b"hi");
+        let folder = receive_and_finish(&m, &job_for(&m, t.path(), 1), body);
+        for p in [folder.join("dir"), folder.join("dir").join("b.txt")] {
+            let c = std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
+            let mut buf = [0u8; 256];
+            // SAFETY: valid C strings and a writable buffer of the given length.
+            let n = unsafe {
+                libc::getxattr(
+                    c.as_ptr(),
+                    c"com.apple.quarantine".as_ptr(),
+                    buf.as_mut_ptr().cast(),
+                    buf.len(),
+                    0,
+                    0,
+                )
+            };
+            assert!(n > 0, "{} has no quarantine attribute", p.display());
+            let v = std::str::from_utf8(&buf[..n as usize]).unwrap();
+            assert!(v.starts_with("0083;"), "{v}");
+            assert!(v.ends_with(";Universal Clipboard;"), "{v}");
+        }
     }
 }

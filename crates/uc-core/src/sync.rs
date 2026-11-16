@@ -1185,14 +1185,14 @@ impl Engine {
 
     /// A send failed before its stream could tell the receiver anything (no data link, the
     /// copy is gone here, or the stream could not be opened). The receiver gets a
-    /// `FilesCancel` (aborted), so it does not wait for a stream that never comes; then the
+    /// `FilesCancel` (failed, not aborted: nobody pressed Stop), so it does not wait for a stream that never comes; then the
     /// next queued send starts.
     pub fn serve_failed(&mut self, peer: DeviceId, id: FilesId) -> Vec<Event> {
         let mut out = Vec::new();
         if self.running.contains(&(peer, id)) || self.queue.contains(&(peer, id)) {
             let cancel = Message::FilesCancel {
                 id,
-                reason: files::CODE_ABORTED,
+                reason: files::CODE_FAILED,
             };
             self.send(peer, &cancel, &mut out);
         }

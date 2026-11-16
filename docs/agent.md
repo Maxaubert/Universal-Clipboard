@@ -128,15 +128,29 @@ receive, files folder), `src/agent/transfers.rs` (jobs, notes, `transfer` view).
   Ctrl+C, so the "no send or get" rule holds. The agent puts the picked items on its own
   clipboard with our marker, so the watcher never treats them as a new automatic copy.
 - **Stop:** `transfer.stop` and `uc transfer stop` end the walk, the fetch and every send. The
-  other side shows "<device> stopped sending the files." or "Stopped.". A newer copy of anything
+  other side shows "<device> stopped sending the files." or "Stopped.". A sender that could not
+  open the stream (no data link, copy gone, stream refused) sends `FilesCancel` code 3 (failed),
+  and the receiver shows "<device> could not send the files. Copy them again.". A data stream
+  whose head breaks, times out or is bad is reported to the engine as a failed fetch (asked
+  again under the retry rules), unless it was reset as superseded (an older copy's). A newer copy of anything
   cancels too ("A newer copy replaced these files.", also when the sender's `FilesCancel`
   arrives before the newer copy).
 - **Status:** `uc status --json` has `transfer` (`{id, phase: preparing|sending|receiving,
   device, done, total, files}` or null) and `last_transfer_error`. The window gets the same as
   the `transfer` event, at most 4 per second.
-- **Files folder:** the last 3 received copies are kept, and never a folder that is current,
-  pending or a send source. At start, `.part` leftovers and folders older than 7 days go. On
-  Windows the final rename retries for up to 2 s (Defender, the indexer).
+- **Files folder:** each receive attempt has its own `<short id>-<attempt>.part` and final
+  `<short id>-<attempt>` folder (an existing name from an earlier run gets ` (2)`), so a late,
+  cancelled attempt never replaces or deletes a newer one. The last 3 received copies are kept,
+  and never a folder that is current, pending or a send source. At start, `.part` leftovers and
+  folders older than 7 days go. On Windows the final rename retries for up to 2 s (Defender, the
+  indexer).
+- **Marked as from another computer** (Max, 2026-11-16): before the rename, every received file
+  gets the NTFS stream `Zone.Identifier` = `[ZoneTransfer]
+ZoneId=3
+` on Windows, and
+  every received file and folder gets `com.apple.quarantine` = `0083;<hex unix time>;Universal
+  Clipboard;` on macOS (`setxattr`). Best effort: a volume without streams or attributes is
+  logged at debug and the copy goes on. Linux: nothing (the exec bit stays as sent).
 - **Activity and logs:** counts and sizes only ("3 files, 12 MB"), never a file or folder name.
 - **Test switches:** `UCLIP_TEST_SEND_RATE=<bytes/s>` slows sends so a test can act during
   one; `UCLIP_TEST_NO_FILES=1` sends no feature bits (a 0.1.x peer);

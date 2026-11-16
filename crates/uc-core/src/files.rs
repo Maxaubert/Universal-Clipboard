@@ -43,6 +43,9 @@ pub fn space_needed(total: u64) -> u64 {
 pub const CODE_SUPERSEDED: u8 = 1;
 /// Stream error code: the transfer was aborted (stop, failure, setting off).
 pub const CODE_ABORTED: u8 = 2;
+/// `FilesCancel` reason: the sender could not send (its data stream could not be opened, or
+/// it has no data link or copy for it). Not a Stop: the receiver's note says to copy again.
+pub const CODE_FAILED: u8 = 3;
 
 /// File types that also go on the clipboard as an image when the copy is one such file
 /// (spec 2.2.5).

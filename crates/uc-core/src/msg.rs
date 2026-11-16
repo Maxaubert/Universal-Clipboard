@@ -228,7 +228,8 @@ pub enum Message {
         id: FilesId,
     },
     /// "Stop file copy X" (either side). `reason` is
-    /// [`crate::files::CODE_SUPERSEDED`] or [`crate::files::CODE_ABORTED`].
+    /// [`crate::files::CODE_SUPERSEDED`], [`crate::files::CODE_ABORTED`] or
+    /// [`crate::files::CODE_FAILED`].
     FilesCancel {
         /// The copy.
         id: FilesId,
