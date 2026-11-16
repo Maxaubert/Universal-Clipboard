@@ -819,7 +819,7 @@ fn place(part: &Path, dir: &Path, base: &str) -> io::Result<PathBuf> {
 
 /// The `Zone.Identifier` stream of a received file on Windows: zone 3, the Internet zone, so
 /// SmartScreen and Office treat it like a download (spec 2.2.3).
-#[cfg(any(windows, test))]
+#[cfg(windows)]
 const ZONE_IDENTIFIER: &str = "[ZoneTransfer]\r\nZoneId=3\r\n";
 
 /// Mark a received file (or folder) as coming from another computer, before it is renamed
