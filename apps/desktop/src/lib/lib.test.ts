@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ALLOWED_CALLS, failureText } from './ipc';
 import { createMockApi } from './mock';
-import { S, thisLabel } from './strings';
+import { S, sizeText, thisLabel, transferText } from './strings';
 import { STEPS, stepOf } from './store.svelte';
 import { osKind } from './types';
 
@@ -14,6 +14,32 @@ describe('ipc', () => {
   it('turns failures into text', () => {
     expect(failureText({ code: 'x', message: 'Plain text.' })).toBe('Plain text.');
     expect(failureText(new Error('boom'))).toBe('boom');
+  });
+});
+
+describe('file copies in words', () => {
+  it('writes sizes as the agent does', () => {
+    expect(sizeText(0)).toBe('0 bytes');
+    expect(sizeText(1)).toBe('1 byte');
+    expect(sizeText(1500)).toBe('1 KB');
+    expect(sizeText(12 << 20)).toBe('12 MB');
+    expect(sizeText((3 << 20) + 1005)).toBe('3 MB');
+    expect(sizeText(3 * 2 ** 29)).toBe('1.5 GB');
+  });
+  it('says what moves and how much', () => {
+    expect(transferText({ phase: 'preparing', device: null, done: 0, total: 0, files: 2 })).toEqual({
+      title: 'Preparing files...',
+      amount: '2 files',
+    });
+    expect(transferText({ phase: 'sending', device: '2 devices', done: 1 << 20, total: 4 << 20, files: 1 })).toEqual({
+      title: 'Sending to 2 devices...',
+      amount: '1 MB of 4 MB, 1 file',
+    });
+    expect(transferText({ phase: 'receiving', device: 'Mac', done: 0, total: 10, files: 1 }).title).toBe('Receiving from Mac...');
+  });
+  it('the window may copy files and stop a transfer', () => {
+    expect(ALLOWED_CALLS).toContain('files.copy');
+    expect(ALLOWED_CALLS).toContain('transfer.stop');
   });
 });
 

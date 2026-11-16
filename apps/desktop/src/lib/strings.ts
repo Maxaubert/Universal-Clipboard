@@ -57,6 +57,14 @@ export const S = {
 
   lastCopy: 'Last copy',
 
+  // File sync (spec 2026-11-16): the picker buttons on Home and the progress line.
+  copyFiles: 'Copy files...',
+  copyFolder: 'Copy folder...',
+  stop: 'Stop',
+  preparing: 'Preparing files...',
+  sendingTo: (d: string) => `Sending to ${d}...`,
+  receivingFrom: (d: string) => `Receiving from ${d}...`,
+
   rename: 'Rename',
   save: 'Save',
   removeDevice: 'Remove this device',
@@ -70,6 +78,12 @@ export const S = {
   startAtSignInLabel: isMac ? 'Open when you log in' : 'Start when you sign in',
   skipPasswords: 'Skip passwords',
   skipPasswordsLabel: 'Skip password manager copies, always on',
+  syncFiles: 'Sync files',
+  syncFilesLabel: 'Sync files and folders you copy',
+  fileLimit: 'Sync files by themselves up to',
+  fileLimitLabel: 'Largest file copy to sync automatically, in MB, on this device',
+  fileLimitSub: 'On this device. Bigger copies: Copy files... on Home.',
+  mb: 'MB',
   version: (v: string) => `Version ${v}`,
   removeThis: 'Remove',
   leaveAsk: 'Remove this device and forget everything?',
@@ -120,6 +134,31 @@ export function copyFact(a: { kind: string; direction: string; device: string | 
   const kind = a.kind.charAt(0).toUpperCase() + a.kind.slice(1);
   const way = a.direction === 'received' && a.device ? `from ${a.device}` : a.direction;
   return `${kind}, ${way}, ${ago(a.time_ms, now)}`;
+}
+
+/** A size as the agent writes it: "512 bytes", "12 KB", "12 MB", "1.5 GB" (1 KB = 1024 bytes,
+ * rounded to the nearest unit). */
+export function sizeText(bytes: number): string {
+  const K = 1024;
+  const round = (unit: number) => Math.max(1, Math.round(bytes / unit));
+  if (bytes === 1) return '1 byte';
+  if (bytes < K) return `${bytes} bytes`;
+  if (bytes < K * K) return `${round(K)} KB`;
+  if (bytes < K * K * K) return `${round(K * K)} MB`;
+  const tenths = round((K * K * K) / 10);
+  return `${Math.floor(tenths / 10)}.${tenths % 10} GB`;
+}
+
+/** The progress line of a file copy: what moves, and how much ("45 MB of 300 MB, 3 files"). */
+export function transferText(t: { phase: string; device: string | null; done: number; total: number; files: number }): {
+  title: string;
+  amount: string;
+} {
+  const d = t.device ?? '';
+  const title = t.phase === 'sending' ? S.sendingTo(d) : t.phase === 'receiving' ? S.receivingFrom(d) : S.preparing;
+  const files = t.files === 1 ? '1 file' : `${t.files} files`;
+  const amount = t.total > 0 ? `${sizeText(t.done)} of ${sizeText(t.total)}, ${files}` : files;
+  return { title, amount };
 }
 
 export function thisLabel(os: string): string {

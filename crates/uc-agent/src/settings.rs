@@ -18,6 +18,11 @@ pub struct Settings {
     /// macOS only: also pass on what Apple's Universal Clipboard brings (plan decision 8).
     /// Off by default: decision 8 is still open and off is the safer choice.
     pub forward_apple_clips: bool,
+    /// Sync files and folders (on, file sync spec 5).
+    pub sync_files: bool,
+    /// Largest file copy that syncs by itself, in MB (1 to 10,240, default 100). Checked on
+    /// the copying device only; "Copy files..." and `uc copy` have no limit.
+    pub file_limit_mb: u32,
 }
 
 impl Default for Settings {
@@ -28,6 +33,8 @@ impl Default for Settings {
             image_limit_mb: 25,
             keep_formatting: true,
             forward_apple_clips: false,
+            sync_files: true,
+            file_limit_mb: uc_core::caps::FILE_LIMIT_DEFAULT_MB as u32,
         }
     }
 }
@@ -83,6 +90,21 @@ pub const KEYS: &[Key] = &[
         mac_only: false,
     },
     Key {
+        name: "sync-files",
+        label: "Sync files",
+        kind: ValueKind::OnOff,
+        mac_only: false,
+    },
+    Key {
+        name: "file-limit-mb",
+        label: "Largest file copy to sync automatically (MB), on this device",
+        kind: ValueKind::Number(
+            uc_core::caps::FILE_LIMIT_MIN_MB as u32,
+            uc_core::caps::FILE_LIMIT_MAX_MB as u32,
+        ),
+        mac_only: false,
+    },
+    Key {
         name: "forward-apple-clips",
         label: "Also pass on what Apple's Universal Clipboard brings",
         kind: ValueKind::OnOff,
@@ -122,6 +144,8 @@ impl Settings {
             "image-limit-mb" => self.image_limit_mb.to_string(),
             "keep-formatting" => on_off(self.keep_formatting),
             "forward-apple-clips" => on_off(self.forward_apple_clips),
+            "sync-files" => on_off(self.sync_files),
+            "file-limit-mb" => self.file_limit_mb.to_string(),
             _ => return None,
         })
     }
@@ -137,6 +161,7 @@ impl Settings {
             "sync-images" => self.sync_images = parse_on_off(value)?,
             "keep-formatting" => self.keep_formatting = parse_on_off(value)?,
             "forward-apple-clips" => self.forward_apple_clips = parse_on_off(value)?,
+            "sync-files" => self.sync_files = parse_on_off(value)?,
             "image-limit-mb" => {
                 let n: u32 = value
                     .trim()
@@ -146,6 +171,17 @@ impl Settings {
                     return Err("Use a whole number from 1 to 25.".into());
                 }
                 self.image_limit_mb = n;
+            }
+            "file-limit-mb" => {
+                let ValueKind::Number(lo, hi) = k.kind else {
+                    return Err(format!("\"{name}\" is set by the agent."));
+                };
+                let text = format!("Use a whole number from {lo} to {hi}.");
+                let n: u32 = value.trim().parse().map_err(|_| text.clone())?;
+                if !(lo..=hi).contains(&n) {
+                    return Err(text);
+                }
+                self.file_limit_mb = n;
             }
             _ => return Err(format!("\"{name}\" is set by the agent.")),
         }
@@ -167,6 +203,32 @@ mod tests {
         assert!(s.set("image-limit-mb", "26").is_err());
         assert!(s.set("sync-images", "maybe").is_err());
         assert!(s.set("nope", "on").is_err());
+    }
+
+    #[test]
+    fn file_settings() {
+        let mut s = Settings::default();
+        assert!(s.sync_files);
+        assert_eq!(s.file_limit_mb, 100);
+        s.set("sync-files", "off").unwrap();
+        assert_eq!(s.get("sync-files").as_deref(), Some("off"));
+        s.set("file-limit-mb", "10240").unwrap();
+        assert_eq!(s.get("file-limit-mb").as_deref(), Some("10240"));
+        s.set("file-limit-mb", " 1 ").unwrap();
+        assert_eq!(s.file_limit_mb, 1);
+        for bad in ["0", "10241", "-5", "lots", ""] {
+            let e = s.set("file-limit-mb", bad).unwrap_err();
+            assert_eq!(e, "Use a whole number from 1 to 10240.");
+        }
+        assert_eq!(s.file_limit_mb, 1);
+    }
+
+    #[test]
+    fn old_state_files_get_the_file_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"sync_images": false}"#).unwrap();
+        assert!(!s.sync_images);
+        assert!(s.sync_files);
+        assert_eq!(s.file_limit_mb, 100);
     }
 
     #[test]

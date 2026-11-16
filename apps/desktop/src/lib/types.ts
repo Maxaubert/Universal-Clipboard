@@ -23,13 +23,30 @@ export interface Status {
   version: string;
   /** The last copies, newest first: facts only, never content (agent `status`). */
   activity?: Activity[];
+  /** The file copy that moves now, or null. */
+  transfer?: Transfer | null;
+  /** The last file copy that failed: its note and when. */
+  last_transfer_error?: { text: string; time_ms: number } | null;
+}
+
+/** A file copy that moves now (agent `status.transfer` and the `transfer` event, at most 4 a
+ * second): counts and sizes only, never a name. `idle` in an event means nothing moves now. */
+export interface Transfer {
+  id: string | null;
+  phase: 'preparing' | 'sending' | 'receiving' | 'idle';
+  /** The other device (or "2 devices" while sending to more). */
+  device: string | null;
+  /** Bytes done and in all. `total` is 0 while the files are still being counted. */
+  done: number;
+  total: number;
+  files: number;
 }
 
 /** One copy that moved, as facts: "Text", "received", "Mac mini", when. Also the data of the
  * agent's `activity` event. */
 export interface Activity {
   kind: string;
-  direction: 'sent' | 'received' | 'not sent' | string;
+  direction: 'sent' | 'received' | 'not sent' | 'not received' | string;
   device: string | null;
   time_ms: number;
   note: string | null;

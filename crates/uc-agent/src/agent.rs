@@ -34,6 +34,10 @@ use crate::profile::Profile;
 use crate::settings;
 use crate::state::{Activity, Notice, PairLockout, Pause, StateFile};
 
+mod transfers;
+
+use transfers::{FileState, Xfer};
+
 /// The fix for a missing Windows firewall rule (one UAC prompt).
 const FIREWALL_FIX: &str =
     "Run \"uc firewall add\" (or Fix in the window). Windows asks for permission once.";
@@ -176,6 +180,9 @@ enum Wake {
     Resume,
 }
 
+/// How often the `transfer` event may go out (at most 4 per second, file sync spec 5).
+const TRANSFER_TICK: Duration = Duration::from_millis(250);
+
 /// IPC calls that change saved settings. Their reply says so when the save failed.
 const CHANGE_CALLS: &[&str] = &["devices.rename", "pause.set", "settings.set", "setup.step"];
 
@@ -272,6 +279,10 @@ pub struct Core {
     updater: Option<crate::update::Updater>,
     /// The version this agent reports.
     version: String,
+    /// File copies: walk, hash, sends, the fetch, the files folder (file sync spec 5).
+    files: FileState,
+    /// The other end of `files`' channel, until the main loop takes it.
+    xfer_rx: Option<mpsc::UnboundedReceiver<Xfer>>,
 }
 
 /// Why the agent could not start.
@@ -425,6 +436,7 @@ impl Core {
             profile.default_port()
         };
         let host = Host::with_lockout(Lockout::from(state.pair_lockout).loaded(now_ms()));
+        let (files, xfer_rx) = FileState::new(profile.files_dir());
         let mut core = Core {
             profile,
             dir,
@@ -478,7 +490,10 @@ impl Core {
             updater: crate::update::UpdateCfg::from_profile(&profile_for_update)
                 .map(|c| crate::update::Updater::new(c, profile_for_update.clone())),
             version: crate::update::current_version(&profile_for_update),
+            files,
+            xfer_rx: Some(xfer_rx),
         };
+        core.files_start();
         core.reset_engine();
         core.apply_settings();
         core.default_autostart();
@@ -522,6 +537,7 @@ impl Core {
             kind: kind_of_type(own_device_type()),
         };
         let paused = self.engine.is_paused();
+        self.files_reset();
         self.engine = Engine::new(Config::new(rec, Role::Full));
         // A fresh engine has no transfers to cancel.
         let _ = self.engine.set_paused(paused);
@@ -553,6 +569,11 @@ impl Core {
         let fwd = cfg!(target_os = "macos") && s.forward_apple_clips;
         self.engine.set_forward_remote(fwd);
         self.clip.set_forward_remote(fwd);
+        self.engine
+            .set_file_max(uc_core::caps::file_limit_bytes(u64::from(s.file_limit_mb)));
+        // Off ends a walk and cancels transfers.
+        let evs = self.engine.set_sync_files(s.sync_files);
+        self.on_engine(evs);
     }
 
     /// Decision 2026-11-14 (Max): start at login is on by default and is no longer a setup
@@ -784,6 +805,9 @@ impl Core {
     ) {
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut progress = tokio::time::interval(TRANSFER_TICK);
+        progress.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut xfer_rx = self.xfer_rx.take().expect("the main loop runs once");
         #[cfg(target_os = "macos")]
         let mut poll_at = tokio::time::Instant::now();
         #[cfg(not(target_os = "macos"))]
@@ -829,6 +853,8 @@ impl Core {
                         poll_at = tokio::time::Instant::now() + p.next;
                     }
                 }
+                Some(m) = xfer_rx.recv() => self.on_xfer(m),
+                _ = progress.tick(), if self.files.busy() => self.emit_transfer(),
                 _ = tick.tick() => self.on_tick().await,
                 _ = &mut ctrl_c => self.shutdown = true,
             }
@@ -962,6 +988,9 @@ impl Core {
 
     fn on_engine(&mut self, evs: Vec<EngineEvent>) {
         for e in evs {
+            if self.on_file_event(&e) {
+                continue;
+            }
             match e {
                 EngineEvent::Sent { kind, peers, .. } => {
                     tracing::info!(kind = kind_text(kind), peers, "sent");
@@ -1058,6 +1087,7 @@ impl Core {
                 _ => {}
             }
         }
+        self.sync_walk();
     }
 
     // ------------------------------------------------------------ network
@@ -1070,6 +1100,7 @@ impl Core {
                 self.peers.remove(&peer);
                 let evs = self.engine.disconnect(peer);
                 self.on_engine(evs);
+                self.files_peer_gone(peer);
                 self.emit("devices", json!({}));
             }
             NetEvent::Frame { peer, frame } => self.on_frame(peer, frame),
@@ -1081,9 +1112,7 @@ impl Core {
                 self.emit("devices", json!({}));
             }
             NetEvent::Pairing(conn) => self.on_pairing_conn(conn),
-            // File transfers come in plan step 5. Until then no stream is asked for, and
-            // dropping one stops it (`uc_net::STREAM_ABORTED`).
-            NetEvent::Stream { .. } => {}
+            NetEvent::Stream { peer, link, stream } => self.on_stream(peer, link, stream),
             NetEvent::PortChanged(p) => {
                 tracing::info!(port = p, "port in use, moved to a new one");
                 self.port = p;
@@ -1161,6 +1190,7 @@ impl Core {
         let _ = link.send(msg::encode(&hello));
         let evs = self.engine.disconnect(peer);
         self.on_engine(evs);
+        self.files_peer_gone(peer);
         self.peers.insert(
             peer,
             PeerLink {
@@ -1181,6 +1211,7 @@ impl Core {
         }
         let evs = self.engine.disconnect(peer);
         self.on_engine(evs);
+        self.files_peer_gone(peer);
         if let Some(n) = &self.net {
             n.end_probation(peer);
         }
@@ -1416,6 +1447,9 @@ impl Core {
             self.rotate_at = Some(Instant::now() + Duration::from_secs(u64::from(wait)));
         }
         self.sync_engine_group();
+        for d in gone {
+            self.files_peer_gone(d);
+        }
         self.emit("devices", json!({}));
         self.save();
     }
@@ -1703,6 +1737,8 @@ impl Core {
             "pause.set" => self.pause(&p),
             "settings.get" => Ok(self.settings_json()),
             "settings.set" => self.settings_set(&p),
+            "files.copy" => self.files_copy(&p),
+            "transfer.stop" => Ok(self.transfer_stop()),
             "diagnostics" => Ok(self.diagnostics().await),
             "pair.start" => self.pair_start().await,
             "pair.cancel" => {
@@ -1755,7 +1791,28 @@ impl Core {
                     Err(e) => Err(IpcError::new("clipboard", e.to_string())),
                 }
             }
-            "debug.clipboard" => Ok(json!({"text": self.clip.debug_text()})),
+            "debug.copy_files" => {
+                let paths: Vec<PathBuf> = p
+                    .get("paths")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(PathBuf::from)
+                    .collect();
+                match self.clip.debug_copy_files(&paths) {
+                    Ok(seq) => {
+                        self.read_retries = 0;
+                        self.settle_at = Some(Instant::now() + SETTLE);
+                        Ok(json!({"seq": seq}))
+                    }
+                    Err(e) => Err(IpcError::new("clipboard", e.to_string())),
+                }
+            }
+            "debug.clipboard" => Ok(json!({
+                "text": self.clip.debug_text(),
+                "files": self.clip.debug_files(),
+            })),
             "debug.wake" => {
                 self.on_resume();
                 Ok(json!({}))
@@ -2435,6 +2492,8 @@ impl Core {
             "pid": std::process::id(),
             "version": self.version,
             "activity": self.state.activity.iter().rev().take(5).collect::<Vec<_>>(),
+            "transfer": self.transfer_view(),
+            "last_transfer_error": self.last_transfer_error(),
         })
     }
 
@@ -2564,6 +2623,15 @@ impl Core {
             lines.push("Group: none".into());
         }
         lines.push(format!("Links open: {}", self.connected()));
+        let s = &self.state.settings;
+        lines.push(format!(
+            "File sync: {}, automatic up to {} MB, transfer: {}",
+            if s.sync_files { "on" } else { "off" },
+            s.file_limit_mb,
+            self.transfer_view()
+                .and_then(|v| v["phase"].as_str().map(str::to_string))
+                .unwrap_or_else(|| "none".into())
+        ));
         let ps = self.host.status(now_ms());
         lines.push(format!(
             "Pairing: open={} code tries={} lockout={} lockout ms={} lockouts={}",

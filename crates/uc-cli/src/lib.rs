@@ -4,8 +4,10 @@
 //! pipe or socket and holds no keys.
 //!
 //! There is no "send" and no "get" command: the latest copy is on every device on its own.
+//! `uc copy` is a copy, like Ctrl+C on files: it makes them the latest copy (file sync spec 5).
 
 use std::io::{BufRead, IsTerminal, Write};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -61,6 +63,19 @@ pub enum Cmd {
     },
     /// Turn sync on again.
     Resume,
+    /// Copy files or folders: they become the latest copy on your devices, at any size (like
+    /// "Copy files..." in the window).
+    Copy {
+        /// The files and folders.
+        #[arg(required = true, value_name = "PATH")]
+        paths: Vec<PathBuf>,
+    },
+    /// The file copy that is being sent or received.
+    Transfer {
+        /// stop.
+        #[command(subcommand)]
+        action: TransferCmd,
+    },
     /// Show all settings, or change one.
     Settings {
         /// set KEY VALUE.
@@ -138,6 +153,13 @@ pub enum UpdateCmd {
     Later,
 }
 
+/// `uc transfer ...`.
+#[derive(Debug, Subcommand)]
+pub enum TransferCmd {
+    /// Stop the file copy that is being sent or received. A new copy also stops it.
+    Stop,
+}
+
 /// `uc settings set ...`.
 #[derive(Debug, Subcommand)]
 pub enum SettingsCmd {
@@ -164,6 +186,8 @@ impl Cmd {
                 PairCmd::Cancel => vec!["pair.cancel"],
             },
             Cmd::Pause { .. } | Cmd::Resume => vec!["pause.set"],
+            Cmd::Copy { .. } => vec!["files.copy"],
+            Cmd::Transfer { .. } => vec!["transfer.stop"],
             Cmd::Settings { action: None } => vec!["settings.get"],
             Cmd::Settings { action: Some(_) } => vec!["settings.set"],
             Cmd::Diagnostics => vec!["diagnostics"],
@@ -244,6 +268,31 @@ pub const UI_ACTIONS: &[(&str, &[&str], &str)] = &[
     (
         "Image size cap",
         &["uc", "settings", "set", "image-limit-mb", "10"],
+        "settings.set",
+    ),
+    (
+        "Home: Copy files...",
+        &["uc", "copy", "report.pdf", "photo.jpg"],
+        "files.copy",
+    ),
+    (
+        "Home: Copy folder...",
+        &["uc", "copy", "Photos"],
+        "files.copy",
+    ),
+    (
+        "Progress line: Stop",
+        &["uc", "transfer", "stop"],
+        "transfer.stop",
+    ),
+    (
+        "Sync files",
+        &["uc", "settings", "set", "sync-files", "off"],
+        "settings.set",
+    ),
+    (
+        "Largest file copy to sync automatically",
+        &["uc", "settings", "set", "file-limit-mb", "500"],
         "settings.set",
     ),
     (
@@ -510,6 +559,30 @@ pub async fn run(cli: Cli) -> Result<(), Fail> {
             let v = call(&mut c, "pause.set", json!({"mode": "off"})).await?;
             out(j, &v, || "Sync is on.".into());
         }
+        Cmd::Copy { paths } => {
+            let abs = absolute_paths(&paths)?;
+            let n = abs.len();
+            let v = call(&mut c, "files.copy", json!({ "paths": abs })).await?;
+            out(j, &v, || {
+                format!(
+                    "Preparing {n} {}. {} the latest copy on your devices when ready. See: uc status",
+                    if n == 1 { "item" } else { "items" },
+                    if n == 1 { "It becomes" } else { "They become" }
+                )
+            });
+        }
+        Cmd::Transfer {
+            action: TransferCmd::Stop,
+        } => {
+            let v = call(&mut c, "transfer.stop", json!({})).await?;
+            out(j, &v, || {
+                if v["stopped"] == json!(true) {
+                    "Stopped.".into()
+                } else {
+                    "No files are being sent or received.".into()
+                }
+            });
+        }
         Cmd::Settings { action: None } => {
             let v = call(&mut c, "settings.get", json!({})).await?;
             out(j, &v, || {
@@ -567,6 +640,60 @@ pub async fn run(cli: Cli) -> Result<(), Fail> {
     Ok(())
 }
 
+/// `uc copy` paths, made absolute against the current folder (the agent runs elsewhere). A
+/// path that does not exist fails here, with its name, before the agent is asked.
+pub fn absolute_paths(paths: &[PathBuf]) -> Result<Vec<String>, Fail> {
+    paths
+        .iter()
+        .map(|p| {
+            let abs = std::path::absolute(p)
+                .map_err(|_| Fail(format!("\"{}\" is not a valid path.", p.display()), 2))?;
+            if std::fs::symlink_metadata(&abs).is_err() {
+                return Err(Fail(
+                    format!("There is no file or folder \"{}\".", p.display()),
+                    1,
+                ));
+            }
+            abs.into_os_string()
+                .into_string()
+                .map_err(|_| Fail(format!("\"{}\" is not a valid path.", p.display()), 2))
+        })
+        .collect()
+}
+
+/// A size in words, as the agent's notes write it.
+fn size_words(bytes: u64) -> String {
+    uc_agent::files::size_text(bytes)
+}
+
+/// The progress line of a file copy (the window's line under Home's buttons).
+pub fn transfer_text(t: &Value) -> Option<String> {
+    let phase = t["phase"].as_str()?;
+    let device = t["device"].as_str().unwrap_or("");
+    let (done, total) = (
+        t["done"].as_u64().unwrap_or(0),
+        t["total"].as_u64().unwrap_or(0),
+    );
+    let files = t["files"].as_u64().unwrap_or(0);
+    let what = match phase {
+        "preparing" => "Preparing files...".to_string(),
+        "sending" => format!("Sending to {device}..."),
+        "receiving" => format!("Receiving from {device}..."),
+        _ => return None,
+    };
+    let count = if files == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{files} files")
+    };
+    let amount = if total > 0 {
+        format!("{} of {}, {count}", size_words(done), size_words(total))
+    } else {
+        count
+    };
+    Some(format!("{what} {amount}. Stop: uc transfer stop"))
+}
+
 fn status_text(v: &Value) -> String {
     let mut s = v["text"].as_str().unwrap_or("").to_string();
     if let Some(r) = v["reason"].as_str() {
@@ -590,6 +717,9 @@ fn status_text(v: &Value) -> String {
         v["connected"],
         v["this_device"].as_str().unwrap_or("")
     ));
+    if let Some(t) = transfer_text(&v["transfer"]) {
+        s.push_str(&format!("\n{t}"));
+    }
     if let Some(a) = v["activity"].as_array().and_then(|a| a.first()) {
         let dev = a["device"]
             .as_str()
@@ -606,6 +736,12 @@ fn status_text(v: &Value) -> String {
             dev,
             when(a["time_ms"].as_u64().unwrap_or(0)),
             note
+        ));
+    }
+    if let Some(e) = v["last_transfer_error"]["text"].as_str() {
+        s.push_str(&format!(
+            "\nLast file problem: {e} ({}).",
+            when(v["last_transfer_error"]["time_ms"].as_u64().unwrap_or(0))
         ));
     }
     s
@@ -943,6 +1079,8 @@ fn print_help() {
   uc resume                      turn sync on again
   uc settings                    show all settings
   uc settings set <key> <value>  change a setting
+  uc copy <path>...              copy files or folders to your devices, at any size
+  uc transfer stop               stop the file copy that is being sent or received
   uc diagnostics                 report for help (no clipboard content, no keys)
   uc setup                       first-run steps (macOS permissions)
   uc firewall add | check        Windows: let your other devices connect to this PC
@@ -953,6 +1091,7 @@ fn print_help() {
 
 Add --json to any command for scripts.
 There is no send or get: the latest copy is on every device on its own.
+Files you copy sync by themselves up to the limit (uc settings set file-limit-mb 100).
 Privacy: https://maxaubert.github.io/Universal-Clipboard/privacy"
     );
 }
@@ -1051,6 +1190,51 @@ mod tests {
         assert!(update_text(&f).contains("Try again: uc update --install"));
         let u = json!({"enabled": true, "current": "0.1.1", "state": "updated", "checked": true});
         assert!(update_text(&u).starts_with("Updated to 0.1.1."));
+    }
+
+    #[test]
+    fn copy_needs_a_path_and_makes_paths_absolute() {
+        assert!(Cli::try_parse_from(["uc", "copy"]).is_err());
+        let cli = Cli::try_parse_from(["uc", "copy", "a", "b c"]).unwrap();
+        assert!(matches!(cli.cmd, Some(Cmd::Copy { ref paths }) if paths.len() == 2));
+        let dir = std::env::temp_dir();
+        let abs = absolute_paths(std::slice::from_ref(&dir)).unwrap();
+        assert!(std::path::Path::new(&abs[0]).is_absolute());
+        let rel = absolute_paths(&[PathBuf::from(".")]).unwrap();
+        assert!(std::path::Path::new(&rel[0]).is_absolute());
+        let e = absolute_paths(&[PathBuf::from("no-such-file-here.uc-test")]).unwrap_err();
+        assert_eq!(e.1, 1);
+        assert!(e.0.contains("no-such-file-here.uc-test"), "{}", e.0);
+    }
+
+    #[test]
+    fn transfer_lines() {
+        let t = json!({"id": "ab12cd34", "phase": "sending", "device": "Mac mini",
+            "done": 45u64 << 20, "total": 300u64 << 20, "files": 3});
+        assert_eq!(
+            transfer_text(&t).unwrap(),
+            "Sending to Mac mini... 45 MB of 300 MB, 3 files. Stop: uc transfer stop"
+        );
+        let p = json!({"phase": "preparing", "done": 0, "total": 0, "files": 1});
+        assert_eq!(
+            transfer_text(&p).unwrap(),
+            "Preparing files... 1 file. Stop: uc transfer stop"
+        );
+        assert_eq!(transfer_text(&json!(null)), None);
+        assert_eq!(transfer_text(&json!({"phase": "idle"})), None);
+        let s = status_text(&json!({"text": "Working", "devices": 2, "connected": 1,
+            "this_device": "PC", "transfer": {"phase": "receiving", "device": "Mac",
+            "done": 1, "total": 2048, "files": 2},
+            "last_transfer_error": {"text": "Not enough disk space for files from Mac.",
+            "time_ms": 0}}));
+        assert!(
+            s.contains("Receiving from Mac... 1 byte of 2 KB, 2 files."),
+            "{s}"
+        );
+        assert!(
+            s.contains("Last file problem: Not enough disk space"),
+            "{s}"
+        );
     }
 
     #[test]

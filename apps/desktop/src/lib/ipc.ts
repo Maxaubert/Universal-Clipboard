@@ -11,6 +11,10 @@ export interface Api {
   firewallAdd(): Promise<FirewallCheck>;
   /** The screen the window was started for (`--route update` from the agent), or null. */
   launchRoute(): Promise<string | null>;
+  /** "Copy files..." and "Copy folder..." on Home: the system file picker (files, or a folder:
+   * Windows cannot pick both in one dialog). The picked paths, or none when cancelled. Not an
+   * agent call: the window shell opens the picker; `files.copy` then sends the paths. */
+  pickPaths(folder: boolean): Promise<string[]>;
   window: {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<void>;
@@ -32,6 +36,8 @@ export const ALLOWED_CALLS = [
   'pause.set',
   'settings.get',
   'settings.set',
+  'files.copy',
+  'transfer.stop',
   'diagnostics',
   'leave',
   'setup.status',
@@ -73,6 +79,10 @@ function tauriApi(): Api {
     async launchRoute() {
       const { invoke } = await core();
       return ((await invoke('launch_route')) as string | null) ?? null;
+    },
+    async pickPaths(folder: boolean) {
+      const { invoke } = await core();
+      return ((await invoke('pick_paths', { folder })) as string[] | null) ?? [];
     },
     onEvent(cb) {
       let off: (() => void) | null = null;

@@ -10,6 +10,7 @@
 //! | [`settings`] | the settings of the window, as keys |
 //! | [`autostart`] | start at login per OS, sandboxed in test profiles |
 //! | [`clip`] | the clipboard backend, isolated in test profiles |
+//! | [`files`] | file copies: walk, hash, data streams, the files folder |
 //! | [`pairing`] | the pairing stream I/O |
 //! | [`supervise`] | `uc-agent --supervise`: restart after a crash (Linux) |
 //! | [`log`] | rotating log without content |
@@ -20,6 +21,7 @@
 pub mod agent;
 pub mod autostart;
 pub mod clip;
+pub mod files;
 pub mod firewall;
 pub mod install;
 pub mod ipc;

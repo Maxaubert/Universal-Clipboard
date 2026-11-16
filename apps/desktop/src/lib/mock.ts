@@ -11,6 +11,7 @@ import type {
   Settings,
   SetupStatus,
   Status,
+  Transfer,
   UpdateStatus,
 } from './types';
 
@@ -23,6 +24,7 @@ import type {
 // that runs after a failed update (the old version came back, the files are kept for Try
 // again); 'update-applying' is the helper at work; 'updated' is the new agent after a good one.
 // Versions as in the mockup (docs/design/desktop/motion/update.html): 0.1.0 to 0.1.1.
+// 'sending' is the H3 Home while a picked file copy goes to the Mac (the progress line).
 export type Scenario =
   | 'fresh'
   | 'mac-blocked'
@@ -36,7 +38,8 @@ export type Scenario =
   | 'update'
   | 'update-failed'
   | 'update-applying'
-  | 'updated';
+  | 'updated'
+  | 'sending';
 
 interface World {
   status: Status;
@@ -80,8 +83,12 @@ function baseStatus(): Status {
     this_device: "Max's PC",
     version: '1.0.0',
     activity: [{ kind: 'Text', direction: 'received', device: 'Mac mini', time_ms: Date.now(), note: null }],
+    transfer: null,
+    last_transfer_error: null,
   };
 }
+
+const idle: Transfer = { id: null, phase: 'idle', device: null, done: 0, total: 0, files: 0 };
 
 function baseSettings(): Settings {
   return {
@@ -89,6 +96,8 @@ function baseSettings(): Settings {
     'sync-images': { value: 'on', label: 'Sync images' },
     'image-limit-mb': { value: '25', label: 'Largest image to sync (MB)' },
     'keep-formatting': { value: 'off', label: 'Keep formatting' },
+    'sync-files': { value: 'on', label: 'Sync files' },
+    'file-limit-mb': { value: '100', label: 'Largest file copy to sync automatically (MB), on this device' },
     'device-name': { value: "Max's PC", label: 'Device name' },
   };
 }
@@ -163,7 +172,7 @@ export function makeWorld(s: Scenario): World {
       },
     ];
   }
-  if (s === 'h3') {
+  if (s === 'h3' || s === 'sending') {
     w.devices = [
       dev('MAX', 'Windows', 'This device', true),
       dev("Max's Mac Mini", 'macOS', 'Connected'),
@@ -172,6 +181,9 @@ export function makeWorld(s: Scenario): World {
     ];
     w.status.this_device = 'MAX';
     w.status.activity = [{ kind: 'Text', direction: 'received', device: "Max's Mac Mini", time_ms: Date.now(), note: null }];
+  }
+  if (s === 'sending') {
+    w.status.transfer = { id: 'ab12cd34', phase: 'sending', device: "Max's Mac Mini", done: 45 << 20, total: 300 << 20, files: 3 };
   }
   if (s === 'fresh' || s === 'mac-blocked') w.status.activity = [];
   if (s === 'paused') {
@@ -238,6 +250,11 @@ export interface MockHandle {
   finishUpdate(ok: boolean): void;
   /** A copy moved (facts only): the agent records it and sends an `activity` event. */
   copy(direction: 'sent' | 'received', kind?: string, device?: string | null): void;
+  /** What the system file picker gives next ("Copy files..." and "Copy folder..."); empty is
+   * a cancelled picker. */
+  pickResult: { files: string[]; folder: string[] };
+  /** A file copy moves (or stops, with null): the status and the `transfer` event. */
+  setTransfer(t: Transfer | null): void;
 }
 
 declare global {
@@ -286,6 +303,11 @@ export function createMockApi(initial?: Scenario): Api {
         ? { ...u, state: 'updated', current: v, available: null, failed_version: null, dismissed: false }
         : { ...u, state: 'failed', failed_version: v, dismissed: false, last_error: 'health check failed' };
       h.emit('update', { ...h.world.update });
+    },
+    pickResult: { files: ['C:\\Users\\Max\\report.pdf', 'C:\\Users\\Max\\photo.jpg'], folder: ['C:\\Users\\Max\\Photos'] },
+    setTransfer(t) {
+      h.world.status.transfer = t;
+      h.emit('transfer', { ...(t ?? idle) });
     },
     copy(direction, kind = 'Text', device = null) {
       const a = { kind, direction, device: direction === 'received' ? device : null, time_ms: Date.now(), note: null };
@@ -401,6 +423,21 @@ export function createMockApi(initial?: Scenario): Api {
         h.emit('devices');
         return { name: r.name };
       }
+      case 'files.copy': {
+        const paths = Array.isArray(p.paths) ? (p.paths as string[]) : [];
+        if (paths.length === 0) throw fail('no-paths', 'Give at least one file or folder.');
+        if (w.status.paused) throw fail('paused', 'Sync is paused. Turn it on first: uc resume');
+        if (w.settings['sync-files']?.value === 'off') {
+          throw fail('files-off', 'Files are not synced. Turn it on: uc settings set sync-files on');
+        }
+        h.setTransfer({ id: null, phase: 'preparing', device: null, done: 0, total: 0, files: paths.length });
+        return { preparing: true, items: paths.length };
+      }
+      case 'transfer.stop': {
+        const stopped = !!w.status.transfer;
+        h.setTransfer(null);
+        return { stopped };
+      }
       case 'diagnostics':
         return { report: 'Universal Clipboard (mock)' };
       case 'update.status':
@@ -451,6 +488,10 @@ export function createMockApi(initial?: Scenario): Api {
     },
     async launchRoute() {
       return h.launchRoute;
+    },
+    async pickPaths(folder: boolean) {
+      h.calls.push({ call: 'pick', params: { folder } });
+      return [...(folder ? h.pickResult.folder : h.pickResult.files)];
     },
     onEvent(cb) {
       subs.add(cb);

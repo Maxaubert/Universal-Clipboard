@@ -1,5 +1,5 @@
 import { failureText, getApi, type Api } from './ipc';
-import type { AgentEvent, Device, Settings, SetupStatus, Status, UpdateStatus } from './types';
+import type { AgentEvent, Device, Settings, SetupStatus, Status, Transfer, UpdateStatus } from './types';
 
 export type Route =
   | 'welcome'
@@ -40,6 +40,8 @@ class Store {
   devices = $state<Device[]>([]);
   settings = $state<Settings>({});
   setup = $state<SetupStatus | null>(null);
+  /** The file copy that moves now (the progress line on Home), or null. */
+  transfer = $state<Transfer | null>(null);
   /** The agent's update status (`update.status`), or null when it has none. */
   update = $state<UpdateStatus | null>(null);
   /** The update screen waits for pairing to end before it shows. */
@@ -69,6 +71,10 @@ class Store {
       }
       // The agent is back while an update ran (a window that lived through it): ask how it went.
       if (e.event === 'status' && this.update?.state === 'applying') void this.refreshUpdate();
+      if (e.event === 'transfer') {
+        const t = e.data as unknown as Transfer;
+        this.transfer = t.phase === 'idle' ? null : t;
+      }
       if (e.event === 'update') {
         this.update = e.data as unknown as UpdateStatus;
         if (this.loaded && this.shouldAsk()) this.openUpdate();
@@ -163,6 +169,7 @@ class Store {
     this.settings = {};
     this.setup = null;
     this.update = null;
+    this.transfer = null;
     this.updatePending = false;
     this.updateStart = false;
     this.updateFrom = null;
@@ -189,6 +196,7 @@ class Store {
         api.call<SetupStatus>('setup.status'),
       ]);
       this.status = status;
+      this.transfer = status.transfer ?? null;
       this.devices = devices;
       this.settings = settings;
       this.setup = setup;

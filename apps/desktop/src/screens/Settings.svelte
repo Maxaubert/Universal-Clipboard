@@ -7,6 +7,8 @@
   import { store } from '../lib/store.svelte';
 
   const autostart = $derived(store.settings['start-at-login']?.value === 'on');
+  const syncFiles = $derived(store.settings['sync-files']?.value !== 'off');
+  const fileLimit = $derived(store.settings['file-limit-mb']?.value ?? '100');
   const me = $derived(store.thisDevice);
   let confirm = $state(false);
   let error = $state<string | null>(null);
@@ -18,6 +20,31 @@
       await store.refresh();
     } catch (e) {
       error = failureText(e);
+    }
+  }
+
+  async function toggleFiles() {
+    error = null;
+    try {
+      await store.api!.call('settings.set', { key: 'sync-files', value: syncFiles ? 'off' : 'on' });
+      await store.refresh();
+    } catch (e) {
+      error = failureText(e);
+    }
+  }
+
+  // The agent checks the range (1 to 10,240) and says so in plain words.
+  async function setLimit(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const value = input.value.trim();
+    if (value === fileLimit) return;
+    error = null;
+    try {
+      await store.api!.call('settings.set', { key: 'file-limit-mb', value });
+      await store.refresh();
+    } catch (err) {
+      error = failureText(err);
+      input.value = fileLimit;
     }
   }
 
@@ -39,6 +66,8 @@
     `width: 44px; height: 26px; border: 0; border-radius: 13px; background: ${on ? '#1D1C1A' : '#BDB8B1'}; padding: 0; position: relative;`;
   const knob = (on: boolean) =>
     `position: absolute; top: 3px; left: ${on ? 21 : 3}px; width: 20px; height: 20px; border-radius: 50%; background: #FFFFFF;`;
+  const row =
+    'background: #FFFFFF; border: 1px solid #D9D6D1; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 14px;';
   const tile =
     'aspect-ratio: 1 / 1; background: #FFFFFF; border: 1px solid #D9D6D1; border-radius: 12px; padding: 14px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between;';
 </script>
@@ -67,6 +96,35 @@
       </span>
     </div>
   </div>
+  <div data-files style="display: flex; flex-direction: column; gap: 10px;">
+    <div style={row}>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html art.iconFiles}</svg>
+      <span style="flex: 1; font-size: 13.5px; font-weight: 600; line-height: 1.25;">{S.syncFiles}</span>
+      <button type="button" role="switch" aria-checked={syncFiles} aria-label={S.syncFilesLabel} style={sw(syncFiles)} onclick={toggleFiles}>
+        <span style={knob(syncFiles)}></span>
+      </button>
+    </div>
+    <div style={row}>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html art.iconLimit}</svg>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 13.5px; font-weight: 600; line-height: 1.25;">{S.fileLimit}</span>
+        <span style="font-size: 12.5px; color: #5E5B56; line-height: 1.3;">{S.fileLimitSub}</span>
+      </span>
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: #5E5B56;">
+        <input
+          class="num"
+          type="text"
+          inputmode="numeric"
+          aria-label={S.fileLimitLabel}
+          value={fileLimit}
+          disabled={!syncFiles}
+          onchange={setLimit}
+          onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
+        />
+        {S.mb}
+      </span>
+    </div>
+  </div>
   {#if error}<div class="err" role="alert">{error}</div>{/if}
   {#if confirm}
     <div role="alertdialog" aria-label={S.leaveAsk} style="margin-top: auto; background: #FFFFFF; border: 1px solid #B42318; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;">
@@ -87,3 +145,13 @@
     </div>
   {/if}
 </div>
+
+<style>
+  /* The size box: the same border, radius and type as the other controls. */
+  .num {
+    width: 64px; height: 34px; box-sizing: border-box; border: 1px solid #BDB8B1; border-radius: 8px; background: #FFFFFF;
+    color: #1D1C1A; font: inherit; font-size: 14px; font-weight: 600; text-align: right; padding: 0 10px;
+  }
+  .num:disabled { color: #6E6A64; background: #F6F5F3; }
+  .num:focus-visible { outline: 2px solid #1D1C1A; outline-offset: 1px; }
+</style>

@@ -55,6 +55,51 @@ describe('Home', () => {
   });
 });
 
+describe('Home: files', () => {
+  it('Copy files... sends the picked files to the agent as one copy', async () => {
+    const m = await open('home');
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy files...' }));
+    await waitFor(() => expect(m.calls.some((c) => c.call === 'files.copy')).toBe(true));
+    expect(m.calls.find((c) => c.call === 'pick')?.params).toEqual({ folder: false });
+    expect(m.calls.find((c) => c.call === 'files.copy')?.params).toEqual({ paths: m.pickResult.files, picked: true });
+    // The agent prepares them: the progress line shows, with Stop.
+    expect(await screen.findByTestId('transfer')).toHaveTextContent('Preparing files...');
+  });
+  it('Copy folder... picks a folder; a cancelled picker sends nothing', async () => {
+    const m = await open('home');
+    m.pickResult = { files: [], folder: ['/home/max/Photos'] };
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy files...' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy folder...' }));
+    await waitFor(() => expect(m.calls.filter((c) => c.call === 'files.copy').length).toBe(1));
+    expect(m.calls.filter((c) => c.call === 'pick').map((c) => c.params.folder)).toEqual([false, true]);
+    expect(m.calls.find((c) => c.call === 'files.copy')?.params.paths).toEqual(['/home/max/Photos']);
+  });
+  it('shows why a copy cannot start', async () => {
+    const m = await open('home');
+    m.world.settings['sync-files'].value = 'off';
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy files...' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Files are not synced.');
+  });
+  it('shows the progress line and Stop stops the transfer', async () => {
+    const m = await open('home');
+    expect(screen.queryByTestId('transfer')).toBeNull();
+    m.setTransfer({ id: 'ab12cd34', phase: 'sending', device: 'Mac mini', done: 45 << 20, total: 300 << 20, files: 3 });
+    const line = await screen.findByTestId('transfer');
+    expect(line).toHaveTextContent('Sending to Mac mini...');
+    expect(line).toHaveTextContent('45 MB of 300 MB, 3 files');
+    m.setTransfer({ id: 'ab12cd34', phase: 'receiving', device: 'Ubuntu laptop', done: 1, total: 2048, files: 1 });
+    await waitFor(() => expect(screen.getByTestId('transfer')).toHaveTextContent('Receiving from Ubuntu laptop...'));
+    expect(screen.getByTestId('transfer')).toHaveTextContent('1 byte of 2 KB, 1 file');
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    await waitFor(() => expect(screen.queryByTestId('transfer')).toBeNull());
+    expect(m.calls.some((c) => c.call === 'transfer.stop')).toBe(true);
+  });
+  it('takes the transfer from status when the window opens', async () => {
+    await open('sending');
+    expect(await screen.findByTestId('transfer')).toHaveTextContent("Sending to Max's Mac Mini...");
+  });
+});
+
 describe('Needs attention', () => {
   it('shows the reason and Fix adds the firewall rule like "uc firewall add"', async () => {
     const m = await open('attention');
@@ -124,6 +169,34 @@ describe('Settings', () => {
     expect(m.calls.some((c) => c.call === 'settings.set' && c.params.key === 'start-at-login' && c.params.value === 'off')).toBe(true);
     const locked = screen.getByRole('switch', { name: /always on/ });
     expect(locked).toBeDisabled();
+  });
+  it('turns file sync off and on, and sets the automatic limit', async () => {
+    const m = await open('home', 'settings');
+    const sw = await screen.findByRole('switch', { name: 'Sync files and folders you copy' });
+    const box = screen.getByRole('textbox', { name: /Largest file copy/ }) as HTMLInputElement;
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    expect(box.value).toBe('100');
+    await fireEvent.change(box, { target: { value: '500' } });
+    await waitFor(() => expect(m.world.settings['file-limit-mb'].value).toBe('500'));
+    expect(m.calls.some((c) => c.call === 'settings.set' && c.params.key === 'file-limit-mb' && c.params.value === '500')).toBe(true);
+    await fireEvent.click(sw);
+    await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('false'));
+    expect(m.world.settings['sync-files'].value).toBe('off');
+    expect(box).toBeDisabled();
+  });
+  it("shows the agent's answer for a limit out of range and keeps the old value", async () => {
+    await open('home', 'settings');
+    const box = (await screen.findByRole('textbox', { name: /Largest file copy/ })) as HTMLInputElement;
+    // The mock takes any value; the real agent refuses this one.
+    const api = store.api!;
+    const call = api.call.bind(api);
+    api.call = async <T,>(name: string, p: Record<string, unknown> = {}) => {
+      if (name === 'settings.set' && p.key === 'file-limit-mb') throw { code: 'bad-setting', message: 'Use a whole number from 1 to 10240.' };
+      return call<T>(name, p);
+    };
+    await fireEvent.change(box, { target: { value: '0' } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Use a whole number from 1 to 10240.');
+    expect(box.value).toBe('100');
   });
 });
 

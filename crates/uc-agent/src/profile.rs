@@ -126,6 +126,37 @@ impl Profile {
         }
     }
 
+    /// The folder for received files (file sync spec 2.5): the user's cache or temp space,
+    /// never the state folder and never a RAM disk. Windows `%LOCALAPPDATA%\Temp\Universal
+    /// Clipboard`, macOS `~/Library/Caches/Universal Clipboard` (`$TMPDIR` is purged by macOS),
+    /// Linux `$XDG_CACHE_HOME/Universal Clipboard` (`/tmp` is often in RAM). Profiles add
+    /// `-<name>`; test profiles with their own state folder use `<state folder>/files`.
+    pub fn files_dir(&self) -> PathBuf {
+        if let Some(d) = self.dir_override.as_ref().filter(|_| self.is_test()) {
+            return d.join("files");
+        }
+        let name = format!("Universal Clipboard{}", self.suffix());
+        let home = || {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_default()
+        };
+        if cfg!(windows) {
+            let base = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            base.join("Temp").join(name)
+        } else if cfg!(target_os = "macos") {
+            home().join("Library/Caches").join(name)
+        } else {
+            let base = std::env::var_os("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute())
+                .unwrap_or_else(|| home().join(".cache"));
+            base.join(name)
+        }
+    }
+
     /// The Unix socket path (plan 3.2): `$XDG_RUNTIME_DIR/uclip[-profile]/agent.sock` on
     /// Linux when that folder exists, else `agent.sock` in the state folder.
     #[cfg(unix)]
@@ -198,5 +229,27 @@ mod tests {
         assert_ne!(a.default_port(), DEFAULT_PORT);
         assert!(a.state_dir().to_string_lossy().ends_with("-dev"));
         assert_ne!(a.state_dir(), b.state_dir());
+    }
+
+    #[test]
+    fn files_folder_per_profile() {
+        let real = Profile::new("").unwrap();
+        let dev = Profile::new("dev").unwrap();
+        assert!(real.files_dir().ends_with("Universal Clipboard"));
+        assert!(dev.files_dir().ends_with("Universal Clipboard-dev"));
+        if cfg!(windows) {
+            assert!(real.files_dir().parent().unwrap().ends_with("Temp"));
+        } else if cfg!(target_os = "macos") {
+            assert!(
+                real.files_dir()
+                    .parent()
+                    .unwrap()
+                    .ends_with("Library/Caches")
+            );
+        }
+        // Never inside the state folder of the real app.
+        assert!(!real.files_dir().starts_with(real.state_dir()));
+        let t = Profile::test("t1", PathBuf::from("/tmp/uc-t1")).unwrap();
+        assert_eq!(t.files_dir(), PathBuf::from("/tmp/uc-t1").join("files"));
     }
 }

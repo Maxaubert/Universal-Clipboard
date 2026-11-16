@@ -33,6 +33,9 @@ interface Screen {
   act?: (page: Page) => Promise<void>;
   /** A higher limit where the app differs from the reference on purpose. */
   maxDiff?: number;
+  /** Parts of the app hidden for this comparison (CSS selector): parts added after the design,
+   * which have their own baseline screen. */
+  hide?: string;
   /** What the app is compared with (default 'design'). */
   ref?: { kind: 'design' } | { kind: 'mockup'; page: string; option: string } | { kind: 'baseline' };
   why?: string;
@@ -62,15 +65,19 @@ const screens: Screen[] = [
   // Home is H3 "You are here" (2026-11-14): compared with the H3 mockup's last frame, with the
   // mockup's devices ('h3'). The mockup counts the other devices ("2 devices connected"), the
   // app counts all connected devices with this one ("3 devices connected"), as on L07: one digit.
+  // File sync (2026-11-16, no mockups by Max's choice): Home's Copy files and Copy folder
+  // buttons and the two settings rows are hidden in the comparisons with the design, which have
+  // no such parts (nothing else moves), and the whole screens are app baselines (F1 to F3).
   {
     id: 'L07',
     file: 'L07-home',
     scenario: 'h3',
+    hide: '[data-m="files"]',
     ref: { kind: 'mockup', page: 'home.html', option: 'h3' },
-    why: 'H3 mockup end frame',
+    why: 'H3 mockup end frame (file buttons hidden)',
   },
   { id: 'L08', file: 'L08-device', scenario: 'home', route: 'device' },
-  { id: 'L09', file: 'L09-settings', scenario: 'home', route: 'settings' },
+  { id: 'L09', file: 'L09-settings', scenario: 'home', route: 'settings', hide: '[data-files]' },
   { id: 'L10', file: 'L10-paused', scenario: 'paused', ref: { kind: 'baseline' }, why: 'app baseline (H3 layout, paused)' },
   { id: 'L11', file: 'L11-attention', scenario: 'attention' },
   { id: 'L12', file: 'L12-other-network', scenario: 'home', route: 'vpn' },
@@ -85,6 +92,10 @@ const screens: Screen[] = [
   // differently (1.06% and 0.88% on 2026-11-14, text edges only), so the limit is 2%.
   { id: 'U3', file: 'U3-card', scenario: 'h3', extra: { update: 'update' }, maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (U3 card on H3 Home)' },
   { id: 'U3', file: 'U3-card-failed', scenario: 'h3', extra: { update: 'update-failed' }, maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (U3 card, failed)' },
+  // File sync (2026-11-16): the new parts, as pictures of the app.
+  { id: 'F1', file: 'F1-home-files', scenario: 'h3', maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (Home with Copy files and Copy folder)' },
+  { id: 'F2', file: 'F2-transfer', scenario: 'sending', maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (progress line with Stop)' },
+  { id: 'F3', file: 'F3-settings-files', scenario: 'home', route: 'settings', maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (Sync files rows)' },
 ];
 
 function fontCss(): string {
@@ -138,7 +149,7 @@ async function shotApp(page: Page, s: Screen): Promise<Buffer> {
   await page.waitForFunction(() => !!window.__ucMock);
   if (s.route === 'show') await expect(page.getByTestId('code')).toBeVisible();
   if (s.act) await s.act(page);
-  await page.addStyleTag({ content: hideQr });
+  await page.addStyleTag({ content: hideQr + (s.hide ? `${s.hide}{visibility:hidden !important}` : '') });
   await page.evaluate(() => document.fonts.ready);
   await settle(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -194,9 +205,10 @@ test.afterAll(() => {
 Made by \`apps/desktop/tests/e2e/visual.spec.ts\` (\`npm run e2e\`). Each picture shows three
 parts, from left to right: the reference, the app after its motion has settled, and the
 difference in red. The reference is the locked design, except Home (L07), which is the end
-frame of the H3 "You are here" motion mockup (picked 2026-11-14), and Paused (L10) and the update
-screens (U1, U3), which are pictures of the app (\`tests/e2e/baselines\`) because no design shows
-them in the H3 layout.
+frame of the H3 "You are here" motion mockup (picked 2026-11-14), and Paused (L10), the update
+screens (U1, U3) and the file sync parts (F1 to F3), which are pictures of the app
+(\`tests/e2e/baselines\`) because no design shows them in the H3 layout. Home (L07) and Settings
+(L09) hide the file sync parts when they are compared with the design.
 The QR code is hidden in both (the design has a fixed picture, the app draws the real code).
 Limit: ${MAX_DIFF_PERCENT}% of pixels.
 
