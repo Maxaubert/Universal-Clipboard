@@ -1,16 +1,18 @@
 //! The `NSPasteboard` code. macOS only.
 
+use std::path::{Path, PathBuf};
+
 use objc2::rc::{Retained, autoreleasepool};
-use objc2::runtime::{AnyObject, NSObjectProtocol};
+use objc2::runtime::{AnyObject, NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, sel};
 use objc2_app_kit::{
     NSBitmapImageFileType, NSBitmapImageRep, NSPasteboard, NSPasteboardAccessBehavior,
-    NSPasteboardContentsOptions,
+    NSPasteboardContentsOptions, NSPasteboardItem, NSPasteboardWriting,
 };
-use objc2_foundation::{NSData, NSDictionary, NSString};
+use objc2_foundation::{NSArray, NSData, NSDictionary, NSString, NSURL};
 use uc_clip::{Clipboard, ClipboardError, Format, RawPart, Snapshot};
 
-use crate::types::{self, Kinds};
+use crate::types::{self, ItemFile, Kinds};
 
 /// Test builds set this to the name of a private pasteboard (plan 6.4). [`MacClipboard::from_env`]
 /// then uses that pasteboard in place of the general one.
@@ -154,11 +156,9 @@ impl MacClipboard {
             private: kinds.private,
             has_files: kinds.files,
             remote: kinds.remote,
-            // File paths and promised files: file sync step 6. Until then a file copy has no
-            // paths, so the engine skips it.
             ..Snapshot::default()
         };
-        if kinds.skip_content() || (kinds.remote && !self.read_remote_content) {
+        if kinds.marker || kinds.private || (kinds.remote && !self.read_remote_content) {
             return Ok(snap);
         }
         // "Paste from Other Apps" set to Ask or Deny: a content read would show a macOS alert
@@ -169,6 +169,14 @@ impl MacClipboard {
                 Some(AccessBehavior::Ask | AccessBehavior::AlwaysDeny)
             )
         {
+            return Ok(snap);
+        }
+        // A file copy: only the file list is read (spec 2.1). Finder's name text and icon
+        // next to it are left alone.
+        if kinds.files {
+            let (files, files_virtual) = self.file_list();
+            snap.files = files;
+            snap.files_virtual = files_virtual;
             return Ok(snap);
         }
         let has = |t: &str| types.iter().any(|x| x == t);
@@ -247,9 +255,135 @@ impl Clipboard for MacClipboard {
             Ok(self.change_count())
         })
     }
+
+    /// Put one `NSURL` per path on the pasteboard with `writeObjects` (Finder pastes them as
+    /// files), then the PNG and TIFF of `image` if given, then our marker. The extra types go
+    /// on the first item. Like [`Clipboard::write`], it starts with
+    /// `prepareForNewContents(.currentHostOnly)`.
+    fn write_files(
+        &mut self,
+        paths: &[PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        uc_clip::check_file_paths(paths)?;
+        let urls = file_urls(paths)?;
+        autoreleasepool(|_| {
+            self.pb
+                .prepareForNewContentsWithOptions(NSPasteboardContentsOptions::CurrentHostOnly);
+            if !self.pb.writeObjects(&NSArray::from_retained_slice(&urls)) {
+                return Err(ClipboardError::Other("set-file-urls".into()));
+            }
+            if let Some(png) = image {
+                // TIFF too, as in `write`: many Mac apps only paste TIFF.
+                let tiff_ok = match png_to_tiff(png) {
+                    Some(tiff) => self.set_data(types::TIFF, &tiff),
+                    None => true,
+                };
+                if !(self.set_data(types::PNG, png) && tiff_ok) {
+                    return Err(ClipboardError::Other("set-image/png".into()));
+                }
+            }
+            if !self.set_data(types::MARKER, &[]) {
+                return Err(ClipboardError::Other("set-marker".into()));
+            }
+            Ok(self.change_count())
+        })
+    }
+}
+
+/// One `NSURL` per path, ready for `writeObjects`. macOS paths are UTF-8; a path that is not
+/// is refused before the pasteboard is touched.
+fn file_urls(
+    paths: &[PathBuf],
+) -> Result<Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>>, ClipboardError> {
+    paths
+        .iter()
+        .map(|p| {
+            let s = p
+                .to_str()
+                .ok_or_else(|| ClipboardError::Other("path-not-utf8".into()))?;
+            let url = NSURL::fileURLWithPath(&NSString::from_str(s));
+            Ok(ProtocolObject::from_retained(url))
+        })
+        .collect()
+}
+
+/// What one pasteboard item of a file copy holds: the path of its [`types::FILE_URL`] (a file
+/// reference URL is resolved first), or virtual for a promised file or a URL with no path.
+fn item_file(item: &NSPasteboardItem) -> ItemFile {
+    let item_types: Vec<String> = item.types().iter().map(|t| t.to_string()).collect();
+    let has = |t: &str| item_types.iter().any(|x| x == t);
+    if has(types::FILE_URL) {
+        return match item
+            .stringForType(&NSString::from_str(types::FILE_URL))
+            .and_then(|s| url_path(&s))
+        {
+            Some(p) => ItemFile::Path(p),
+            None => ItemFile::Virtual,
+        };
+    }
+    if types::PROMISED.iter().any(|t| has(t)) {
+        return ItemFile::Virtual;
+    }
+    ItemFile::Other
+}
+
+/// The local path of a URL string. Finder writes file reference URLs (`file:///.file/id=..`),
+/// which only work on this Mac while the file exists; they are resolved to a path URL. A URL
+/// that is not a file URL, or a reference to a file that is gone, gives `None`.
+fn url_path(s: &NSString) -> Option<PathBuf> {
+    let url = NSURL::URLWithString(s)?;
+    let url = if url.isFileReferenceURL() {
+        url.filePathURL()?
+    } else {
+        url
+    };
+    if !url.isFileURL() {
+        return None;
+    }
+    let path = PathBuf::from(url.path()?.to_string());
+    path.is_absolute().then_some(path)
+}
+
+/// Whether `path` is an iCloud Drive file or folder whose data is not on this Mac
+/// ([`types::is_dataless`]). Reads only the flags, which never downloads it. A path that
+/// cannot be read gives `false`; the walk reports it.
+pub fn cloud_only(path: &Path) -> bool {
+    use std::os::macos::fs::MetadataExt;
+    std::fs::metadata(path).is_ok_and(|m| types::is_dataless(m.st_flags()))
 }
 
 impl MacClipboard {
+    /// The paths of a file copy and whether it is virtual ([`types::file_list`]): the file URL
+    /// of each item, else the old [`types::FILENAMES`] list.
+    fn file_list(&self) -> (Vec<PathBuf>, bool) {
+        let items = self
+            .pb
+            .pasteboardItems()
+            .map(|a| a.iter().map(|i| item_file(&i)).collect())
+            .unwrap_or_default();
+        types::file_list(items, || self.filenames())
+    }
+
+    /// The old [`types::FILENAMES`] list: a property list holding an array of path strings.
+    fn filenames(&self) -> Vec<PathBuf> {
+        let Some(list) = self
+            .pb
+            .propertyListForType(&NSString::from_str(types::FILENAMES))
+        else {
+            return Vec::new();
+        };
+        let Ok(list) = list.downcast::<NSArray>() else {
+            return Vec::new();
+        };
+        list.iter()
+            .filter_map(|o| {
+                o.downcast_ref::<NSString>()
+                    .map(|s| PathBuf::from(s.to_string()))
+            })
+            .collect()
+    }
+
     fn set_data(&self, ty: &str, bytes: &[u8]) -> bool {
         self.pb
             .setData_forType(Some(&NSData::with_bytes(bytes)), &NSString::from_str(ty))

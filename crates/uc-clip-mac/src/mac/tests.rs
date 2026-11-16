@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::poll::Poller;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// A private pasteboard that is freed when the test ends.
@@ -198,15 +199,19 @@ fn each_private_marker_skips_content() {
 }
 
 #[test]
-fn file_reference_skips_the_clip() {
+fn file_url_with_text_reads_only_the_path() {
     let mut b = Board::new();
     b.set_raw(&[
-        ("public.file-url", b"file:///Users/test/report.pdf"),
-        (types::TEXT, b"report.pdf"),
+        (types::FILE_URL, b"file:///Users/test/My%20report.pdf"),
+        (types::TEXT, b"My report.pdf"),
     ]);
     let s = b.read().unwrap();
-    assert!(s.has_files);
-    assert!(s.parts.is_empty());
+    assert!(s.has_files && !s.files_virtual);
+    assert_eq!(s.files, [PathBuf::from("/Users/test/My report.pdf")]);
+    assert!(
+        s.parts.is_empty(),
+        "the name text next to a file is not read"
+    );
 }
 
 #[test]
@@ -311,4 +316,219 @@ fn access_behavior_of_a_named_pasteboard_never_asks() {
             "{a:?}"
         );
     }
+}
+
+/// A folder with real files to copy. Canonical, because macOS resolves `/var` to `/private/var`.
+fn files_dir() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::write(root.join("a b.txt"), b"a").unwrap();
+    std::fs::write(root.join("bl\u{e5}b\u{e6}r \u{1F600}.png"), b"b").unwrap();
+    std::fs::create_dir(root.join("A folder")).unwrap();
+    (dir, root)
+}
+
+/// Write `NSURL`s as Finder does, with no marker.
+fn copy_urls_like_finder(b: &MacClipboard, paths: &[PathBuf]) {
+    let urls = file_urls(paths).unwrap();
+    autoreleasepool(|_| {
+        b.pb.clearContents();
+        assert!(b.pb.writeObjects(&NSArray::from_retained_slice(&urls)));
+    });
+}
+
+/// The file reference URL (`file:///.file/id=...`) of a path, as Finder writes it.
+fn reference_url(path: &Path) -> String {
+    autoreleasepool(|_| {
+        let url = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
+        let r = url.fileReferenceURL().expect("reference URL");
+        assert!(r.isFileReferenceURL());
+        r.absoluteString().unwrap().to_string()
+    })
+}
+
+#[test]
+fn file_urls_from_another_app_keep_their_order() {
+    let (_d, root) = files_dir();
+    let paths = vec![
+        root.join("bl\u{e5}b\u{e6}r \u{1F600}.png"),
+        root.join("A folder"),
+        root.join("a b.txt"),
+    ];
+    let mut b = Board::new();
+    copy_urls_like_finder(&b, &paths);
+    let s = b.read().unwrap();
+    assert!(s.has_files && !s.files_virtual && !s.has_marker);
+    assert_eq!(s.files, paths);
+    assert!(s.parts.is_empty());
+}
+
+#[test]
+fn file_reference_url_is_resolved() {
+    let (_d, root) = files_dir();
+    let path = root.join("a b.txt");
+    let reference = reference_url(&path);
+    assert!(reference.starts_with("file:///.file/id="), "{reference}");
+    let mut b = Board::new();
+    b.set_raw(&[(types::FILE_URL, reference.as_bytes())]);
+    let s = b.read().unwrap();
+    assert!(!s.files_virtual);
+    assert_eq!(s.files, [path]);
+}
+
+#[test]
+fn reference_to_a_deleted_file_is_virtual() {
+    let (_d, root) = files_dir();
+    let path = root.join("a b.txt");
+    let reference = reference_url(&path);
+    std::fs::remove_file(&path).unwrap();
+    let mut b = Board::new();
+    b.set_raw(&[(types::FILE_URL, reference.as_bytes())]);
+    let s = b.read().unwrap();
+    assert!(s.has_files && s.files_virtual && s.files.is_empty());
+}
+
+#[test]
+fn old_filenames_list_is_read_when_no_item_has_a_url() {
+    let mut b = Board::new();
+    autoreleasepool(|_| {
+        b.pb.clearContents();
+        let names = [
+            NSString::from_str("/Users/u/x y.txt"),
+            NSString::from_str("/tmp/z"),
+        ];
+        let list = NSArray::from_retained_slice(&names);
+        // SAFETY: an array of strings is the documented shape of this type.
+        let ok = unsafe {
+            b.pb.setPropertyList_forType(&list, &NSString::from_str(types::FILENAMES))
+        };
+        assert!(ok);
+    });
+    let s = b.read().unwrap();
+    assert!(s.has_files && !s.files_virtual);
+    assert_eq!(
+        s.files,
+        [PathBuf::from("/Users/u/x y.txt"), PathBuf::from("/tmp/z")]
+    );
+}
+
+#[test]
+fn promised_files_are_virtual() {
+    for t in types::PROMISED {
+        let mut b = Board::new();
+        b.set_raw(&[(t, b"public.jpeg"), (types::TEXT, b"IMG_0001.jpeg")]);
+        let s = b.read().unwrap();
+        assert!(s.has_files && s.files_virtual, "{t}");
+        assert!(s.files.is_empty() && s.parts.is_empty(), "{t}");
+    }
+}
+
+#[test]
+fn web_url_in_a_file_url_type_is_virtual() {
+    let mut b = Board::new();
+    b.set_raw(&[(types::FILE_URL, b"https://example.com/a.pdf")]);
+    let s = b.read().unwrap();
+    assert!(s.has_files && s.files_virtual && s.files.is_empty());
+}
+
+#[test]
+fn write_files_puts_urls_then_the_marker() {
+    let (_d, root) = files_dir();
+    let paths = vec![root.join("a b.txt"), root.join("A folder")];
+    let mut b = Board::new();
+    b.set_raw(&[(types::TEXT, b"old"), (types::PRIVATE[0], b"")]);
+    let before = b.change_count();
+    let seq = b.write_files(&paths, None).unwrap();
+    assert_ne!(seq, before);
+    assert_eq!(seq, b.change_count());
+    // The marker survives `writeObjects`: it is on the pasteboard next to the URLs.
+    let t = b.types().unwrap();
+    assert!(t.iter().any(|x| x == types::MARKER), "{t:?}");
+    assert!(t.iter().any(|x| x == types::FILE_URL), "{t:?}");
+    assert!(!t.iter().any(|x| x == types::PRIVATE[0]), "{t:?}");
+    // One item per path, in order, as Finder reads them.
+    let items = autoreleasepool(|_| {
+        b.pb.pasteboardItems()
+            .unwrap()
+            .iter()
+            .map(|i| item_file(&i))
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        items,
+        paths
+            .iter()
+            .cloned()
+            .map(ItemFile::Path)
+            .collect::<Vec<_>>()
+    );
+    // The agent's read sees our marker and nothing else.
+    let s = b.read().unwrap();
+    assert!(s.has_marker && s.files.is_empty() && s.parts.is_empty());
+    assert_eq!(s.seq, seq);
+}
+
+#[test]
+fn write_files_with_an_image_adds_png_and_tiff() {
+    let (_d, root) = files_dir();
+    let png = png_rgba(6, 5, 4);
+    let path = root.join("pic.png");
+    std::fs::write(&path, &png).unwrap();
+    let mut b = Board::new();
+    b.write_files(std::slice::from_ref(&path), Some(&png))
+        .unwrap();
+    let t = b.types().unwrap();
+    for ty in [types::MARKER, types::FILE_URL, types::PNG, types::TIFF] {
+        assert!(t.iter().any(|x| x == ty), "{ty}: {t:?}");
+    }
+    assert_eq!(b.data(types::PNG).unwrap(), png);
+    assert_eq!(b.file_list(), (vec![path], false));
+}
+
+#[test]
+fn write_files_refuses_bad_paths_without_touching_the_pasteboard() {
+    let mut b = Board::new();
+    let seq = b.set_raw(&[(types::TEXT, b"keep")]);
+    for bad in [vec![], vec![PathBuf::from("relative.txt")]] {
+        assert!(matches!(
+            b.write_files(&bad, None),
+            Err(ClipboardError::Other(_))
+        ));
+    }
+    assert_eq!(b.change_count(), seq);
+    assert_eq!(b.data(types::TEXT).unwrap(), b"keep");
+}
+
+#[test]
+fn engine_starts_a_walk_for_a_finder_copy_and_skips_virtual() {
+    use uc_core::{Config, DeviceId, DeviceKind, DeviceRecord, Engine, Event, Role, SkipReason};
+    let (_d, root) = files_dir();
+    let mut b = Board::new();
+    copy_urls_like_finder(&b, &[root.join("a b.txt")]);
+    let rec = DeviceRecord {
+        id: DeviceId([8; 32]),
+        name: "test mac".into(),
+        kind: DeviceKind::Mac,
+    };
+    let mut e = Engine::new(Config::new(rec, Role::Full));
+    let ev = e.on_local_change(&mut *b, 1_000);
+    assert!(
+        !ev.iter().any(|x| matches!(x, Event::Skipped(_))),
+        "a real file copy is not skipped: {ev:?}"
+    );
+    b.set_raw(&[(types::PROMISED[0], b"")]);
+    let ev = e.on_local_change(&mut *b, 2_000);
+    assert!(
+        ev.iter()
+            .any(|x| matches!(x, Event::Skipped(SkipReason::FilesVirtual))),
+        "{ev:?}"
+    );
+}
+
+#[test]
+fn cloud_only_is_false_for_local_files() {
+    let (_d, root) = files_dir();
+    assert!(!crate::cloud_only(&root.join("a b.txt")));
+    assert!(!crate::cloud_only(&root.join("A folder")));
+    assert!(!crate::cloud_only(&root.join("missing")));
 }

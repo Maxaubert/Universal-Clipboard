@@ -127,8 +127,7 @@ fn cloud_only(meta: &std::fs::Metadata) -> bool {
     {
         // SF_DATALESS: an iCloud Drive file that was evicted.
         use std::os::macos::fs::MetadataExt;
-        const SF_DATALESS: u32 = 0x4000_0000;
-        meta.st_flags() & SF_DATALESS != 0
+        uc_clip_mac::types::is_dataless(meta.st_flags())
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
