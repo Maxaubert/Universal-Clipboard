@@ -632,6 +632,9 @@ impl Clipboard for WinClipboard {
             private,
             has_files,
             remote: false,
+            // File paths and virtual files: file sync step 6. Until then a file copy has no
+            // paths, so the engine skips it.
+            ..Snapshot::default()
         })
     }
 

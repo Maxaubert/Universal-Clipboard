@@ -204,16 +204,16 @@ fn clipboard_manager_ping_pong_with_images() {
 }
 
 #[test]
-fn private_and_file_copies_are_skipped() {
+fn private_and_virtual_file_copies_are_skipped() {
     let mut net = FakeNet::full_mesh(2);
     net.devices[0]
         .clip
         .copy_private(vec![(Format::TextPlain, b"hunter2".to_vec())]);
     net.local_change(0);
-    net.devices[0].clip.copy_files("report.pdf");
+    net.devices[0].clip.copy_virtual_files("report.pdf");
     net.local_change(0);
     assert!(has(&net, 0, |e| *e == Event::Skipped(SkipReason::Private)));
-    assert!(has(&net, 0, |e| *e == Event::Skipped(SkipReason::Files)));
+    assert!(has(&net, 0, |e| *e == Event::Skipped(SkipReason::FilesVirtual)));
     assert_eq!(net.in_flight(), 0);
 }
 

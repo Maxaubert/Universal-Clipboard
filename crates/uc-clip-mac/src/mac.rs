@@ -154,6 +154,9 @@ impl MacClipboard {
             private: kinds.private,
             has_files: kinds.files,
             remote: kinds.remote,
+            // File paths and promised files: file sync step 6. Until then a file copy has no
+            // paths, so the engine skips it.
+            ..Snapshot::default()
         };
         if kinds.skip_content() || (kinds.remote && !self.read_remote_content) {
             return Ok(snap);

@@ -38,3 +38,15 @@ id32!(
     /// Content hash: BLAKE3 over a normalized form of the clip (plan 3.8). Used by echo layer 4.
     ContentHash
 );
+id32!(
+    /// The ID of one file copy (file sync spec 3): BLAKE3 over the manifest hash and the clock
+    /// stamp, so every copy has its own ID, even of the same folder.
+    FilesId
+);
+
+impl FilesId {
+    /// The first 8 hex characters, for the short name of the receive folder (spec 2.2.8).
+    pub fn short(&self) -> String {
+        self.0[..4].iter().map(|b| format!("{b:02x}")).collect()
+    }
+}

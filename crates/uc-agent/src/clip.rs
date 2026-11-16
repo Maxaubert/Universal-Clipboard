@@ -237,6 +237,22 @@ impl Clipboard for Backend {
         }
     }
 
+    fn write_files(
+        &mut self,
+        paths: &[std::path::PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        match self {
+            Backend::Fake(f) => f.write_files(paths, image),
+            #[cfg(windows)]
+            Backend::Win(w) => w.write_files(paths, image),
+            #[cfg(target_os = "macos")]
+            Backend::Mac(m) => m.write_files(paths, image),
+            #[cfg(target_os = "linux")]
+            Backend::Linux(l) => l.write_files(paths, image),
+        }
+    }
+
     fn line_ending(&self) -> LineEnding {
         match self {
             Backend::Fake(f) => f.line_ending(),

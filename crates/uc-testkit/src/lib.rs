@@ -6,14 +6,21 @@
 //! links that keep order per link, like one QUIC stream. The test decides which link delivers
 //! next, so a test can try every delivery order.
 //!
-//! Nothing here touches a real clipboard or a real network.
+//! File copies (file sync spec 7): the harness also plays the agent's part. It keeps fake
+//! file trees ([`FakeNet::add_file`], [`FakeNet::add_folder`]), runs walks, answers
+//! `FetchFiles` with a free space check, and carries each `ServeFiles` as a fake data stream
+//! that a test can hold back ([`FakeNet::hold_streams`]) and deliver one by one.
+//!
+//! Nothing here touches a real clipboard, a real file or a real network.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use uc_clip::{FakeClipboard, Format, RawPart};
-use uc_core::sync::{Config, Engine, Event, Peer, PeerGone};
-use uc_core::{DeviceId, DeviceKind, DeviceRecord, Role};
+use uc_clip::{Clipboard, FakeClipboard, Format, RawPart};
+use uc_core::files::{self, Entry, Manifest};
+use uc_core::sync::{Config, Engine, Event, Peer, PeerGone, SkipReason, TransferFailure};
+use uc_core::{DeviceId, DeviceKind, DeviceRecord, FilesId, Role};
 
 pub mod images;
 
@@ -116,6 +123,25 @@ impl Peer for FakePeer {
     }
 }
 
+/// A fake data stream: one file send from `from` to `to`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FakeStream {
+    /// The sender (the copy's origin).
+    pub from: usize,
+    /// The receiver.
+    pub to: usize,
+    /// The copy.
+    pub id: FilesId,
+}
+
+/// A walk the engine asked for, not run yet.
+struct PendingWalk {
+    device: usize,
+    generation: u64,
+    paths: Vec<PathBuf>,
+    picked: bool,
+}
+
 /// Several devices on an in-memory network.
 pub struct FakeNet {
     /// The devices, by index.
@@ -127,6 +153,33 @@ pub struct FakeNet {
     wire: Arc<Mutex<Wire>>,
     /// Frames delivered so far.
     pub delivered: u64,
+    /// Fake file trees by absolute path. Each tree's entry paths start with the item's name.
+    pub fs: BTreeMap<PathBuf, Vec<Entry>>,
+    /// Walks of these paths fail with this reason (cloud placeholders and the like).
+    pub fs_fail: BTreeMap<PathBuf, SkipReason>,
+    /// Free disk space per device, in bytes.
+    pub free_space: Vec<u64>,
+    /// Hold walks back: `run` does not finish them (to copy something during a walk).
+    pub hold_walks: bool,
+    /// Hold data streams back: `run` does not deliver them.
+    pub hold_streams: bool,
+    /// Senders send a manifest that does not match their offer (a hostile or broken peer).
+    pub tamper: bool,
+    /// Data streams that are open, oldest first.
+    pub streams: Vec<FakeStream>,
+    walks: VecDeque<PendingWalk>,
+    /// The manifest each origin serves, by (device, copy).
+    manifests: BTreeMap<(usize, FilesId), Manifest>,
+}
+
+/// A made-up content hash for a fake file: the same name and size give the same hash.
+pub fn fake_hash(name: &str, size: u64) -> [u8; 32] {
+    let mut h = [0u8; 32];
+    h[..8].copy_from_slice(&size.to_le_bytes());
+    for (k, b) in name.bytes().enumerate() {
+        h[8 + k % 24] ^= b.wrapping_add(k as u8);
+    }
+    h
 }
 
 /// A device ID for test device `i`.
@@ -152,6 +205,15 @@ impl FakeNet {
             skew_ms: Vec::new(),
             wire: Arc::default(),
             delivered: 0,
+            fs: BTreeMap::new(),
+            fs_fail: BTreeMap::new(),
+            free_space: Vec::new(),
+            hold_walks: false,
+            hold_streams: false,
+            tamper: false,
+            streams: Vec::new(),
+            walks: VecDeque::new(),
+            manifests: BTreeMap::new(),
         }
     }
 
@@ -169,6 +231,17 @@ impl FakeNet {
 
     /// Add a device. Returns its index.
     pub fn add(&mut self, role: Role, clip: FakeClipboard) -> usize {
+        self.add_with(role, clip, |_| {})
+    }
+
+    /// Add a device whose engine settings `tune` changes first (for example `features = 0`
+    /// to act as a 0.1.x peer). Returns its index.
+    pub fn add_with(
+        &mut self,
+        role: Role,
+        clip: FakeClipboard,
+        tune: impl FnOnce(&mut Config),
+    ) -> usize {
         let i = self.devices.len();
         let rec = DeviceRecord {
             id: device_id(i),
@@ -179,14 +252,17 @@ impl FakeNet {
                 DeviceKind::IPhone
             },
         };
+        let mut cfg = Config::new(rec, role);
+        tune(&mut cfg);
         self.devices.push(Device {
-            engine: Engine::new(Config::new(rec, role)),
+            engine: Engine::new(cfg),
             clip,
             manager: None,
             events: Vec::new(),
             manager_seq: 0,
         });
         self.skew_ms.push(0);
+        self.free_space.push(u64::MAX);
         i
     }
 
@@ -201,7 +277,9 @@ impl FakeNet {
     }
 
     /// Open a connection between `a` and `b` (both directions). Hello and Latest are queued.
+    /// An old connection between them is replaced, and its data streams die with it.
     pub fn connect(&mut self, a: usize, b: usize) {
+        let broken = self.drop_streams(a, b);
         {
             let mut w = self.wire.lock().expect("wire");
             for (x, y) in [(a, b), (b, a)] {
@@ -223,8 +301,9 @@ impl FakeNet {
             };
             let now = self.now(x);
             let ev = self.devices[x].engine.connect(Box::new(peer), now);
-            self.devices[x].events.extend(ev);
+            self.absorb(x, ev);
         }
+        self.report_broken(broken);
     }
 
     /// Connect every pair of devices.
@@ -249,8 +328,9 @@ impl FakeNet {
         }
     }
 
-    /// Close the connection between `a` and `b`. Frames in flight are lost.
+    /// Close the connection between `a` and `b`. Frames in flight and data streams are lost.
     pub fn disconnect(&mut self, a: usize, b: usize) {
+        let broken = self.drop_streams(a, b);
         {
             let mut w = self.wire.lock().expect("wire");
             for (x, y) in [(a, b), (b, a)] {
@@ -261,8 +341,11 @@ impl FakeNet {
             }
         }
         let (ia, ib) = (device_id(a), device_id(b));
-        self.devices[a].engine.disconnect(ib);
-        self.devices[b].engine.disconnect(ia);
+        let ev = self.devices[a].engine.disconnect(ib);
+        self.absorb(a, ev);
+        let ev = self.devices[b].engine.disconnect(ia);
+        self.absorb(b, ev);
+        self.report_broken(broken);
     }
 
     /// The user copies `parts` on device `i`. The device's manager (if any) reacts too.
@@ -281,7 +364,7 @@ impl FakeNet {
         let now = self.now(i);
         let d = &mut self.devices[i];
         let ev = d.engine.on_local_change(&mut d.clip, now);
-        d.events.extend(ev);
+        self.absorb(i, ev);
         self.run_manager(i);
     }
 
@@ -297,7 +380,7 @@ impl FakeNet {
         let now = self.now(i);
         let d = &mut self.devices[i];
         let ev = d.engine.on_local_change(&mut d.clip, now);
-        d.events.extend(ev);
+        self.absorb(i, ev);
     }
 
     /// Explicit fetch on device `i`.
@@ -305,7 +388,7 @@ impl FakeNet {
         let now = self.now(i);
         let d = &mut self.devices[i];
         let (outcome, ev) = d.engine.fetch(&mut d.clip, now);
-        d.events.extend(ev);
+        self.absorb(i, ev);
         outcome
     }
 
@@ -351,26 +434,374 @@ impl FakeNet {
         let from_id = device_id(f.from);
         let d = &mut self.devices[f.to];
         let ev = d.engine.on_frame(from_id, &f.frame, &mut d.clip, now);
-        d.events.extend(ev);
+        self.absorb(f.to, ev);
         self.run_manager(f.to);
         true
     }
 
-    /// Deliver everything, in link order, until the network is quiet.
+    /// Hand `frame` to device `to` as if `from` had sent it (a hostile or odd peer).
+    pub fn inject(&mut self, from: usize, to: usize, frame: &[u8]) {
+        let now = self.now(to);
+        let d = &mut self.devices[to];
+        let ev = d.engine.on_frame(device_id(from), frame, &mut d.clip, now);
+        self.absorb(to, ev);
+    }
+
+    /// The frames waiting on the link from `from` to `to`, oldest first.
+    pub fn frames(&self, from: usize, to: usize) -> Vec<Vec<u8>> {
+        let mut w = self.wire.lock().expect("wire");
+        w.link(from, to)
+            .map(|l| l.2.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Deliver everything, in link order, until the network is quiet. Walks and data streams
+    /// run when no frame is left, unless held back.
     /// Panics if it does not go quiet within `limit` frames (a ping-pong loop).
     pub fn run_bounded(&mut self, limit: u64) {
         let start = self.delivered;
-        while self.step(0) {
-            assert!(
-                self.delivered - start <= limit,
-                "the network did not go quiet within {limit} frames"
-            );
+        let mut rounds = 0u64;
+        loop {
+            while self.step(0) {
+                assert!(
+                    self.delivered - start <= limit,
+                    "the network did not go quiet within {limit} frames"
+                );
+            }
+            rounds += 1;
+            assert!(rounds <= limit, "walks and streams did not end");
+            if !self.hold_walks && self.finish_walk() {
+                continue;
+            }
+            if !self.hold_streams && !self.streams.is_empty() {
+                self.deliver_stream(0);
+                continue;
+            }
+            break;
         }
     }
 
     /// Deliver everything until quiet (with a generous loop guard).
     pub fn run(&mut self) {
         self.run_bounded(100_000);
+    }
+
+    // ----- files -----
+
+    /// Where device `i`'s fake files live (never created on disk).
+    pub fn root(i: usize) -> PathBuf {
+        std::env::temp_dir()
+            .join("uc-testkit-never-written")
+            .join(format!("dev{i}"))
+    }
+
+    /// Add a fake file `name` of `size` bytes on device `i`. Returns its path.
+    pub fn add_file(&mut self, i: usize, name: &str, size: u64) -> PathBuf {
+        let path = Self::root(i).join(name);
+        let entry = Entry::file(name, size, fake_hash(name, size), false);
+        self.fs.insert(path.clone(), vec![entry]);
+        path
+    }
+
+    /// Add a fake folder `name` on device `i` with `files` (relative path, size; parent
+    /// folders are added) and empty folders `empty`. Returns its path.
+    pub fn add_folder(
+        &mut self,
+        i: usize,
+        name: &str,
+        files: &[(&str, u64)],
+        empty: &[&str],
+    ) -> PathBuf {
+        let mut folders = BTreeSet::from([name.to_owned()]);
+        let mut entries = Vec::new();
+        for (rel, size) in files {
+            let path = format!("{name}/{rel}");
+            let mut parent = path.as_str();
+            while let Some((p, _)) = parent.rsplit_once('/') {
+                folders.insert(p.to_owned());
+                parent = p;
+            }
+            entries.push(Entry::file(&path, *size, fake_hash(&path, *size), false));
+        }
+        for e in empty {
+            folders.insert(format!("{name}/{e}"));
+        }
+        entries.extend(folders.into_iter().map(Entry::folder));
+        let path = Self::root(i).join(name);
+        self.fs.insert(path.clone(), entries);
+        path
+    }
+
+    /// The user copies `paths` in a file manager on device `i`.
+    pub fn copy_paths(&mut self, i: usize, paths: &[PathBuf]) {
+        self.devices[i].clip.copy_paths(paths);
+        self.local_change(i);
+    }
+
+    /// "Copy files..." on device `i`.
+    pub fn pick(&mut self, i: usize, paths: &[PathBuf]) {
+        let ev = self.devices[i].engine.pick_files(paths.to_vec());
+        self.absorb(i, ev);
+    }
+
+    /// Stop on device `i`.
+    pub fn stop(&mut self, i: usize) {
+        let ev = self.devices[i].engine.stop_transfer();
+        self.absorb(i, ev);
+    }
+
+    /// Pause or resume device `i`.
+    pub fn set_paused(&mut self, i: usize, paused: bool) {
+        let ev = self.devices[i].engine.set_paused(paused);
+        self.absorb(i, ev);
+    }
+
+    /// Turn "Sync files" on or off on device `i`.
+    pub fn set_sync_files(&mut self, i: usize, on: bool) {
+        let ev = self.devices[i].engine.set_sync_files(on);
+        self.absorb(i, ev);
+    }
+
+    /// The file paths on device `i`'s clipboard.
+    pub fn clipboard_files(&self, i: usize) -> &[PathBuf] {
+        self.devices[i].clip.files()
+    }
+
+    /// The ID of device `i`'s current file copy, if its current copy is files.
+    pub fn current_files(&self, i: usize) -> Option<FilesId> {
+        self.devices[i].engine.current_files().map(|o| o.id)
+    }
+
+    /// Finish the oldest held walk. Returns false if none is waiting.
+    pub fn finish_walk(&mut self) -> bool {
+        let Some(w) = self.walks.pop_front() else {
+            return false;
+        };
+        let i = w.device;
+        let reason = w
+            .paths
+            .iter()
+            .find_map(|p| self.fs_fail.get(p).cloned())
+            .or_else(|| {
+                (!w.paths.iter().all(|p| self.fs.contains_key(p)))
+                    .then_some(SkipReason::FilesVirtual)
+            });
+        let manifest = match reason {
+            Some(r) => Err(r),
+            None => self
+                .walk_manifest(&w.paths)
+                .map_err(|_| SkipReason::FilesTooMany),
+        };
+        let manifest = match manifest {
+            Ok(m) => m,
+            Err(r) => {
+                let ev = self.devices[i].engine.walk_failed(w.generation, r);
+                self.absorb(i, ev);
+                return true;
+            }
+        };
+        let ev = self.devices[i]
+            .engine
+            .on_walked(w.generation, manifest.total());
+        let go = ev.contains(&Event::HashFiles {
+            generation: w.generation,
+        });
+        self.absorb(i, ev);
+        if !go {
+            return true;
+        }
+        let now = self.now(i);
+        let ev = self.devices[i]
+            .engine
+            .on_local_files(w.generation, manifest.summary(), now);
+        let sent = ev.iter().find_map(|e| match e {
+            Event::FilesSent { id, .. } => Some(*id),
+            _ => None,
+        });
+        if let Some(id) = sent {
+            self.manifests.insert((i, id), manifest);
+        }
+        self.absorb(i, ev);
+        // A picked copy goes on the local clipboard too, with our marker, as our own write.
+        if sent.is_some() && w.picked {
+            let seq = self.devices[i]
+                .clip
+                .write_files(&w.paths, None)
+                .expect("fake write");
+            self.devices[i].engine.note_own_write(seq);
+            self.local_change(i);
+        }
+        true
+    }
+
+    /// The manifest of a walk over `paths`: top-level names made unique, as the agent does.
+    fn walk_manifest(&self, paths: &[PathBuf]) -> Result<Manifest, uc_core::ManifestError> {
+        let mut taken = BTreeSet::new();
+        let mut entries = Vec::new();
+        for p in paths {
+            let tree = &self.fs[p];
+            let top = tree
+                .iter()
+                .map(|e| e.path.split('/').next().unwrap_or_default())
+                .next()
+                .unwrap_or_default()
+                .to_owned();
+            let is_file = tree.len() == 1 && tree[0].kind == uc_core::EntryKind::File;
+            let name = files::unique_name(&top, is_file, true, &mut taken);
+            for e in tree {
+                let mut e = e.clone();
+                e.path = format!("{name}{}", &e.path[top.len()..]);
+                entries.push(e);
+            }
+        }
+        Manifest::new(entries)
+    }
+
+    /// Deliver the `k`-th open data stream: the receiver checks it, "writes" the files, puts
+    /// them on its clipboard and tells its engine; the sender's send ends.
+    pub fn deliver_stream(&mut self, k: usize) {
+        let s = self.streams.remove(k);
+        let (from_id, to_id) = (device_id(s.from), device_id(s.to));
+        let allowed = self.devices[s.to].engine.stream_allowed(from_id, s.id);
+        if allowed {
+            self.receive(s);
+        }
+        let ev = self.devices[s.from].engine.serve_done(to_id, s.id);
+        self.absorb(s.from, ev);
+    }
+
+    fn receive(&mut self, s: FakeStream) {
+        let to = s.to;
+        let mut manifest = self.manifests[&(s.from, s.id)].clone();
+        if self.tamper {
+            let mut entries = manifest.entries().to_vec();
+            entries.push(Entry::file("zz-extra", 1, [1; 32], false));
+            manifest = Manifest::new(entries).expect("tampered manifest");
+        }
+        let expected = self.devices[to]
+            .engine
+            .pending_files()
+            .map(|o| o.manifest_hash)
+            .unwrap_or_default();
+        let manifest = match Manifest::decode(manifest.bytes(), &expected) {
+            Ok(m) => m,
+            Err(_) => {
+                let ev = self.devices[to]
+                    .engine
+                    .transfer_failed(s.id, TransferFailure::BadData);
+                self.absorb(to, ev);
+                return;
+            }
+        };
+        let dir = Self::root(to).join("received").join(s.id.short());
+        let local = manifest.local_paths(files::LocalRules {
+            windows: false,
+            fold_case: true,
+        });
+        let mut paths = Vec::new();
+        for (e, l) in manifest.entries().iter().zip(&local) {
+            if e.path.contains('/') {
+                continue;
+            }
+            // The received tree, so that it can be copied again from here.
+            let prefix = format!("{}/", e.path);
+            let tree: Vec<Entry> = manifest
+                .entries()
+                .iter()
+                .filter(|x| x.path == e.path || x.path.starts_with(&prefix))
+                .cloned()
+                .collect();
+            let path = dir.join(l);
+            self.fs.insert(path.clone(), tree);
+            paths.push(path);
+        }
+        let seq = self.devices[to]
+            .clip
+            .write_files(&paths, None)
+            .expect("fake write");
+        let ev = self.devices[to].engine.files_applied(s.id, &manifest, seq);
+        self.absorb(to, ev);
+        // The OS reports our own write as a change.
+        self.local_change(to);
+    }
+
+    /// Remove the streams between `a` and `b`; returns them.
+    fn drop_streams(&mut self, a: usize, b: usize) -> Vec<FakeStream> {
+        let (gone, kept) = self
+            .streams
+            .iter()
+            .partition(|s| (s.from, s.to) == (a, b) || (s.from, s.to) == (b, a));
+        self.streams = kept;
+        gone
+    }
+
+    /// The agents see their broken streams: the receiver reports an interrupted fetch, the
+    /// sender ends its send.
+    fn report_broken(&mut self, broken: Vec<FakeStream>) {
+        for s in broken {
+            let ev = self.devices[s.to]
+                .engine
+                .transfer_failed(s.id, TransferFailure::Interrupted);
+            self.absorb(s.to, ev);
+            let ev = self.devices[s.from]
+                .engine
+                .serve_done(device_id(s.to), s.id);
+            self.absorb(s.from, ev);
+        }
+    }
+
+    fn index_of(&self, id: DeviceId) -> Option<usize> {
+        (0..self.devices.len()).find(|&k| device_id(k) == id)
+    }
+
+    /// Keep device `i`'s events and do the agent's part for the file events.
+    fn absorb(&mut self, i: usize, events: Vec<Event>) {
+        self.devices[i].events.extend(events.iter().cloned());
+        for e in events {
+            match e {
+                Event::WalkFiles {
+                    generation,
+                    paths,
+                    picked,
+                } => self.walks.push_back(PendingWalk {
+                    device: i,
+                    generation,
+                    paths,
+                    picked,
+                }),
+                Event::FetchFiles { id, total, .. } => {
+                    let ev = if files::space_needed(total) > self.free_space[i] {
+                        self.devices[i]
+                            .engine
+                            .transfer_failed(id, TransferFailure::NoSpace)
+                    } else {
+                        self.devices[i].engine.files_want(id)
+                    };
+                    self.absorb(i, ev);
+                }
+                Event::ServeFiles { peer, id } => {
+                    if let Some(to) = self.index_of(peer) {
+                        self.streams.push(FakeStream { from: i, to, id });
+                    }
+                }
+                Event::CancelTransfer {
+                    id, peer, sending, ..
+                } => {
+                    let Some(other) = self.index_of(peer) else {
+                        continue;
+                    };
+                    let (from, to) = if sending { (i, other) } else { (other, i) };
+                    let before = self.streams.len();
+                    self.streams.retain(|s| *s != FakeStream { from, to, id });
+                    // A receiver that stops a stream makes the sender's write fail.
+                    if !sending && self.streams.len() < before {
+                        let ev = self.devices[from].engine.serve_done(device_id(to), id);
+                        self.absorb(from, ev);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Text on device `i`'s clipboard, with line endings folded to LF.

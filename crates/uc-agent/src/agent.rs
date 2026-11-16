@@ -485,7 +485,8 @@ impl Core {
         if core.state.pause == Pause::Forever
             || matches!(core.state.pause, Pause::Until(t) if t > now_ms())
         {
-            core.engine.set_paused(true);
+            let evs = core.engine.set_paused(true);
+            core.on_engine(evs);
         }
         core.start_net();
         Ok(core)
@@ -522,7 +523,8 @@ impl Core {
         };
         let paused = self.engine.is_paused();
         self.engine = Engine::new(Config::new(rec, Role::Full));
-        self.engine.set_paused(paused);
+        // A fresh engine has no transfers to cancel.
+        let _ = self.engine.set_paused(paused);
         self.apply_settings();
         self.sync_engine_group();
     }
@@ -869,7 +871,8 @@ impl Core {
             && wall >= t
         {
             self.state.pause = Pause::Off;
-            self.engine.set_paused(false);
+            let evs = self.engine.set_paused(false);
+            self.on_engine(evs);
             self.emit("status", json!({"paused": false}));
             self.dirty = true;
         }
@@ -1065,7 +1068,8 @@ impl Core {
             NetEvent::Down { peer } => {
                 tracing::info!(peer = %short_id(&peer.0), "link down");
                 self.peers.remove(&peer);
-                self.engine.disconnect(peer);
+                let evs = self.engine.disconnect(peer);
+                self.on_engine(evs);
                 self.emit("devices", json!({}));
             }
             NetEvent::Frame { peer, frame } => self.on_frame(peer, frame),
@@ -1112,6 +1116,8 @@ impl Core {
             epoch: u64::from(epoch),
             wall_ms: now_ms(),
             group: *g.group_id(),
+            // The same extension as the engine's Hello (file sync spec 3).
+            ext: self.engine.hello_ext(),
         }))
     }
 
@@ -1150,7 +1156,8 @@ impl Core {
             return;
         };
         let _ = link.send(msg::encode(&hello));
-        self.engine.disconnect(peer);
+        let evs = self.engine.disconnect(peer);
+        self.on_engine(evs);
         self.peers.insert(
             peer,
             PeerLink {
@@ -1169,7 +1176,8 @@ impl Core {
         if let Some(p) = self.peers.remove(&peer) {
             p.link.close(2, b"closed");
         }
-        self.engine.disconnect(peer);
+        let evs = self.engine.disconnect(peer);
+        self.on_engine(evs);
         if let Some(n) = &self.net {
             n.end_probation(peer);
         }
@@ -1375,7 +1383,8 @@ impl Core {
             if let Some(p) = self.peers.get(d) {
                 p.send(&Message::Removed);
             }
-            self.engine.disconnect(*d);
+            // Nothing to hand on: the removed peer's link closes, which ends its transfers.
+            let _ = self.engine.disconnect(*d);
             self.closing.push((Instant::now() + FLUSH, *d));
         }
         for p in self.peers.values_mut() {
@@ -1890,7 +1899,8 @@ impl Core {
                 ));
             }
         };
-        self.engine.set_paused(self.state.pause != Pause::Off);
+        let evs = self.engine.set_paused(self.state.pause != Pause::Off);
+        self.on_engine(evs);
         self.save();
         self.emit("status", json!({}));
         Ok(serde_json::to_value(self.state.pause).unwrap_or(Value::Null))

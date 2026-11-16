@@ -20,6 +20,19 @@ pub const IMAGE_MAX: usize = 25 << 20;
 /// Clips up to this total size are pushed at once; larger ones are announced with `Latest`.
 pub const PUSH_MAX: usize = 256 << 10;
 
+/// Largest file copy that syncs automatically, by default (setting `file-limit-mb`, file sync
+/// spec 5). Copies picked with "Copy files..." or `uc copy` have no byte limit.
+pub const FILE_LIMIT_DEFAULT_MB: u64 = 100;
+/// Smallest value of the `file-limit-mb` setting.
+pub const FILE_LIMIT_MIN_MB: u64 = 1;
+/// Largest value of the `file-limit-mb` setting (10 GiB).
+pub const FILE_LIMIT_MAX_MB: u64 = 10_240;
+
+/// The automatic file copy limit in bytes for a `file-limit-mb` setting, clamped to its range.
+pub fn file_limit_bytes(mb: u64) -> u64 {
+    mb.clamp(FILE_LIMIT_MIN_MB, FILE_LIMIT_MAX_MB) << 20
+}
+
 /// The cap for one format.
 pub fn cap(format: Format) -> usize {
     match format {
@@ -66,6 +79,13 @@ pub fn fit(parts: Vec<RawPart>) -> (Vec<RawPart>, Vec<Dropped>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_limit_is_clamped() {
+        assert_eq!(file_limit_bytes(FILE_LIMIT_DEFAULT_MB), 100 << 20);
+        assert_eq!(file_limit_bytes(0), 1 << 20);
+        assert_eq!(file_limit_bytes(u64::MAX), 10_240 << 20);
+    }
 
     fn part(f: Format, n: usize) -> RawPart {
         (f, vec![b'a'; n])
