@@ -1081,6 +1081,9 @@ impl Core {
                 self.emit("devices", json!({}));
             }
             NetEvent::Pairing(conn) => self.on_pairing_conn(conn),
+            // File transfers come in plan step 5. Until then no stream is asked for, and
+            // dropping one stops it (`uc_net::STREAM_ABORTED`).
+            NetEvent::Stream { .. } => {}
             NetEvent::PortChanged(p) => {
                 tracing::info!(port = p, "port in use, moved to a new one");
                 self.port = p;

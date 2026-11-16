@@ -8,6 +8,7 @@
 //! 2. On [`NetEvent::Up`]: `engine.connect(Box::new(link.peer_handle()), now)`.
 //!    On [`NetEvent::Frame`]: `engine.on_frame(peer, &frame, ...)`.
 //!    On [`NetEvent::Down`]: `engine.disconnect(peer)`.
+//!    On [`NetEvent::Stream`]: a file transfer's data stream (file sync plan, section 3).
 //! 3. After membership sync passed for a peer (protocol 5.9 step 5): [`Net::ready`]. Only then
 //!    does this device send addresses to it.
 //! 4. On the engine's `Event::AddrUpdate { peer, signed }`: [`Net::addr_update`].
@@ -115,6 +116,17 @@ pub enum NetEvent {
         peer: DeviceId,
         /// The frame.
         frame: Vec<u8>,
+    },
+    /// A data stream from a member, on its current link. Streams on any other link (a
+    /// replaced one, a probation link) are stopped here and never reach the agent. The agent
+    /// still checks that it asked this peer for the transfer.
+    Stream {
+        /// From.
+        peer: DeviceId,
+        /// The link it arrived on (see [`Link::id`]).
+        link: u64,
+        /// The stream.
+        stream: link::RecvStream,
     },
     /// A link is down. Disconnect it from the engine.
     Down {
@@ -656,8 +668,13 @@ impl Actor {
                         p.next_dial = now + dial_delay(me, d);
                         p
                     });
-                    // A probation peer that membership sync made a member: a normal link now.
-                    p.probation = None;
+                    // A probation peer that membership sync made a member: a normal link now,
+                    // which may carry data streams.
+                    if p.probation.take().is_some()
+                        && let Some(l) = &p.link
+                    {
+                        l.allow_streams();
+                    }
                 }
                 self.update_paths();
             }
@@ -863,6 +880,9 @@ impl Actor {
             self.retired.insert(old.id);
             let _ = self.ev.send(NetEvent::Down { peer: l.peer });
         }
+        if p.is_member() {
+            l.allow_streams();
+        }
         p.link = Some(l.clone());
         p.link_since = Some(at);
         p.ready = false;
@@ -900,6 +920,22 @@ impl Actor {
                     if e.0.len() < 256 {
                         e.0.push(frame);
                     }
+                }
+            }
+            LinkEvent::Stream { peer, link, stream } => {
+                let member_link = self
+                    .members
+                    .get(&peer)
+                    .filter(|p| p.is_member())
+                    .and_then(|p| p.link.as_ref())
+                    .is_some_and(|l| l.id == link);
+                if member_link {
+                    let _ = self.ev.send(NetEvent::Stream { peer, link, stream });
+                } else {
+                    // Credit is only granted on current member links, so this is a link that
+                    // was replaced or lost membership meanwhile.
+                    tracing::debug!(link, "data stream on a link that is not current: stopped");
+                    stream.stop(link::STREAM_ABORTED);
                 }
             }
             LinkEvent::Closed { peer, link } => {

@@ -117,7 +117,8 @@ addresses, nothing listens.
 ## Links and reconnect
 
 - One QUIC connection per peer, one bidirectional stream, frames as `u32 length || frame`.
-  `QuicPeer` implements `uc_core::Peer`.
+  `QuicPeer` implements `uc_core::Peer`. Plus one unidirectional data stream per file transfer
+  (below).
 - Both sides dial. The device with the larger key waits 300 ms first. If two connections still
   meet, both sides keep the one dialed by the smaller key; after 2 s the newest connection wins
   (the old one may be dead after a peer restart).
@@ -127,6 +128,42 @@ addresses, nothing listens.
 - Keep-alive 5 s, idle timeout 24 s: a dead path is found in under 30 s (plan 3.3). The worst
   case is keep-alive + idle timeout, because the idle clock starts at the last packet received.
   (Was 15 s + 29 s until 2026-11-15, which measured up to 44 s for a hard-killed peer.)
+
+## Data streams for file transfers (file sync, 2026-11-16)
+
+Plan: `docs/plan/2026-11-16-file-sync.md` sections 3 and 6. Code: `link.rs`, `node.rs`,
+`endpoint::transport`. Tests: `tests/streams.rs`.
+
+- Clipboard frames stay on the frame stream. File bytes never go through `Link::send` (an
+  unbounded queue, and a 28 MiB frame limit).
+- **Credit only on member links.** The transport starts every connection with
+  `max_concurrent_uni_streams = 0`, so the peer cannot open a single data stream.
+  `Link::allow_streams` raises it to 8 (a QUIC MAX_STREAMS frame). The node calls it when a
+  link becomes the current link of a member, or when membership sync turns a probation link
+  into a member link. Pairing connections and probation links never get credit:
+  `open_stream` there fails with `StreamError::Refused` after the handshake timeout.
+- **Delivery.** Every link runs an `accept_uni` loop (`LinkEvent::Stream`). The node passes a
+  stream on as `NetEvent::Stream { peer, link, stream }` only when `link` is the peer's
+  current link and the peer is a member; anything else is stopped with code 2 at once. The
+  agent still checks that it asked this peer for that copy (its outstanding `FilesWant`).
+- **Sending.** `Link::open_stream` gives a `SendStream` at priority -1 (the frame stream has
+  0, so buffered clipboard frames go out first). `write` waits for flow control: a slow
+  receiver slows the sender, nothing piles up in memory. `finish` waits until the peer has
+  every byte. Dropping a `SendStream` without `finish` resets it with code 2 (a bare quinn
+  stream would end cleanly, and the receiver would see a short file as complete).
+- **Cancel codes** (stream codes, a separate space from the close codes): 1 = superseded
+  (`STREAM_SUPERSEDED`), 2 = aborted (`STREAM_ABORTED`). The sender uses `reset(code)`, the
+  receiver `stop(code)`; the other side then gets `StreamError::Reset(code)` or
+  `Stopped(code)`. A dropped `RecvStream` stops with 2, so read until `Ok(None)` before
+  dropping it. Never close the link to cancel: that ends the clipboard frames too.
+- **Windows, set explicitly** (`endpoint.rs`): `stream_receive_window` 8 MiB (per stream, frame
+  stream included), connection `receive_window` 9 x 8 MiB (room for the frame stream and all 8
+  data streams, so stalled transfers can never block frames; quinn's default is unlimited),
+  `send_window` 16 MiB (quinn's default is 10 MB).
+- **Link replaced or lost.** The transfer fails on both sides with `StreamError::LinkClosed`,
+  never as a short clean end. The receiver asks again on the new link (plan 2.2.7).
+- Measured 2026-11-16 (`one_gigabyte_crosses_a_data_stream`, debug build, Windows 11
+  loopback): 1 GiB in 8.9 s, 115 MiB/s; a clipboard frame sent halfway arrived in 21 ms.
 
 ## Path state and the VPN rule
 

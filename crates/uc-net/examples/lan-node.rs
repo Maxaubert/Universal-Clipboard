@@ -174,6 +174,8 @@ async fn main() {
                     }
                     NetEvent::Path { peer, state } => say(format!("PATH {} {state:?}", name(&peer))),
                     NetEvent::Pairing(_) => {}
+                    // This example asks for no transfers: dropping a stream stops it.
+                    NetEvent::Stream { .. } => {}
                     NetEvent::PortChanged(p) => say(format!("PORT {p}")),
                     NetEvent::Interfaces { physical, vpn_up } => {
                         let n: Vec<String> = physical.iter().map(|i| i.name.clone()).collect();

@@ -8,7 +8,9 @@ chmod 700 "$XDG_RUNTIME_DIR"
 # Never reuse a desktop's sockets.
 unset WAYLAND_DISPLAY DISPLAY
 
-Xvfb :99 -screen 0 320x240x24 -nolisten tcp >/tmp/uclip-xvfb.log 2>&1 &
+# -noreset: the server must not reset when its last client leaves, or a test that opens a new
+# connection right after closing the old ones races the reset.
+Xvfb :99 -screen 0 320x240x24 -nolisten tcp -noreset >/tmp/uclip-xvfb.log 2>&1 &
 XVFB=$!
 printf 'xwayland disable\n' >/tmp/uclip-sway.conf
 WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \

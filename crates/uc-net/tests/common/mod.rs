@@ -87,6 +87,8 @@ pub struct Node {
     pub paths: BTreeMap<DeviceId, PathState>,
     pub ups: usize,
     pub frames: Vec<(DeviceId, Vec<u8>)>,
+    /// Data streams the node passed on: peer, link id, stream.
+    pub streams: Vec<(DeviceId, u64, uc_net::RecvStream)>,
     pub pairing: Vec<uc_net::Conn>,
     pub port_changes: Vec<u16>,
     pub applied: usize,
@@ -153,6 +155,7 @@ impl Node {
             paths: BTreeMap::new(),
             ups: 0,
             frames: Vec::new(),
+            streams: Vec::new(),
             pairing: Vec::new(),
             port_changes: Vec::new(),
             applied: 0,
@@ -223,6 +226,7 @@ impl Node {
                     self.paths.insert(peer, state);
                 }
                 NetEvent::Pairing(c) => self.pairing.push(c),
+                NetEvent::Stream { peer, link, stream } => self.streams.push((peer, link, stream)),
                 NetEvent::PortChanged(p) => self.port_changes.push(p),
                 NetEvent::Interfaces { .. } => {}
             }

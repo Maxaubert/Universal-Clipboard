@@ -10,6 +10,7 @@
 //! clipboard.
 #![cfg(target_os = "linux")]
 
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -115,20 +116,89 @@ fn suite(mut a: LinuxClipboard, mut b: LinuxClipboard) {
     assert!(!s.private);
     assert_eq!(s.parts, vec![(Format::TextPlain, b"plain".to_vec())]);
 
-    // 5. File copy: skipped. A web link in a uri-list is not a file.
+    // 5. File copies (spec 2026-11-16 section 6). A file manager copies files: we read the
+    //    paths and no text. A web link in a uri-list is not a file.
     b.copy_raw(&[
-        ("text/uri-list", b"file:///home/u/report.pdf\r\n"),
+        (
+            "text/uri-list",
+            b"file:///home/u/report.pdf\r\nfile:///home/u/My%20Folder\r\n",
+        ),
         ("UTF8_STRING", b"report.pdf"),
     ])
     .unwrap();
-    assert!(read_after_event(&mut a, &rx).has_files);
+    let s = read_after_event(&mut a, &rx);
+    assert!(
+        s.has_files && !s.files_virtual && s.parts.is_empty(),
+        "{s:?}"
+    );
+    assert_eq!(
+        s.files,
+        vec![
+            PathBuf::from("/home/u/report.pdf"),
+            PathBuf::from("/home/u/My Folder")
+        ]
+    );
+    b.copy_raw(&[
+        (
+            mime::GNOME_COPIED_FILES,
+            b"copy\nfile:///tmp/gr%C3%BC%C3%9F",
+        ),
+        ("text/uri-list", b"file:///tmp/gr%C3%BC%C3%9F\r\n"),
+    ])
+    .unwrap();
+    let s = read_after_event(&mut a, &rx);
+    assert_eq!(s.files, vec![PathBuf::from("/tmp/grüß")]);
     b.copy_raw(&[
         ("text/uri-list", b"https://example.org/\r\n"),
         ("UTF8_STRING", b"https://example.org/"),
     ])
     .unwrap();
     let s = read_after_event(&mut a, &rx);
-    assert!(!s.has_files && s.parts.len() == 1);
+    assert!(!s.has_files && s.files.is_empty() && s.parts.len() == 1);
+
+    // 5b. We write a file copy: the other side sees every file type and our marker, and reads
+    //     the same paths back; we skip it by seq and marker.
+    let files = vec![
+        PathBuf::from("/tmp/uclip live/a b.txt"),
+        PathBuf::from("/tmp/uclip live/grüß #1"),
+    ];
+    let icon = png_like(64);
+    while rb.try_recv().is_ok() {}
+    let seq = a.write_files(&files, Some(&icon)).unwrap();
+    while rx.try_recv().is_ok() {}
+    rb.recv_timeout(WAIT).expect("b sees our file write");
+    let own = a.read().unwrap();
+    assert_eq!(own.seq, seq);
+    assert!(own.has_marker);
+    let offered = b.offered().unwrap();
+    for m in [
+        mime::GNOME_COPIED_FILES,
+        mime::URI_LIST,
+        mime::KDE_CUT_SELECTION,
+        mime::MARKER,
+        "UTF8_STRING",
+        "image/png",
+    ] {
+        assert!(offered.iter().any(|o| o == m), "{m} in {offered:?}");
+    }
+    let uris = b.read_type(mime::URI_LIST).unwrap().unwrap();
+    assert_eq!(mime::parse_file_uris(&uris).paths, files);
+    let gnome = b.read_type(mime::GNOME_COPIED_FILES).unwrap().unwrap();
+    assert!(gnome.starts_with(b"copy\n"));
+    assert_eq!(mime::parse_gnome_copied_files(&gnome).paths, files);
+    assert_eq!(
+        b.read_type(mime::KDE_CUT_SELECTION).unwrap().as_deref(),
+        Some(&b"0"[..])
+    );
+    assert_eq!(
+        b.read_type("UTF8_STRING").unwrap().as_deref(),
+        Some("/tmp/uclip live/a b.txt\n/tmp/uclip live/grüß #1".as_bytes())
+    );
+    assert_eq!(b.read_type("image/png").unwrap(), Some(icon));
+    // Bad paths are refused before the clipboard changes.
+    assert!(a.write_files(&[PathBuf::from("rel/x")], None).is_err());
+    assert!(a.write_files(&[], None).is_err());
+    assert_eq!(a.read().unwrap().seq, seq);
 
     // 6. A large image (X11: INCR transfer in chunks; Wayland: a long pipe write), both ways.
     let big = png_like(3 * 1024 * 1024 + 17);
@@ -158,9 +228,8 @@ fn suite(mut a: LinuxClipboard, mut b: LinuxClipboard) {
     assert!(a.seq().unwrap() > s1);
 }
 
-/// Copy with an outside tool and read; then write and paste with the outside tool.
-fn interop(mut a: LinuxClipboard, copy: &[&str], paste: &[&str]) {
-    let rx = a.subscribe();
+/// Start an outside copy tool that reads `bytes` from stdin and keeps serving them.
+fn tool_copy(copy: &[&str], bytes: &[u8]) -> std::process::Child {
     let mut child = Command::new(copy[0])
         .args(&copy[1..])
         .stdin(Stdio::piped())
@@ -170,13 +239,24 @@ fn interop(mut a: LinuxClipboard, copy: &[&str], paste: &[&str]) {
         .expect("copy tool");
     {
         use std::io::Write;
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all("from tool ✓".as_bytes())
-            .unwrap();
+        child.stdin.take().unwrap().write_all(bytes).unwrap();
     }
+    child
+}
+
+/// Run an outside paste tool and return what it printed.
+fn tool_paste(paste: &[&str]) -> Vec<u8> {
+    Command::new(paste[0])
+        .args(&paste[1..])
+        .output()
+        .expect("paste tool")
+        .stdout
+}
+
+/// Copy with an outside tool and read; then write and paste with the outside tool.
+fn interop(mut a: LinuxClipboard, copy: &[&str], paste: &[&str]) {
+    let rx = a.subscribe();
+    let mut child = tool_copy(copy, "from tool ✓".as_bytes());
     let s = read_after_event(&mut a, &rx);
     assert_eq!(
         s.parts,
@@ -185,11 +265,22 @@ fn interop(mut a: LinuxClipboard, copy: &[&str], paste: &[&str]) {
 
     a.write(&[(Format::TextPlain, "from uclip ✓".as_bytes().to_vec())])
         .unwrap();
-    let out = Command::new(paste[0])
-        .args(&paste[1..])
-        .output()
-        .expect("paste tool");
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "from uclip ✓");
+    assert_eq!(String::from_utf8_lossy(&tool_paste(paste)), "from uclip ✓");
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// The same for a file copy: the tools copy and paste `text/uri-list`.
+fn interop_files(mut a: LinuxClipboard, copy: &[&str], paste: &[&str]) {
+    let rx = a.subscribe();
+    let mut child = tool_copy(copy, b"file:///srv/from%20tool.txt\r\n");
+    let s = read_after_event(&mut a, &rx);
+    assert!(s.has_files && s.parts.is_empty(), "{s:?}");
+    assert_eq!(s.files, vec![PathBuf::from("/srv/from tool.txt")]);
+
+    let files = vec![PathBuf::from("/srv/from uclip ✓")];
+    a.write_files(&files, None).unwrap();
+    assert_eq!(mime::parse_file_uris(&tool_paste(paste)).paths, files);
     let _ = child.kill();
     let _ = child.wait();
 }
@@ -208,6 +299,14 @@ fn x11_live() {
         let copy: Vec<&str> = ["xclip", "-i"].iter().copied().chain(sel).collect();
         let paste: Vec<&str> = ["xclip", "-o"].iter().copied().chain(sel).collect();
         interop(
+            LinuxClipboard::open_x11(Some(&display)).unwrap(),
+            &copy,
+            &paste,
+        );
+        let t = ["-t", mime::URI_LIST];
+        let copy: Vec<&str> = copy.iter().copied().chain(t).collect();
+        let paste: Vec<&str> = paste.iter().copied().chain(t).collect();
+        interop_files(
             LinuxClipboard::open_x11(Some(&display)).unwrap(),
             &copy,
             &paste,
@@ -241,6 +340,11 @@ fn wayland_live(protocol: DataControl, kind: BackendKind) {
                 "text/plain;charset=utf-8",
             ],
             &["wl-paste", "--no-newline"],
+        );
+        interop_files(
+            LinuxClipboard::open_wayland(protocol).unwrap(),
+            &["wl-copy", "--foreground", "--type", mime::URI_LIST],
+            &["wl-paste", "--no-newline", "--type", mime::URI_LIST],
         );
     }
 }

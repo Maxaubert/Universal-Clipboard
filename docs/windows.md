@@ -35,9 +35,8 @@ Date: 2026-11-14. Crates: `uc-clip-win`, `tools/winhost` (crate `uc-winhost`). P
   but cannot be read, or is shorter than 4 bytes, counts as private.
 - **Exception:** when our origin marker is present, `CanUploadToCloudClipboard` = 0 is ignored,
   because our own writes set it. The engine skips such a clip anyway (marker first).
-- **Files:** `CF_HDROP`, and also `FileGroupDescriptorW` (virtual files, for example an Outlook
-  attachment). The plan names only `CF_HDROP`; virtual files are the same kind of copy.
-- For private copies and file copies the content is never read. The snapshot has flags only.
+- For private copies the content is never read. The snapshot has flags only. File copies: see
+  "File copies" below.
 
 ## Write
 - One open and close: our marker `UniversalClipboard.Origin` first, then
@@ -47,6 +46,39 @@ Date: 2026-11-14. Crates: `uc-clip-win`, `tools/winhost` (crate `uc-winhost`). P
   Windows makes `CF_DIB` and `CF_BITMAP` from the `CF_DIBV5` for older programs.
 - We do not set `CanIncludeInClipboardHistory`, so received clips stay in Win+V (plan 3.8).
 - No delayed rendering.
+
+## File copies (file sync, 2026-11-16)
+Spec: `docs/plan/2026-11-16-file-sync.md` sections 2.4 and 6. Pure code in `src/files.rs`
+(tested on every OS, with proptests), OS calls in `src/win.rs`.
+- **Read:** when `CF_HDROP` is on the clipboard, only it is read. `parse_hdrop` takes the
+  `DROPFILES` header and the double-NUL list. Paths become `PathBuf` through
+  `OsString::from_wide`, so names with lone surrogates stay exact. Relative entries are left out.
+  The text and image next to a file copy (a file name, an icon) are not read.
+- **Refused lists:** an ANSI list (`fWide = 0`), a cut header, or `pFiles` outside the block give
+  no paths. A path that runs to the end of the block without its NUL is left out. The snapshot
+  then has `has_files` and no paths, and the engine skips it like a virtual copy.
+- **Virtual:** `FileGroupDescriptorW` without `CF_HDROP` (Outlook attachment, an item inside a
+  zip opened in Explorer) sets `files_virtual`. With `CF_HDROP` next to it, the paths win.
+- **Cloud placeholders:** `uc_clip_win::cloud_only(path)` reads the attributes only
+  (`GetFileAttributesW`, which never downloads). `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`
+  (OneDrive online-only), `FILE_ATTRIBUTE_RECALL_ON_OPEN` and `FILE_ATTRIBUTE_OFFLINE` count.
+  The snapshot has no field for it: the agent's walk calls it for every item (or passes the
+  directory listing's `file_attributes()` to `files::is_cloud_placeholder`) and skips the whole
+  copy with `FilesCloudOnly`.
+- **Write** (`write_files`), one open and close: marker, `CanUploadToCloudClipboard = 0`,
+  `CF_HDROP` (wide, from `build_hdrop`), `Preferred DropEffect = 1` (copy, never cut), and for
+  the single-image companion (spec 2.2.5) `PNG` plus `CF_DIBV5`. Paths are checked first
+  (`uc_clip::check_file_paths`; a NUL in a path is refused too), so a bad call leaves the
+  clipboard as it was. `\\?\C:\...` and `\\?\UNC\...` are written without the prefix (spec 6), because
+  many apps do not expect it in a pasted list. Long paths (over 259 characters) are written as
+  they are.
+- **Tests:** `tests/files.rs` (winhost): spaces, non-BMP and a lone surrogate, 5,000 paths,
+  garbage `DROPFILES`, write then every format present and the marker seen, the image companion,
+  a 300-character path, bad paths refused. `cloud_only` is tested on a temp file with
+  `FILE_ATTRIBUTE_OFFLINE` (no OneDrive needed). `tests/real.rs`: an Explorer-like copy and a
+  virtual copy.
+- **Not tested here:** a real OneDrive online-only file, and pasting our list into Explorer
+  (that needs the visible desktop; the install test on the PC covers it).
 
 ## winhost (tests on the real clipboard)
 - `uc_winhost::isolated_test(name, body)`: the test binary starts itself again with
