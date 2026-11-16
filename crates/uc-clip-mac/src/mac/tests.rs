@@ -359,8 +359,20 @@ fn file_urls_from_another_app_keep_their_order() {
     copy_urls_like_finder(&b, &paths);
     let s = b.read().unwrap();
     assert!(s.has_files && !s.files_virtual && !s.has_marker);
-    assert_eq!(s.files, paths);
+    // `NSURL` gives names in NFD ("a" plus a ring for "å"). APFS finds the file by either form,
+    // and the agent's walk puts names in NFC into the manifest.
+    assert_eq!(nfc_all(&s.files), nfc_all(&paths));
+    for f in &s.files {
+        assert!(f.exists(), "{f:?}");
+    }
     assert!(s.parts.is_empty());
+}
+
+fn nfc_all(paths: &[PathBuf]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|p| uc_core::files::nfc(p.to_str().unwrap()))
+        .collect()
 }
 
 #[test]
