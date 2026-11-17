@@ -74,11 +74,19 @@ describe('Home: files', () => {
     expect(m.calls.filter((c) => c.call === 'pick').map((c) => c.params.folder)).toEqual([false, true]);
     expect(m.calls.find((c) => c.call === 'files.copy')?.params.paths).toEqual(['/home/max/Photos']);
   });
+  it('Copy files... still works with Copy smaller files automatically off', async () => {
+    const m = await open('home');
+    m.world.settings['auto-file-copy'].value = 'off';
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy files...' }));
+    await waitFor(() => expect(m.calls.some((c) => c.call === 'files.copy')).toBe(true));
+    expect(await screen.findByTestId('transfer')).toHaveTextContent('Preparing files...');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
   it('shows why a copy cannot start', async () => {
     const m = await open('home');
-    m.world.settings['sync-files'].value = 'off';
+    m.world.status.paused = true;
     await fireEvent.click(await screen.findByRole('button', { name: 'Copy files...' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Files are not synced.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sync is paused.');
   });
   it('shows the progress line and Stop stops the transfer', async () => {
     const m = await open('home');
@@ -170,10 +178,11 @@ describe('Settings', () => {
     const locked = screen.getByRole('switch', { name: /always on/ });
     expect(locked).toBeDisabled();
   });
-  it('turns file sync off and on, and sets the automatic limit', async () => {
+  it('turns automatic file copies off and on, and sets the automatic limit', async () => {
     const m = await open('home', 'settings');
-    const sw = await screen.findByRole('switch', { name: 'Sync files and folders you copy' });
-    const box = screen.getByRole('textbox', { name: /Largest file copy/ }) as HTMLInputElement;
+    expect(await screen.findByText('Files and folders you copy, up to the size below, go to your other devices by themselves.')).toBeTruthy();
+    const sw = await screen.findByRole('switch', { name: 'Copy smaller files automatically' });
+    const box = screen.getByRole('textbox', { name: /Largest automatic file copy/ }) as HTMLInputElement;
     expect(sw.getAttribute('aria-checked')).toBe('true');
     expect(box.value).toBe('100');
     await fireEvent.change(box, { target: { value: '500' } });
@@ -181,12 +190,12 @@ describe('Settings', () => {
     expect(m.calls.some((c) => c.call === 'settings.set' && c.params.key === 'file-limit-mb' && c.params.value === '500')).toBe(true);
     await fireEvent.click(sw);
     await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('false'));
-    expect(m.world.settings['sync-files'].value).toBe('off');
+    expect(m.world.settings['auto-file-copy'].value).toBe('off');
     expect(box).toBeDisabled();
   });
   it("shows the agent's answer for a limit out of range and keeps the old value", async () => {
     await open('home', 'settings');
-    const box = (await screen.findByRole('textbox', { name: /Largest file copy/ })) as HTMLInputElement;
+    const box = (await screen.findByRole('textbox', { name: /Largest automatic file copy/ })) as HTMLInputElement;
     // The mock takes any value; the real agent refuses this one.
     const api = store.api!;
     const call = api.call.bind(api);

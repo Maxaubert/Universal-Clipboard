@@ -121,8 +121,12 @@ receive, files folder), `src/agent/transfers.rs` (jobs, notes, `transfer` view).
 - **Off the main loop.** The walk and hashing run in `spawn_blocking` (BLAKE3, mmap and
   multithreaded from 16 MiB); sends and receives are tokio tasks. The core only sees their
   results, by generation or serial number, so a stale one is dropped.
-- **Settings:** `sync-files` (`on`/`off`, default on) and `file-limit-mb` (1 to 10,240, default
-  100: the largest automatic file copy, checked on the copying device only).
+- **Settings:** `auto-file-copy` ("Copy smaller files automatically", `on`/`off`, default on;
+  renamed from `sync-files` 2026-11-17, old `state.json` loads through a serde alias) and
+  `file-limit-mb` (1 to 10,240, default 100: the largest automatic file copy, checked on the
+  copying device only). Off only skips Ctrl+C / Cmd+C file copies on this device (note
+  "Automatic file copies are off. Use Copy files... in the app."); `files.copy` / `uc copy`,
+  receiving and running transfers are not affected.
 - **Copy action:** IPC `files.copy { paths, picked: true }` and `uc copy <path>...` (paths made
   absolute by the CLI; a missing path fails at once). It makes the items the latest copy, like
   Ctrl+C, so the "no send or get" rule holds. The agent puts the picked items on its own
@@ -208,7 +212,7 @@ started (Linux, Docker). Elsewhere it refuses, and two tests check that.
 |---|---|
 | `uc-cli` unit: every settings-window action maps to a `uc` command; every IPC call is reachable; `--json` everywhere; no send/get | PC, Mac, WSL |
 | `agents.rs`: 3 agents paired through the CLI (third from the second device), copy matrix, rename, pause and resume, settings, remove (the removed device learns it), leave, no content in logs or report; restart and reconnect, newest clip after reconnect, single agent; wrong code; start at login on by default in the sandbox and kept off after a restart; a missing firewall rule is a note, not a setup step | PC, Mac, WSL |
-| `agents.rs`, file sync (2026-11-16): `uc copy` of a folder and a file; an automatic folder tree with nested files, an empty folder, the exec bit (macOS, Linux) and a zip; the over-limit note; `uc copy` of a 300 MB file; a newer copy on either side cancels; `uc transfer stop` on either side; keep-3; Sync files off on the receiver; the single-image companion (and none with Sync images off); a 0.1.x peer (`UCLIP_TEST_NO_FILES`) stays connected and the sender says it needs an update; no file names in logs. Review fixes (2026-11-16): removing a receiver whose send runs starts the queued send (4 agents); a send that cannot open its stream (`UCLIP_TEST_SERVE_REFUSED`) tells the receiver; keep-3 never deletes a received folder copied again (a send source); `files.copy` with a missing path fails in the walk with a note | PC |
+| `agents.rs`, file sync (2026-11-16): `uc copy` of a folder and a file; an automatic folder tree with nested files, an empty folder, the exec bit (macOS, Linux) and a zip; the over-limit note; `uc copy` of a 300 MB file; a newer copy on either side cancels; `uc transfer stop` on either side; keep-3; `auto-file-copy` off on the receiver (still receives, its Ctrl+C of a file gets the note and is not sent, its `uc copy` is sent); the single-image companion (and none with Sync images off); a 0.1.x peer (`UCLIP_TEST_NO_FILES`) stays connected and the sender says it needs an update; no file names in logs. Review fixes (2026-11-16): removing a receiver whose send runs starts the queued send (4 agents); a send that cannot open its stream (`UCLIP_TEST_SERVE_REFUSED`) tells the receiver; keep-3 never deletes a received folder copied again (a send source); `files.copy` with a missing path fails in the walk with a note | PC |
 | `netns_files.rs` (network lab rows 11 and 12): 200 MiB over lossy Wi-Fi; receiver asleep 40 s mid-transfer, asked again after wake | WSL (`tools/netsim/run-wsl.sh`) |
 | `winhost.rs`: one agent on the real Windows clipboard in a private window station, paired with a fake-clipboard agent, copy matrix both ways | PC |
 | `macpb.rs`: one agent on the real macOS backend with a named pasteboard, copy matrix | Mac over ssh, no prompt, nothing on screen |

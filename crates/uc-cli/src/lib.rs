@@ -286,12 +286,12 @@ pub const UI_ACTIONS: &[(&str, &[&str], &str)] = &[
         "transfer.stop",
     ),
     (
-        "Sync files",
-        &["uc", "settings", "set", "sync-files", "off"],
+        "Copy smaller files automatically",
+        &["uc", "settings", "set", "auto-file-copy", "off"],
         "settings.set",
     ),
     (
-        "Largest file copy to sync automatically",
+        "Largest automatic file copy",
         &["uc", "settings", "set", "file-limit-mb", "500"],
         "settings.set",
     ),
@@ -1091,7 +1091,8 @@ fn print_help() {
 
 Add --json to any command for scripts.
 There is no send or get: the latest copy is on every device on its own.
-Files you copy sync by themselves up to the limit (uc settings set file-limit-mb 100).
+Files you copy go to your other devices by themselves up to the limit (uc settings set
+file-limit-mb 100; turn off: uc settings set auto-file-copy off). uc copy has no limit.
 Privacy: https://maxaubert.github.io/Universal-Clipboard/privacy"
     );
 }

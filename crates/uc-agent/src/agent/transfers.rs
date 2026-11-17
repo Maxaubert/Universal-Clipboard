@@ -184,7 +184,9 @@ impl FileState {
 /// The note for a skipped file copy (spec 2.1, 2.4). `None` for skips that are not about files.
 fn skip_note(r: &SkipReason, limit_mb: u32) -> Option<String> {
     Some(match r {
-        SkipReason::FilesOff => "Files are not synced (setting is off).".into(),
+        SkipReason::FilesOff => {
+            "Automatic file copies are off. Use Copy files... in the app.".into()
+        }
         SkipReason::FilesOverLimit => format!(
             "Files over {limit_mb} MB are not sent automatically. Use Copy files... in the app."
         ),
@@ -855,7 +857,6 @@ impl Core {
             }
             CancelReason::Stopped => "Stopped.".into(),
             CancelReason::Paused => "Sync was paused.".into(),
-            CancelReason::FilesOff => "Files are not synced (setting is off).".into(),
             // The sender could not open the stream (serve_failed): not a user's Stop.
             CancelReason::ByPeer(uc_core::files::CODE_FAILED) => {
                 format!("{name} could not send the files. Copy them again.")
@@ -949,12 +950,6 @@ impl Core {
                     return Err(IpcError::new(
                         "paused",
                         "Sync is paused. Turn it on first: uc resume",
-                    ));
-                }
-                EngineEvent::Skipped(SkipReason::FilesOff) => {
-                    return Err(IpcError::new(
-                        "files-off",
-                        "Files are not synced. Turn it on: uc settings set sync-files on",
                     ));
                 }
                 EngineEvent::Skipped(_) => {
@@ -1144,7 +1139,7 @@ mod tests {
         );
         assert_eq!(
             skip_note(&SkipReason::FilesOff, 100).as_deref(),
-            Some("Files are not synced (setting is off).")
+            Some("Automatic file copies are off. Use Copy files... in the app.")
         );
         for r in [
             SkipReason::FilesVirtual,

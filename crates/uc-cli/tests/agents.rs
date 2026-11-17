@@ -853,7 +853,8 @@ fn an_old_peer_stays_connected_and_gets_the_note() {
 }
 
 /// `uc copy` of a folder and a file, an automatic copy over the limit (note on this device),
-/// keep-3 in the files folder, Sync files off on the receiver, and no file names in logs.
+/// keep-3 in the files folder, "Copy smaller files automatically" off (still receives, `uc copy`
+/// still sends, Ctrl+C of files is not sent), and no file names in logs.
 #[test]
 fn files_reach_the_other_agent() {
     let mut a = Agent::new(91);
@@ -870,7 +871,7 @@ fn files_reach_the_other_agent() {
         "not connected:\n{}",
         a.log()
     );
-    assert_eq!(a.uc_json(&["settings"])["sync-files"]["value"], "on");
+    assert_eq!(a.uc_json(&["settings"])["auto-file-copy"]["value"], "on");
     assert_eq!(a.uc_json(&["settings"])["file-limit-mb"]["value"], "100");
 
     // A folder with a nested file, an empty folder, and a loose file, picked with `uc copy`.
@@ -983,19 +984,56 @@ fn files_reach_the_other_agent() {
         received_folders(&b)
     );
 
-    // Sync files off on the receiver: a new copy is not fetched.
-    b.uc_json(&["settings", "set", "sync-files", "off"]);
+    // "Copy smaller files automatically" off on B (2026-11-17): it only stops B's own
+    // automatic copies. A copy from A is still received.
+    b.uc_json(&["settings", "set", "auto-file-copy", "off"]);
+    assert_eq!(b.uc_json(&["settings"])["auto-file-copy"]["value"], "off");
     let f = src.path().join("while-off.txt");
     std::fs::write(&f, b"off").unwrap();
     a.call("debug.copy_files", json!({ "paths": [f] }));
-    assert!(until(Duration::from_secs(5), || last_activity(&a)["kind"]
-        == "1 file, 3 bytes"));
+    assert!(
+        until(Duration::from_secs(15), || files_on(&b)
+            .first()
+            .is_some_and(|p| p.ends_with("while-off.txt"))),
+        "a copy to a device with the setting off did not arrive:
+A:
+{}
+B:
+{}",
+        a.log(),
+        b.log()
+    );
+    // B's own Ctrl+C of a file is not sent, with a note on B.
+    let mine_b = src.path().join("b-auto.txt");
+    std::fs::write(&mine_b, b"b auto").unwrap();
+    b.call("debug.copy_files", json!({ "paths": [mine_b] }));
+    assert!(
+        until(Duration::from_secs(10), || has_note(
+            &b,
+            "Automatic file copies are off. Use Copy files... in the app."
+        )),
+        "{}",
+        b.uc_json(&["status"])
+    );
     std::thread::sleep(Duration::from_millis(800));
-    assert!(files_on(&b).iter().all(|p| !p.ends_with("while-off.txt")));
-    // And `uc copy` there says why it cannot.
-    let o = b.uc(&["copy", loose.to_str().unwrap()]);
-    assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("sync-files on"));
+    assert!(files_on(&a).iter().all(|p| !p.ends_with("b-auto.txt")));
+    // `uc copy` on B still works and reaches A.
+    let r = b.uc_json(&["copy", loose.to_str().unwrap()]);
+    assert_eq!(r["preparing"], true);
+    assert!(
+        until(Duration::from_secs(15), || files_on(&a)
+            .first()
+            .is_some_and(
+                |p| p.ends_with("report-walrus.pdf") && p.starts_with(a.dir.join("files"))
+            )),
+        "uc copy with the setting off did not arrive:
+A:
+{}
+B:
+{}",
+        a.log(),
+        b.log()
+    );
 
     // Logs and the report hold no file or folder names.
     for x in [&a, &b] {

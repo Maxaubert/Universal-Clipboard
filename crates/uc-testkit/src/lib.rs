@@ -556,10 +556,9 @@ impl FakeNet {
         self.absorb(i, ev);
     }
 
-    /// Turn "Sync files" on or off on device `i`.
-    pub fn set_sync_files(&mut self, i: usize, on: bool) {
-        let ev = self.devices[i].engine.set_sync_files(on);
-        self.absorb(i, ev);
+    /// Turn "Copy smaller files automatically" on or off on device `i`.
+    pub fn set_auto_file_copy(&mut self, i: usize, on: bool) {
+        self.devices[i].engine.set_auto_file_copy(on);
     }
 
     /// The file paths on device `i`'s clipboard.

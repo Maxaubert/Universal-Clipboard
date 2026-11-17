@@ -98,8 +98,10 @@ pub struct Config {
     pub forward_remote: bool,
     /// Group ID sent in `Hello` (protocol 5.9).
     pub group: [u8; 32],
-    /// "Sync files" setting (file sync spec 5).
-    pub sync_files: bool,
+    /// "Copy smaller files automatically" setting (file sync spec 5). Off only stops automatic
+    /// file copies made on this device (Ctrl+C / Cmd+C of files): picked copies, receiving and
+    /// serving a copy already offered go on.
+    pub auto_file_copy: bool,
     /// Largest file copy that syncs automatically, in bytes (setting `file-limit-mb`).
     /// Picked copies have no byte limit.
     pub file_max: u64,
@@ -123,7 +125,7 @@ impl Config {
             image_max: caps::IMAGE_MAX,
             forward_remote: false,
             group: [0; 32],
-            sync_files: true,
+            auto_file_copy: true,
             file_max: caps::file_limit_bytes(caps::FILE_LIMIT_DEFAULT_MB),
             features: msg::FEATURES,
         }
@@ -148,7 +150,8 @@ pub enum SkipReason {
     SeenContent,
     /// The source marked it as private (password manager).
     Private,
-    /// A file copy, and "Sync files" is off.
+    /// An automatic file copy (Ctrl+C / Cmd+C of files), and "Copy smaller files
+    /// automatically" is off.
     FilesOff,
     /// A file copy over the automatic limit ("Use Copy files... in the app").
     FilesOverLimit,
@@ -200,8 +203,6 @@ pub enum CancelReason {
     Stopped,
     /// Sync was paused.
     Paused,
-    /// "Sync files" was turned off.
-    FilesOff,
     /// The same peer asked for the same copy again: its old stream is reset first.
     Requested,
     /// The other side cancelled, with this code.
@@ -213,9 +214,7 @@ impl CancelReason {
     pub fn code(self) -> u8 {
         match self {
             CancelReason::Superseded | CancelReason::Requested => files::CODE_SUPERSEDED,
-            CancelReason::Stopped | CancelReason::Paused | CancelReason::FilesOff => {
-                files::CODE_ABORTED
-            }
+            CancelReason::Stopped | CancelReason::Paused => files::CODE_ABORTED,
             CancelReason::ByPeer(c) => c,
         }
     }
@@ -410,7 +409,7 @@ pub enum Event {
         count: u32,
     },
     /// A newer file copy was offered but is only remembered, not fetched (older than 1 hour,
-    /// paused, or "Sync files" off).
+    /// or paused).
     FilesHeldOnly {
         /// The copy.
         id: FilesId,
@@ -475,7 +474,7 @@ struct Walk {
 /// Where a pending fetch stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Fetch {
-    /// Only remembered: too old, paused, setting off, stopped or failed. Never fetched.
+    /// Only remembered: too old, paused, stopped or failed. Never fetched.
     Remembered,
     /// `FetchFiles` was emitted; waiting for the agent's free space check.
     Asking,
@@ -623,15 +622,13 @@ impl Engine {
         out
     }
 
-    /// Change the "Sync files" setting. Off ends a walk and cancels file transfers.
-    pub fn set_sync_files(&mut self, on: bool) -> Vec<Event> {
-        let mut out = Vec::new();
-        self.cfg.sync_files = on;
-        if !on {
+    /// Change the "Copy smaller files automatically" setting. Off ends a running automatic
+    /// (not picked) walk; picked walks, fetches and sends go on.
+    pub fn set_auto_file_copy(&mut self, on: bool) {
+        self.cfg.auto_file_copy = on;
+        if !on && self.walk.is_some_and(|w| !w.picked) {
             self.walk = None;
-            self.halt_transfers(CancelReason::FilesOff, &mut out);
         }
-        out
     }
 
     /// Change the largest file copy that syncs automatically, in bytes.
@@ -763,7 +760,7 @@ impl Engine {
         }
         // A file copy: its text and image parts (a file name, an icon) are ignored.
         if snap.has_files || snap.files_virtual || !snap.files.is_empty() {
-            if !self.cfg.sync_files {
+            if !self.cfg.auto_file_copy {
                 out.push(Event::Skipped(SkipReason::FilesOff));
             } else if snap.files.is_empty() {
                 out.push(Event::Skipped(SkipReason::FilesVirtual));
@@ -961,8 +958,6 @@ impl Engine {
     pub fn pick_files(&mut self, paths: Vec<PathBuf>) -> Vec<Event> {
         let reason = if self.paused {
             Some(SkipReason::Paused)
-        } else if !self.cfg.sync_files {
-            Some(SkipReason::FilesOff)
         } else if paths.is_empty() {
             Some(SkipReason::Empty)
         } else {
@@ -1014,7 +1009,7 @@ impl Engine {
         self.walk = None;
         let skip = if self.paused {
             Some(SkipReason::Paused)
-        } else if !self.cfg.sync_files {
+        } else if !w.picked && !self.cfg.auto_file_copy {
             Some(SkipReason::FilesOff)
         } else if !w.picked && summary.total > self.cfg.file_max {
             Some(SkipReason::FilesOverLimit)
@@ -1343,7 +1338,7 @@ impl Engine {
         }
     }
 
-    /// Stop, pause, "Sync files" off: cancel the fetch (the offer stays remembered) and
+    /// Stop or pause: cancel the fetch (the offer stays remembered) and
     /// every send.
     fn halt_transfers(&mut self, reason: CancelReason, out: &mut Vec<Event>) {
         if let Some(mut p) = self.pending.take() {
@@ -1422,10 +1417,7 @@ impl Engine {
 
     /// May an offer with this stamp be fetched now (not only remembered)?
     fn may_fetch(&self, stamp: &Stamp, now_ms: u64) -> bool {
-        !self.paused
-            && self.cfg.sync_files
-            && self.cfg.role == Role::Full
-            && self.auto_apply_allowed(stamp, now_ms)
+        !self.paused && self.cfg.role == Role::Full && self.auto_apply_allowed(stamp, now_ms)
     }
 
     /// Offer the current file copy to `peer`, if this device is its origin and the peer can
@@ -1438,7 +1430,7 @@ impl Engine {
             }
             _ => return false,
         };
-        if self.paused || !self.cfg.sync_files {
+        if self.paused {
             return false;
         }
         // Nothing goes out before the peer's engine Hello: its features are not known yet.
@@ -1515,12 +1507,9 @@ impl Engine {
 
     fn on_files_want(&mut self, from: DeviceId, id: FilesId, out: &mut Vec<Event>) {
         let ours = match &self.current {
-            Some(Current::Files(f)) if f.offer.id == id => Some(
-                f.offer.origin == self.cfg.device.id
-                    && !f.stopped
-                    && !self.paused
-                    && self.cfg.sync_files,
-            ),
+            Some(Current::Files(f)) if f.offer.id == id => {
+                Some(f.offer.origin == self.cfg.device.id && !f.stopped && !self.paused)
+            }
             _ => None,
         };
         let full = self.peers.get(&from).is_some_and(|p| p.role == Role::Full);

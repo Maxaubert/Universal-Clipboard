@@ -7,7 +7,7 @@
   import { store } from '../lib/store.svelte';
 
   const autostart = $derived(store.settings['start-at-login']?.value === 'on');
-  const syncFiles = $derived(store.settings['sync-files']?.value !== 'off');
+  const autoFileCopy = $derived(store.settings['auto-file-copy']?.value !== 'off');
   const fileLimit = $derived(store.settings['file-limit-mb']?.value ?? '100');
   const me = $derived(store.thisDevice);
   let confirm = $state(false);
@@ -26,7 +26,7 @@
   async function toggleFiles() {
     error = null;
     try {
-      await store.api!.call('settings.set', { key: 'sync-files', value: syncFiles ? 'off' : 'on' });
+      await store.api!.call('settings.set', { key: 'auto-file-copy', value: autoFileCopy ? 'off' : 'on' });
       await store.refresh();
     } catch (e) {
       error = failureText(e);
@@ -99,9 +99,12 @@
   <div data-files style="display: flex; flex-direction: column; gap: 10px;">
     <div style={row}>
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html art.iconFiles}</svg>
-      <span style="flex: 1; font-size: 13.5px; font-weight: 600; line-height: 1.25;">{S.syncFiles}</span>
-      <button type="button" role="switch" aria-checked={syncFiles} aria-label={S.syncFilesLabel} style={sw(syncFiles)} onclick={toggleFiles}>
-        <span style={knob(syncFiles)}></span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 13.5px; font-weight: 600; line-height: 1.25;">{S.autoFileCopy}</span>
+        <span style="font-size: 12.5px; color: #5E5B56; line-height: 1.3;">{S.autoFileCopySub}</span>
+      </span>
+      <button type="button" role="switch" aria-checked={autoFileCopy} aria-label={S.autoFileCopy} style={sw(autoFileCopy)} onclick={toggleFiles}>
+        <span style={knob(autoFileCopy)}></span>
       </button>
     </div>
     <div style={row}>
@@ -117,7 +120,7 @@
           inputmode="numeric"
           aria-label={S.fileLimitLabel}
           value={fileLimit}
-          disabled={!syncFiles}
+          disabled={!autoFileCopy}
           onchange={setLimit}
           onkeydown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
         />

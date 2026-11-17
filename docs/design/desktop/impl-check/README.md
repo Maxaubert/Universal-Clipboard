@@ -32,4 +32,4 @@ Limit: 1% of pixels.
 | U3 | U3-card-failed | app baseline (U3 card, failed) | 0.00% | ![U3](U3-card-failed.png) |
 | F1 | F1-home-files | app baseline (Home with Copy files and Copy folder) | 0.00% | ![F1](F1-home-files.png) |
 | F2 | F2-transfer | app baseline (progress line with Stop) | 0.00% | ![F2](F2-transfer.png) |
-| F3 | F3-settings-files | app baseline (Sync files rows) | 0.00% | ![F3](F3-settings-files.png) |
+| F3 | F3-settings-files | app baseline (Copy smaller files automatically rows) | 0.00% | ![F3](F3-settings-files.png) |

@@ -96,8 +96,8 @@ function baseSettings(): Settings {
     'sync-images': { value: 'on', label: 'Sync images' },
     'image-limit-mb': { value: '25', label: 'Largest image to sync (MB)' },
     'keep-formatting': { value: 'off', label: 'Keep formatting' },
-    'sync-files': { value: 'on', label: 'Sync files' },
-    'file-limit-mb': { value: '100', label: 'Largest file copy to sync automatically (MB), on this device' },
+    'auto-file-copy': { value: 'on', label: 'Copy smaller files automatically' },
+    'file-limit-mb': { value: '100', label: 'Largest automatic file copy (MB), on this device' },
     'device-name': { value: "Max's PC", label: 'Device name' },
   };
 }
@@ -427,9 +427,6 @@ export function createMockApi(initial?: Scenario): Api {
         const paths = Array.isArray(p.paths) ? (p.paths as string[]) : [];
         if (paths.length === 0) throw fail('no-paths', 'Give at least one file or folder.');
         if (w.status.paused) throw fail('paused', 'Sync is paused. Turn it on first: uc resume');
-        if (w.settings['sync-files']?.value === 'off') {
-          throw fail('files-off', 'Files are not synced. Turn it on: uc settings set sync-files on');
-        }
         h.setTransfer({ id: null, phase: 'preparing', device: null, done: 0, total: 0, files: paths.length });
         return { preparing: true, items: paths.length };
       }

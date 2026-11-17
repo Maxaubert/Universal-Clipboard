@@ -95,7 +95,7 @@ const screens: Screen[] = [
   // File sync (2026-11-16): the new parts, as pictures of the app.
   { id: 'F1', file: 'F1-home-files', scenario: 'h3', maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (Home with Copy files and Copy folder)' },
   { id: 'F2', file: 'F2-transfer', scenario: 'sending', maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (progress line with Stop)' },
-  { id: 'F3', file: 'F3-settings-files', scenario: 'home', route: 'settings', maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (Sync files rows)' },
+  { id: 'F3', file: 'F3-settings-files', scenario: 'home', route: 'settings', maxDiff: 2, ref: { kind: 'baseline' }, why: 'app baseline (Copy smaller files automatically rows)' },
 ];
 
 function fontCss(): string {

@@ -585,9 +585,8 @@ impl Core {
         self.clip.set_forward_remote(fwd);
         self.engine
             .set_file_max(uc_core::caps::file_limit_bytes(u64::from(s.file_limit_mb)));
-        // Off ends a walk and cancels transfers.
-        let evs = self.engine.set_sync_files(s.sync_files);
-        self.on_engine(evs);
+        // Off only ends an automatic walk; picked copies and transfers go on.
+        self.engine.set_auto_file_copy(s.auto_file_copy);
     }
 
     /// Decision 2026-11-14 (Max): start at login is on by default and is no longer a setup
@@ -2649,8 +2648,8 @@ impl Core {
         lines.push(format!("Links open: {}", self.connected()));
         let s = &self.state.settings;
         lines.push(format!(
-            "File sync: {}, automatic up to {} MB, transfer: {}",
-            if s.sync_files { "on" } else { "off" },
+            "Automatic file copies: {}, up to {} MB, transfer: {}",
+            if s.auto_file_copy { "on" } else { "off" },
             s.file_limit_mb,
             self.transfer_view()
                 .and_then(|v| v["phase"].as_str().map(str::to_string))

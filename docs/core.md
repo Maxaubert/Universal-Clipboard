@@ -77,7 +77,7 @@ Spec: `docs/plan/2026-11-16-file-sync.md` sections 2 to 4. Code: `uc-core/src/fi
 - **Only the origin offers and serves**, and only after the peer's engine `Hello` shows bit 0.
   A peer without the bit gets nothing and stays connected (`SkipReason::PeerNoFiles`).
 - **Receiving.** One pending offer; fetched only if it is the newest copy (and not older than
-  1 hour, not paused, Sync files on, enough free space). `files_applied` makes it current and
+  1 hour, not paused, enough free space; "Copy smaller files automatically" does not matter here). `files_applied` makes it current and
   sets the own-write sequence, so received files are never offered again.
 - **Sends.** At most 2 run at once, more wait in a FIFO queue. A new `FilesWant` for the same
   copy from the same peer resets the old stream. A newer current copy cancels every send.
@@ -102,4 +102,4 @@ Spec: `docs/plan/2026-11-16-file-sync.md` sections 2 to 4. Code: `uc-core/src/fi
 - File copies (`uc-testkit/tests/files.rs`, fake net): small copy syncs, over the limit
   skipped, picked copy over the limit syncs, text during a walk wins, offers only after the
   engine `Hello`, old peer, cancel both ways, no re-offer, no double send, FIFO with 3
-  receivers, retry and give-up, hostile manifests, stop, pause, Sync files off, no space.
+  receivers, retry and give-up, hostile manifests, stop, pause, `auto-file-copy` off (only automatic copies skipped, picked walks and transfers go on), no space.

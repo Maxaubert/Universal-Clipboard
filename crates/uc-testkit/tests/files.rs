@@ -521,7 +521,7 @@ fn stop_cancels_on_both_sides_and_is_not_retried() {
 }
 
 #[test]
-fn pause_and_sync_files_off_cancel_transfers() {
+fn pause_cancels_transfers_and_auto_file_copy_off_does_not() {
     let mut net = FakeNet::full_mesh(2);
     net.hold_streams = true;
     let f = net.add_file(0, "a.bin", 20 * MB);
@@ -544,22 +544,97 @@ fn pause_and_sync_files_off_cancel_transfers() {
     net.copy_paths(0, &[g]);
     net.run();
     assert_eq!(net.streams.len(), 1);
-    net.set_sync_files(0, false);
+    // "Copy smaller files automatically" off on either side does not touch a running
+    // transfer: it only stops new automatic copies on that device.
+    net.clear_events();
+    net.set_auto_file_copy(0, false);
+    net.set_auto_file_copy(1, false);
     net.run();
-    assert!(has(&net, 0, |e| matches!(
-        e,
-        Event::CancelTransfer {
-            reason: CancelReason::FilesOff,
-            sending: true,
-            ..
-        }
-    )));
-    assert!(net.streams.is_empty());
+    assert!(!has(&net, 0, |e| matches!(e, Event::CancelTransfer { .. })));
+    assert!(!has(&net, 1, |e| matches!(e, Event::CancelTransfer { .. })));
+    assert_eq!(net.streams.len(), 1);
+    net.hold_streams = false;
+    net.deliver_stream(0);
+    net.run();
+    assert_eq!(net.current_files(1), net.current_files(0));
+}
 
-    // With the setting off, a file copy is skipped with its own note.
-    let h = net.add_file(0, "c.bin", 1);
-    net.copy_paths(0, &[h]);
+/// Off + Ctrl+C of files: a note, nothing sent.
+#[test]
+fn auto_file_copy_off_skips_a_copied_file() {
+    let mut net = FakeNet::full_mesh(2);
+    net.set_auto_file_copy(0, false);
+    let f = net.add_file(0, "c.bin", 1);
+    net.copy_paths(0, &[f]);
+    net.run();
     assert!(skipped(&net, 0, SkipReason::FilesOff));
+    assert_eq!(net.current_files(0), None);
+    assert!(!has(&net, 0, |e| matches!(e, Event::FilesSent { .. })));
+    assert_eq!(net.devices[1].engine.pending_files(), None);
+    // Text still syncs.
+    net.copy_text(0, "text");
+    net.run();
+    assert_eq!(net.text(1).as_deref(), Some("text"));
+}
+
+/// Off + Copy files... (or `uc copy`): sent as usual.
+#[test]
+fn auto_file_copy_off_still_sends_a_picked_copy() {
+    let mut net = FakeNet::full_mesh(2);
+    net.set_auto_file_copy(0, false);
+    let f = net.add_file(0, "c.bin", 5 * MB);
+    net.pick(0, std::slice::from_ref(&f));
+    net.run();
+    let id = net.current_files(0).expect("picked copy is current");
+    assert_eq!(net.current_files(1), Some(id));
+    assert!(!skipped(&net, 0, SkipReason::FilesOff));
+    // The write-back of the picked copy to the local clipboard is not a new copy.
+    assert_eq!(count(&net, 0, |e| matches!(e, Event::FilesSent { .. })), 1);
+}
+
+/// Off on the receiver: a copy from another device still arrives.
+#[test]
+fn auto_file_copy_off_on_the_receiver_still_receives() {
+    let mut net = FakeNet::full_mesh(2);
+    net.set_auto_file_copy(1, false);
+    let f = net.add_file(0, "c.bin", 5 * MB);
+    net.copy_paths(0, &[f]);
+    net.run();
+    let id = net.current_files(0).expect("device 0 holds the copy");
+    assert_eq!(net.current_files(1), Some(id));
+    assert!(!has(&net, 1, |e| matches!(e, Event::FilesHeldOnly { .. })));
+    // The receiver's own write-back is not a skip with the off note.
+    assert!(!skipped(&net, 1, SkipReason::FilesOff));
+}
+
+/// Turning it off during a walk ends an automatic walk but not a picked one.
+#[test]
+fn auto_file_copy_off_ends_only_an_automatic_walk() {
+    let mut net = FakeNet::full_mesh(2);
+    let f = net.add_file(0, "c.bin", 5 * MB);
+    net.hold_walks = true;
+    net.pick(0, std::slice::from_ref(&f));
+    assert!(net.devices[0].engine.walk_gen().is_some());
+    net.set_auto_file_copy(0, false);
+    assert!(net.devices[0].engine.walk_gen().is_some());
+    net.hold_walks = false;
+    net.run();
+    let id = net.current_files(0).expect("picked walk finished");
+    assert_eq!(net.current_files(1), Some(id));
+
+    // An automatic walk started while on ends when it is turned off.
+    net.clear_events();
+    net.set_auto_file_copy(0, true);
+    let g = net.add_file(0, "d.bin", 1);
+    net.hold_walks = true;
+    net.copy_paths(0, &[g]);
+    assert!(net.devices[0].engine.walk_gen().is_some());
+    net.set_auto_file_copy(0, false);
+    assert_eq!(net.devices[0].engine.walk_gen(), None);
+    net.hold_walks = false;
+    net.run();
+    assert!(!has(&net, 0, |e| matches!(e, Event::FilesSent { .. })));
+    assert_eq!(net.current_files(0), Some(id));
 }
 
 #[test]
