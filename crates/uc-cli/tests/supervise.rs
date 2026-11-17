@@ -36,7 +36,8 @@ fn supervisor_restarts_a_crashed_agent() {
     });
     assert!(restarted, "the supervisor did not start the agent again");
     // A clean stop ends the supervisor too.
-    a.call("debug.shutdown", json!({}));
+    // The agent may exit before its answer arrives, so the answer is not checked.
+    let _ = a.try_call("debug.shutdown", json!({}));
     let ended = until(Duration::from_secs(10), || {
         matches!(sup.try_wait(), Ok(Some(_)))
     });
