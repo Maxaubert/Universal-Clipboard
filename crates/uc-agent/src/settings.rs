@@ -27,6 +27,9 @@ pub struct Settings {
     /// Largest file copy that syncs by itself, in MB (1 to 10,240, default 100). Checked on
     /// the copying device only; "Copy files..." and `uc copy` have no limit.
     pub file_limit_mb: u32,
+    /// Show the tray icon (Windows, Linux) or the menu bar icon (macOS) (on, tray spec
+    /// 2026-11-17). Off: no icon, the app behaves as before 0.3.0.
+    pub tray_icon: bool,
 }
 
 impl Default for Settings {
@@ -39,6 +42,7 @@ impl Default for Settings {
             forward_apple_clips: false,
             auto_file_copy: true,
             file_limit_mb: uc_core::caps::FILE_LIMIT_DEFAULT_MB as u32,
+            tray_icon: true,
         }
     }
 }
@@ -72,6 +76,16 @@ pub const KEYS: &[Key] = &[
     Key {
         name: "start-at-login",
         label: "Start at login",
+        kind: ValueKind::OnOff,
+        mac_only: false,
+    },
+    Key {
+        name: "tray-icon",
+        label: if cfg!(target_os = "macos") {
+            "Show icon in the menu bar"
+        } else {
+            "Show icon in the taskbar"
+        },
         kind: ValueKind::OnOff,
         mac_only: false,
     },
@@ -150,6 +164,7 @@ impl Settings {
             "forward-apple-clips" => on_off(self.forward_apple_clips),
             "auto-file-copy" => on_off(self.auto_file_copy),
             "file-limit-mb" => self.file_limit_mb.to_string(),
+            "tray-icon" => on_off(self.tray_icon),
             _ => return None,
         })
     }
@@ -166,6 +181,7 @@ impl Settings {
             "keep-formatting" => self.keep_formatting = parse_on_off(value)?,
             "forward-apple-clips" => self.forward_apple_clips = parse_on_off(value)?,
             "auto-file-copy" => self.auto_file_copy = parse_on_off(value)?,
+            "tray-icon" => self.tray_icon = parse_on_off(value)?,
             "image-limit-mb" => {
                 let n: u32 = value
                     .trim()
@@ -248,6 +264,16 @@ mod tests {
         let out = serde_json::to_string(&s).unwrap();
         assert!(out.contains("\"auto_file_copy\":false"), "{out}");
         assert!(!out.contains("sync_files"), "{out}");
+    }
+
+    #[test]
+    fn the_tray_icon_is_on_by_default_and_old_files_get_it() {
+        assert!(Settings::default().tray_icon);
+        let s: Settings = serde_json::from_str(r#"{"sync_images": false}"#).unwrap();
+        assert!(s.tray_icon);
+        let mut s = Settings::default();
+        s.set("tray-icon", "off").unwrap();
+        assert_eq!(s.get("tray-icon").as_deref(), Some("off"));
     }
 
     #[test]

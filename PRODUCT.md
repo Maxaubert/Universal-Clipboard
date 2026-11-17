@@ -26,8 +26,10 @@ Works across every mix of Windows, macOS and Linux, plus phones and tablets, wit
 storage and end-to-end encryption. It keeps working when a device is on a VPN on the same network.
 
 ## Operating Context
-- No system tray icon and no Dock icon. A background agent starts at login. Opening the app shows one
-  settings window (about 420 x 560 px).
+- A tray icon (Windows, Linux) or menu bar icon (macOS) with a small dark panel: state, Copy files,
+  Pause, Quit (decision 2026-11-17, Max; it replaced "no tray icon"). A setting turns it off. No Dock
+  icon. A background agent starts at login. Opening the app shows one settings window (about 420 x
+  560 px). Spec: `docs/plan/2026-11-17-tray.md`.
 - Pairing with a 6-digit code or a QR code, local network only (changed 2026-11-13: no long code).
 - Phones need one tap per sync, because iOS and Android do not allow background clipboard access.
 - A group needs at least one computer (or Android phone) that is on.

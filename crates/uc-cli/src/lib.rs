@@ -107,6 +107,9 @@ pub enum Cmd {
         #[command(subcommand)]
         action: Option<UpdateCmd>,
     },
+    /// Stop Universal Clipboard on this device (the tray icon closes too) until the next login
+    /// or until you open it again.
+    Quit,
     /// Remove this device from your devices and forget everything.
     Leave {
         /// Do not ask to confirm.
@@ -207,6 +210,7 @@ impl Cmd {
             } => vec!["update.status", "update.apply"],
             Cmd::Update { .. } => vec!["update.status"],
             Cmd::Leave { .. } => vec!["leave"],
+            Cmd::Quit => vec!["quit"],
             Cmd::Help => vec![],
         }
     }
@@ -310,6 +314,12 @@ pub const UI_ACTIONS: &[(&str, &[&str], &str)] = &[
         &["uc", "settings", "set", "device-name", "Max's PC"],
         "settings.set",
     ),
+    (
+        "Show icon in the taskbar / menu bar",
+        &["uc", "settings", "set", "tray-icon", "off"],
+        "settings.set",
+    ),
+    ("Tray: Quit", &["uc", "quit"], "quit"),
     (
         "Help: Copy a diagnostic report",
         &["uc", "diagnostics"],
@@ -476,6 +486,21 @@ fn when(ms: u64) -> String {
     }
 }
 
+/// `uc quit`: stop the agent. It never starts one, so a stopped agent stays stopped.
+async fn quit(p: &Profile, j: bool) -> Result<(), Fail> {
+    let Ok(mut c) = Client::connect(p).await else {
+        let v = json!({"quitting": false, "running": false});
+        out(j, &v, || "Universal Clipboard is not running.".into());
+        return Ok(());
+    };
+    let v = call(&mut c, "quit", json!({})).await?;
+    out(j, &v, || {
+        "Universal Clipboard stopped. It starts again at the next login, or when you open it."
+            .into()
+    });
+    Ok(())
+}
+
 /// Run one command. Returns the exit code.
 pub async fn run(cli: Cli) -> Result<(), Fail> {
     let j = cli.json;
@@ -488,6 +513,9 @@ pub async fn run(cli: Cli) -> Result<(), Fail> {
         return Ok(());
     }
     let p = Profile::from_env().map_err(|e| Fail(e.to_string(), 2))?;
+    if let Cmd::Quit = cmd {
+        return quit(&p, j).await;
+    }
     let mut c = connect(&p).await?;
     match cmd {
         Cmd::Status => {
@@ -635,7 +663,7 @@ pub async fn run(cli: Cli) -> Result<(), Fail> {
                 "This device left your devices and forgot everything.".into()
             });
         }
-        Cmd::Help => {}
+        Cmd::Help | Cmd::Quit => {}
     }
     Ok(())
 }
@@ -1086,6 +1114,7 @@ fn print_help() {
   uc firewall add | check        Windows: let your other devices connect to this PC
   uc update                      is a newer version ready? (checked when the app starts)
   uc update --install            install it (also: uc update now); uc update later
+  uc quit                        stop it on this device until the next login
   uc leave [--yes]               remove this device and forget everything
   uc --version
 

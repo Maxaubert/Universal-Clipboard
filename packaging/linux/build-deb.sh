@@ -65,8 +65,9 @@ License: MIT or Apache-2.0
 EOF
 
 DEPENDS="libc6 (>= 2.35), libdbus-1-3"
-# The window: WebKitGTK 4.1 and GTK 3 (Ubuntu 22.04+, Debian 12) and the tray library.
-[ -x "$BIN/universal-clipboard" ] && DEPENDS="$DEPENDS, libwebkit2gtk-4.1-0, libgtk-3-0"
+# The window: WebKitGTK 4.1 and GTK 3 (Ubuntu 22.04+, Debian 12) and the tray library
+# (Ayatana AppIndicator, loaded at run time by the tray icon, tray spec 3.6).
+[ -x "$BIN/universal-clipboard" ] && DEPENDS="$DEPENDS, libwebkit2gtk-4.1-0, libgtk-3-0, libayatana-appindicator3-1"
 SIZE=$(du -sk "$D/usr" | cut -f1)
 cat > "$D/DEBIAN/control" <<EOF
 Package: $PKG

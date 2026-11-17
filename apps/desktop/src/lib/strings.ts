@@ -78,6 +78,8 @@ export const S = {
   startAtSignInLabel: isMac ? 'Open when you log in' : 'Start when you sign in',
   skipPasswords: 'Skip passwords',
   skipPasswordsLabel: 'Skip password manager copies, always on',
+  trayIcon: isMac ? 'Show icon in the menu bar' : 'Show icon in the taskbar',
+  trayIconSub: 'Copy files, pause and quit from one click.',
   autoFileCopy: 'Copy smaller files automatically',
   autoFileCopySub: 'Files and folders you copy, up to the size below, go to your other devices by themselves.',
   fileLimit: 'Largest automatic file copy',

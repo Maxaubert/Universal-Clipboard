@@ -518,7 +518,17 @@ impl Core {
             core.on_engine(evs);
         }
         core.start_net();
+        if core.state.settings.tray_icon {
+            core.start_tray();
+        }
         Ok(core)
+    }
+
+    /// Start the app in tray mode (tray spec 3.1). A build without the window has no icon.
+    fn start_tray(&self) {
+        if let Err(e) = crate::update::open_tray(&self.profile) {
+            tracing::info!(error = %e, "no tray icon");
+        }
     }
 
     // ------------------------------------------------------------ setup helpers
@@ -1749,6 +1759,8 @@ impl Core {
             "version" => Ok(json!({"version": self.version})),
             "quit" => {
                 tracing::info!("asked to quit");
+                // The tray icon ends with the agent (tray spec 3.4).
+                self.emit("quitting", json!({}));
                 self.shutdown = true;
                 Ok(json!({"quitting": true}))
             }
@@ -2034,7 +2046,12 @@ impl Core {
         }
         self.apply_settings();
         self.save();
-        Ok(json!({"key": key, "value": self.state.settings.get(key)}))
+        let value = self.state.settings.get(key);
+        self.emit("settings", json!({"key": key, "value": value}));
+        if key == "tray-icon" && self.state.settings.tray_icon {
+            self.start_tray();
+        }
+        Ok(json!({"key": key, "value": value}))
     }
 
     async fn pair_start(&mut self) -> Result<Value, IpcError> {

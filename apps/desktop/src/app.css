@@ -11,6 +11,8 @@ body {
   color: #1D1C1A;
   -webkit-font-smoothing: antialiased;
 }
+/* The tray panel: a clear window, the panel draws its own edge and shadow. */
+html.panel, html.panel body { background: transparent; height: auto; overflow: hidden; }
 /* Max 2026-11-14: UI text cannot be selected or copied. Only text fields keep selection. */
 body { -webkit-user-select: none; user-select: none; cursor: default; }
 input, textarea { -webkit-user-select: text; user-select: text; }

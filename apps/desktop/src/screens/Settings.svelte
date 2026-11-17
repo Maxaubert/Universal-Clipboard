@@ -7,6 +7,7 @@
   import { store } from '../lib/store.svelte';
 
   const autostart = $derived(store.settings['start-at-login']?.value === 'on');
+  const trayIcon = $derived(store.settings['tray-icon']?.value !== 'off');
   const autoFileCopy = $derived(store.settings['auto-file-copy']?.value !== 'off');
   const fileLimit = $derived(store.settings['file-limit-mb']?.value ?? '100');
   const me = $derived(store.thisDevice);
@@ -17,6 +18,16 @@
     error = null;
     try {
       await store.api!.call('settings.set', { key: 'start-at-login', value: autostart ? 'off' : 'on' });
+      await store.refresh();
+    } catch (e) {
+      error = failureText(e);
+    }
+  }
+
+  async function toggleTray() {
+    error = null;
+    try {
+      await store.api!.call('settings.set', { key: 'tray-icon', value: trayIcon ? 'off' : 'on' });
       await store.refresh();
     } catch (e) {
       error = failureText(e);
@@ -77,12 +88,19 @@
     <BackBar onback={() => store.goBack('home')} />
     <h1 style="font-size: 26px; line-height: 1.15;">{S.settingsTitle}</h1>
   </div>
-  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
     <div style={tile}>
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html art.iconPower}</svg>
       <span style="font-size: 13.5px; font-weight: 600; line-height: 1.25;">{S.startAtSignIn}</span>
       <button type="button" role="switch" aria-checked={autostart} aria-label={S.startAtSignInLabel} style={sw(autostart)} onclick={toggleAutostart}>
         <span style={knob(autostart)}></span>
+      </button>
+    </div>
+    <div style={tile} data-tray title={S.trayIconSub}>
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#1D1C1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 9.3L12 5.4l8.5 3.9L12 13.2z"></path><path d="M3.5 13.3l8.5 3.9 8.5-3.9"></path><path d="M3.5 17.2l8.5 3.9 8.5-3.9"></path></svg>
+      <span style="font-size: 13.5px; font-weight: 600; line-height: 1.25;">{S.trayIcon}</span>
+      <button type="button" role="switch" aria-checked={trayIcon} aria-label={S.trayIcon} style={sw(trayIcon)} onclick={toggleTray}>
+        <span style={knob(trayIcon)}></span>
       </button>
     </div>
     <div style={tile}>

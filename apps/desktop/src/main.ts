@@ -1,6 +1,7 @@
 import { mount } from 'svelte';
 import './app.css';
 import App from './App.svelte';
+import Panel from './Panel.svelte';
 import { isMac } from './lib/platform';
 
 if ('__TAURI_INTERNALS__' in window) {
@@ -14,4 +15,7 @@ if ('__TAURI_INTERNALS__' in window) {
 // macOS: native traffic lights and rounded corners (tauri.macos.conf.json), no drawn controls.
 if (isMac) document.documentElement.classList.add('mac');
 
-mount(App, { target: document.getElementById('app')! });
+// The tray panel (tray spec 3.2): the same bundle, `#panel`, on a clear window.
+const panel = location.hash === '#panel';
+if (panel) document.documentElement.classList.add('panel');
+mount(panel ? Panel : App, { target: document.getElementById('app')! });

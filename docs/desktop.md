@@ -51,8 +51,21 @@ Window rules: the window opens when the user starts the app, and once when the a
 newer version at its start (and once more after the update, to show how it went) (the agent starts it with `--route update`; the shell's
 `launch_route` command tells the page, and a second start forwards the route through the
 single-instance handler as the page event `open`). While the update helper has the agent
-stopped, the update screen stays instead of "agent is down". Closing it ends the window
-process and leaves the agent running. A second start brings the first window to the front.
+stopped, the update screen stays instead of "agent is down". Closing it leaves the agent
+running; it ends the window process only when the tray icon is off. A second start brings the
+first window to the front.
+
+Tray icon and panel (0.3.0, spec `docs/plan/2026-11-17-tray.md`, design
+`docs/design/tray/panel.html`): the same process. The agent starts it with `--tray` (no window)
+when `tray-icon` is on; `src-tauri/src/tray.rs` keeps the icon right from one agent
+subscription (never starts the agent), places the panel (`panel_position`, unit-tested for
+every taskbar side, the macOS menu bar and a second screen) and runs the actions that outlive
+the panel (`tray_copy`, `tray_open`, `tray_quit`). The panel is `src/Panel.svelte`
+(`index.html#panel`, a clear borderless window, made on click and closed on focus loss);
+`tests/e2e/panel.spec.ts` compares its five states with the mockup (1%). Linux: a native menu
+(AppIndicator has no click). Icons: `tools/tray-icons/render.mjs` writes
+`src-tauri/icons/tray/*.png` (Windows picks black or white by the taskbar theme and the size by
+the screen scale; macOS uses template images).
 Windows and Linux: the title bar is our own (no native frame) with a drag strip and drawn
 minimize, maximize and close buttons. macOS (2026-11-14): a native window
 (`src-tauri/tauri.macos.conf.json`: `titleBarStyle` Overlay, hidden title, traffic lights at
