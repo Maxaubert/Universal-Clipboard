@@ -253,8 +253,12 @@ pub struct Tray {
     pub shown: AtomicBool,
     /// The last view, to skip work when nothing changed.
     view: Mutex<Option<TrayView>>,
+    /// The last status reply, so transfer events update it without a new call.
+    status: Mutex<Option<Value>>,
     /// The last icon rectangle (physical), for placing the panel.
     icon_rect: Mutex<Option<Rect>>,
+    /// When the icon was clicked, to measure how fast the panel shows (spec 3.2: 150 ms).
+    clicked: Mutex<Option<Instant>>,
     /// When the panel last closed: a click on the icon that closed it by taking the focus
     /// must not open it again.
     last_close: Mutex<Option<Instant>>,
@@ -326,6 +330,7 @@ pub fn hide(app: &AppHandle) {
 pub fn set_status(app: &AppHandle, status: Option<&Value>) {
     let view = tray_view(status);
     let t = tray(app);
+    *t.status.lock().unwrap() = status.cloned();
     let mut last = t.view.lock().unwrap();
     if last.as_ref() == Some(&view) {
         return;
@@ -346,6 +351,19 @@ pub fn set_status(app: &AppHandle, status: Option<&Value>) {
     if let Some(m) = t.menu.lock().unwrap().as_ref() {
         m.update(&view);
     }
+}
+
+/// A `transfer` event (up to 4 a second): update the last status with it.
+pub fn set_transfer(app: &AppHandle, transfer: &Value) {
+    let Some(mut s) = tray(app).status.lock().unwrap().clone() else {
+        return;
+    };
+    s["transfer"] = if transfer["phase"] == "idle" {
+        Value::Null
+    } else {
+        transfer.clone()
+    };
+    set_status(app, Some(&s));
 }
 
 fn primary_scale(app: &AppHandle) -> f64 {
@@ -385,7 +403,10 @@ fn on_icon_event(app: &AppHandle, e: TrayIconEvent) {
         h: s.height as i32,
     };
     *tray(app).icon_rect.lock().unwrap() = Some(r);
-    toggle_panel(app);
+    *tray(app).clicked.lock().unwrap() = Some(Instant::now());
+    // Not in this event handler: building a webview here deadlocks on Windows.
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move { toggle_panel(&app) });
 }
 
 fn toggle_panel(app: &AppHandle) {
@@ -482,6 +503,23 @@ pub fn panel_ready(app: AppHandle, height: f64) {
     let _ = w.set_position(PhysicalPosition::new(x, y));
     let _ = w.show();
     let _ = w.set_focus();
+    if let Some(t) = tray(&app).clicked.lock().unwrap().take() {
+        log_open_time(t.elapsed());
+    }
+}
+
+/// Click-to-shown times of the panel, in `<temp>/uc-panel-open.log` (the last 50), so the
+/// 150 ms target can be checked on a real machine. No content, only numbers.
+fn log_open_time(d: Duration) {
+    let f = std::env::temp_dir().join("uc-panel-open.log");
+    let mut lines: Vec<String> = std::fs::read_to_string(&f)
+        .unwrap_or_default()
+        .lines()
+        .map(String::from)
+        .collect();
+    lines.push(d.as_millis().to_string());
+    let from = lines.len().saturating_sub(50);
+    let _ = std::fs::write(&f, lines[from..].join("\n") + "\n");
 }
 
 /// Copy files... / Copy folder... from the panel or the Linux menu: close the panel, open the
@@ -500,7 +538,7 @@ pub async fn tray_copy(app: AppHandle, folder: bool) -> Result<(), crate::Failur
 
 /// Open the window, on a screen: `settings`, `vpn` or none (Home).
 #[tauri::command]
-pub fn tray_open(app: AppHandle, route: Option<String>) {
+pub async fn tray_open(app: AppHandle, route: Option<String>) {
     close_panel(&app);
     open_window(&app, route);
 }
@@ -603,7 +641,9 @@ impl LinuxMenu {
 fn on_menu(app: &AppHandle, id: &str) {
     let app = app.clone();
     match id {
-        "open" => open_window(&app, None),
+        "open" => {
+            tauri::async_runtime::spawn(async move { open_window(&app, None) });
+        }
         "copy-files" | "copy-folder" => {
             let folder = id == "copy-folder";
             tauri::async_runtime::spawn(async move {

@@ -1247,8 +1247,31 @@ fn tray_icon_starts_with_the_agent_and_uc_quit_stops_it() {
     a.uc_json(&["settings", "set", "tray-icon", "on"]);
     assert_eq!(opens(&a), "tray\ntray\n", "turned on: the tray starts");
 
+    // A subscriber (the tray) hears `quitting` before the agent goes.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut sub = rt.block_on(async {
+        let mut c = uc_agent::ipc::Client::connect(&a.profile).await.unwrap();
+        c.call("subscribe", json!({})).await.unwrap().unwrap();
+        c
+    });
     let v = a.uc_json(&["quit"]);
     assert_eq!(v["quitting"], true);
+    let heard = rt.block_on(async {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = sub.next_event().await {
+                if e.event == "quitting" {
+                    return true;
+                }
+            }
+            false
+        })
+        .await
+        .unwrap_or(false)
+    });
+    assert!(heard, "no quitting event");
     let mut child = a.child.take().unwrap();
     let t = Instant::now();
     let code = loop {

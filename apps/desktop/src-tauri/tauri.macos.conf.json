@@ -4,6 +4,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Universal Clipboard",
         "width": 460,
         "height": 640,

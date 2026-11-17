@@ -239,11 +239,25 @@ async fn agent_loop(app: tauri::AppHandle) {
                 tokio::select! {
                     e = c.next_event() => {
                         let Some(e) = e else { break };
+                        // Before the pages hear of it: an open page would call `status`, which
+                        // starts the agent again.
+                        if e.event == "quitting" {
+                            app.exit(0);
+                            return;
+                        }
                         let _ = app.emit("uc-event", json!({"event": e.event, "data": e.data}));
                         match e.event.as_str() {
-                            "quitting" => {
-                                app.exit(0);
-                                return;
+                            "transfer" => tray::set_transfer(&app, &e.data),
+                            // macOS: the agent's `open -a ... --args --route update` reaches a
+                            // running app only as a Reopen, without the route. The update event
+                            // carries it here instead.
+                            #[cfg(target_os = "macos")]
+                            "update" if app.get_webview_window("main").is_none()
+                                && matches!(e.data["state"].as_str(), Some("available" | "failed" | "updated"))
+                                && e.data["dismissed"] != true =>
+                            {
+                                tray::open_window(&app, Some("update".into()));
+                                present(&app, true);
                             }
                             "settings" if e.data["key"] == "tray-icon" => {
                                 if e.data["value"] == "on" {
@@ -297,12 +311,16 @@ pub fn run() {
                 return;
             }
             let route = route_arg(&args);
-            if app.get_webview_window("main").is_none() {
-                tray::open_window(app, route.clone());
-            } else if let Some(r) = &route {
-                let _ = app.emit("uc-event", json!({"event": "open", "data": {"route": r}}));
-            }
-            present(app, route.is_some());
+            // Not in this callback: building a webview here deadlocks on Windows.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if app.get_webview_window("main").is_none() {
+                    tray::open_window(&app, route.clone());
+                } else if let Some(r) = &route {
+                    let _ = app.emit("uc-event", json!({"event": "open", "data": {"route": r}}));
+                }
+                present(&app, route.is_some());
+            });
         }))
         .manage(tray::Tray::default())
         .setup(|app| {
@@ -334,9 +352,13 @@ pub fn run() {
         // process: open the window.
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = e {
-            if app.get_webview_window("main").is_none() {
-                tray::open_window(app, None);
-            }
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if app.get_webview_window("main").is_none() {
+                    tray::open_window(&app, None);
+                }
+                present(&app, false);
+            });
             return;
         }
         // With the icon shown, closing the last window (the window or the panel) keeps the
