@@ -345,6 +345,10 @@ pub fn run() {
         .setup(|app| {
             let args: Vec<String> = std::env::args().collect();
             // `--tray`: the icon only. Otherwise the window, as before.
+            #[cfg(target_os = "macos")]
+            if tray::tray_arg(&args) {
+                tray::dock_icon(app.handle(), false);
+            }
             if !tray::tray_arg(&args) {
                 tray::open_window(app.handle(), route_arg(&args));
                 if route_arg(&args).is_some() {
@@ -380,6 +384,17 @@ pub fn run() {
                 present(&app, false);
             });
             return;
+        }
+        // macOS: the window closed, so the Dock icon goes; the menu bar icon stays.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } = &e
+            && label == "main"
+        {
+            tray::dock_icon(app, false);
         }
         // With the icon shown, closing the last window (the window or the panel) keeps the
         // process. Quit, "icon off" and the agent quitting exit with a code.

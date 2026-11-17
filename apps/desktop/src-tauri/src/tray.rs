@@ -598,9 +598,23 @@ pub async fn tray_quit(app: AppHandle) {
     app.exit(0);
 }
 
+/// macOS (Max 2026-11-17): a Dock icon only while the window is open. Without a window the
+/// app lives in the menu bar alone, and the user can hide that icon in System Settings >
+/// Menu Bar like any other.
+#[cfg(target_os = "macos")]
+pub fn dock_icon(app: &AppHandle, on: bool) {
+    let _ = app.set_activation_policy(if on {
+        tauri::ActivationPolicy::Regular
+    } else {
+        tauri::ActivationPolicy::Accessory
+    });
+}
+
 /// Create or show the main window. A new window reads the route through `launch_route`; an
 /// open one gets it as an `open` event.
 pub fn open_window(app: &AppHandle, route: Option<String>) {
+    #[cfg(target_os = "macos")]
+    dock_icon(app, true);
     if let Some(w) = app.get_webview_window("main") {
         if let Some(r) = route {
             let _ = app.emit("uc-event", json!({"event": "open", "data": {"route": r}}));
