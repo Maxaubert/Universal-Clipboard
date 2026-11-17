@@ -102,7 +102,7 @@ class Store {
     this.back = [];
     // The agent opened the window for an update (`--route update`).
     const launch = await this.api.launchRoute();
-    if (launch === 'update' && this.update?.state !== 'none') {
+    if (launch === 'update' && this.update?.state !== 'none' && !this.update?.dismissed) {
       this.back = [this.route];
       this.route = 'update';
     } else if ((launch === 'settings' || launch === 'vpn') && this.route === 'home') {

@@ -21,7 +21,7 @@
   async function load() {
     if (!api) return;
     try {
-      const [s, d] = await Promise.all([api.call<Status>('status'), api.call<Device[]>('devices.list')]);
+      const [s, d] = await Promise.all([api.tray.call<Status>('status'), api.tray.call<Device[]>('devices.list')]);
       status = s;
       devices = d;
       transfer = s.transfer ?? null;
@@ -54,10 +54,10 @@
   const copy = (folder: boolean) => act(() => api!.tray.copy(folder));
   const open = (route: string | null) => act(() => api!.tray.open(route));
   const quit = () => act(() => api!.tray.quit());
-  const stop = () => act(() => api!.call('transfer.stop'));
+  const stop = () => act(() => api!.tray.call('transfer.stop'));
   const toggleSync = () =>
     act(async () => {
-      await api!.call('pause.set', { mode: v.paused ? 'off' : 'forever' });
+      await api!.tray.call('pause.set', { mode: v.paused ? 'off' : 'forever' });
       await load();
     });
 

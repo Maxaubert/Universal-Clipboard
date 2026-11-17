@@ -462,7 +462,7 @@ export function createMockApi(initial?: Scenario): Api {
     }
   }
 
-  return {
+  const api: Api = {
     inTauri: false,
     async call<T>(name: string, p: Record<string, unknown> = {}) {
       h.calls.push({ call: name, params: p });
@@ -492,6 +492,10 @@ export function createMockApi(initial?: Scenario): Api {
       return [...(folder ? h.pickResult.folder : h.pickResult.files)];
     },
     tray: {
+      call: async <T,>(name: string, params: Record<string, unknown> = {}) => {
+        if (h.world.down) throw fail('agent-down', 'Universal Clipboard is not running.');
+        return (await api.call(name, params)) as T;
+      },
       ready: async (height: number) => void h.windowLog.push(`panel-ready ${Math.round(height)}`),
       copy: async (folder: boolean) => void h.calls.push({ call: 'tray.copy', params: { folder } }),
       open: async (route: string | null) => void h.calls.push({ call: 'tray.open', params: { route } }),
@@ -507,4 +511,5 @@ export function createMockApi(initial?: Scenario): Api {
       close: async () => void h.windowLog.push('close'),
     },
   };
+  return api;
 }

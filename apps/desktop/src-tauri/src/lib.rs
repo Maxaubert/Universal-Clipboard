@@ -164,19 +164,38 @@ pub fn route_arg(args: &[String]) -> Option<String> {
 }
 
 /// The screen this window was opened for: from the tray (Settings, VPN help), or
-/// `--route update` from the agent. Read once.
+/// `--route update` from the agent (put there once at start). Read once: a later window of the
+/// same process (the tray keeps it alive) opens on Home.
 #[tauri::command]
 fn launch_route(app: AppHandle) -> Option<String> {
-    if let Some(r) = app
-        .state::<tray::Tray>()
+    app.state::<tray::Tray>()
         .pending_route
         .lock()
         .unwrap()
         .take()
-    {
-        return Some(r);
+}
+
+/// Calls the tray panel may make. They never start the agent: a stopped agent shows as
+/// "Not running" (tray spec 3.4).
+pub const PANEL_CALLS: &[&str] = &["status", "devices.list", "pause.set", "transfer.stop"];
+
+#[tauri::command]
+async fn panel_call(call: String, params: Value) -> Result<Value, Failure> {
+    if !PANEL_CALLS.contains(&call.as_str()) {
+        return Err(fail("unknown-call", format!("Unknown call \"{call}\".")));
     }
-    route_arg(&std::env::args().collect::<Vec<_>>())
+    let p = profile()?;
+    let mut c = Client::connect(&p)
+        .await
+        .map_err(|_| fail("agent-down", "Universal Clipboard is not running."))?;
+    match c.call(&call, params).await {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => Err(Failure {
+            code: e.code,
+            message: e.message,
+        }),
+        Err(e) => Err(fail("agent-down", format!("Cannot talk to the agent: {e}"))),
+    }
 }
 
 /// Bring the window up. `ask`: the agent opened it for an update: put it in the middle of the
@@ -327,7 +346,7 @@ pub fn run() {
             let args: Vec<String> = std::env::args().collect();
             // `--tray`: the icon only. Otherwise the window, as before.
             if !tray::tray_arg(&args) {
-                tray::open_window(app.handle(), None);
+                tray::open_window(app.handle(), route_arg(&args));
                 if route_arg(&args).is_some() {
                     present(app.handle(), true);
                 }
@@ -339,6 +358,7 @@ pub fn run() {
             ipc_call,
             firewall_add,
             launch_route,
+            panel_call,
             pick_paths,
             tray::panel_ready,
             tray::tray_copy,

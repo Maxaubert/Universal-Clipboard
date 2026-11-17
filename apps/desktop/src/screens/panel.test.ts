@@ -126,6 +126,12 @@ describe('Panel', () => {
     m.setTransfer(null);
     await waitFor(() => expect(screen.queryByTestId('xfer')).toBeNull());
   });
+  it('a stopped agent shows Not running and is never started by the panel', async () => {
+    const { m, p } = await open('down');
+    expect(p.dataset.state).toBe('Not running');
+    expect(m.calls.some((c) => c.call === 'status')).toBe(false);
+    expect(screen.getByRole('switch', { name: 'Sync' })).toBeDisabled();
+  });
   it('the VPN note opens the help screen', async () => {
     const { m, p } = await open('vpn');
     expect(p.dataset.state).toBe('Not connected');
