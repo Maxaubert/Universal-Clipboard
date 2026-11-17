@@ -99,7 +99,6 @@
         </g>
       </svg>
       <div class="state"><span class="word">{v.word}</span><span class="lamp {v.lamp}"></span></div>
-      {#if v.sub}<div class="sub">{v.sub}</div>{/if}
       {#if v.chips.length}
         <div class="devs">
           {#each v.chips as c (c.name)}<span class="chip" class:sleep={!c.on}><i></i>{c.name}</span>{/each}
@@ -162,6 +161,8 @@
 <style>
   /* The clear edge around the panel holds its shadow (the window is transparent). */
   .edge { padding: 14px; box-sizing: border-box; width: 348px; }
+  /* macOS keeps the window below the menu bar, so no clear edge on top (tray.rs). */
+  :global(html.mac) .edge { padding-top: 0; }
   .p {
     --bg: #1A1918; --ink: #F2F0EC; --ink2: #A29E97; --line: #2C2A28; --well: #242321; --wellHover: #2C2A27;
     --head: #0E0D0C; --headInk: #F7F6F4; --headInk2: rgba(247, 246, 244, 0.58); --pattern: rgba(247, 246, 244, 0.06);
@@ -177,7 +178,6 @@
   .lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(91, 181, 133, 0.18); margin-top: 3px; }
   .lamp.off { background: #8d8983; box-shadow: none; }
   .lamp.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(240, 138, 75, 0.2); }
-  .sub { position: relative; font-size: 13px; color: var(--headInk2); margin-top: 6px; }
   .devs { position: relative; display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
   .chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 500; background: rgba(247, 246, 244, 0.09); color: var(--headInk); }
   .chip i { width: 6px; height: 6px; border-radius: 50%; background: #5bb585; }
@@ -205,7 +205,7 @@
   .ft { display: flex; align-items: center; border-top: 1px solid var(--line); padding: 6px 8px 6px 10px; }
   .open { display: flex; align-items: center; gap: 9px; height: 38px; padding: 0 10px; border-radius: 7px; border: 0; background: transparent; color: var(--ink); font-size: 13px; font-weight: 600; }
   .ib { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--ink2); }
-  .open:hover, .ib:hover { background: var(--well); color: var(--ink); }
+  .open:hover, .ib:hover { background: var(--wellHover); color: var(--ink); }
   .sp { flex: 1; }
   svg { flex: none; }
   button:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }

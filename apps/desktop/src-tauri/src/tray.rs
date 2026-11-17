@@ -499,10 +499,24 @@ pub fn panel_ready(app: AppHandle, height: f64) {
     let edge = (PANEL_EDGE * scale).round() as i32;
     let gap = (8.0 * scale).round() as i32;
     let (x, y) = panel_position(icon, work, size, edge, gap);
+    // macOS: like the system menus. macOS keeps a window from going under the menu bar, so
+    // the page drops its clear top edge (html.mac) and the window starts just below the bar,
+    // with the panel's right edge under the icon's right edge.
+    #[cfg(target_os = "macos")]
+    let (x, y) = {
+        let _ = (x, y, gap);
+        let x = (icon.right() - size.0 + edge).clamp(
+            work.x - edge,
+            (work.right() - size.0 + edge).max(work.x - edge),
+        );
+        (x, work.y + (3.0 * scale).round() as i32)
+    };
     let _ = w.set_size(PhysicalSize::new(size.0 as u32, size.1 as u32));
     let _ = w.set_position(PhysicalPosition::new(x, y));
     let _ = w.show();
     let _ = w.set_focus();
+    #[cfg(target_os = "macos")]
+    activate_app(&app);
     if let Some(t) = tray(&app).clicked.lock().unwrap().take() {
         log_open_time(t.elapsed());
     }
@@ -510,6 +524,34 @@ pub fn panel_ready(app: AppHandle, height: f64) {
 
 /// Click-to-shown times of the panel, in `<temp>/uc-panel-open.log` (the last 50), so the
 /// 150 ms target can be checked on a real machine. No content, only numbers.
+/// macOS: make the app active, not only the panel's window key. A status-item click does not
+/// activate the app, and set_focus uses activateIgnoringOtherApps, which macOS 14+ may ignore.
+/// Without an active app WebKit gets no mouse moves: no hover, no tooltips.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn activate_app(app: &AppHandle) {
+    let _ = app.run_on_main_thread(|| {
+        use objc2::runtime::{AnyClass, AnyObject};
+        use objc2::{msg_send, sel};
+        let Some(cls) = AnyClass::get(c"NSApplication") else {
+            return;
+        };
+        // SAFETY: plain AppKit calls on the main thread; `activate` is checked before use.
+        unsafe {
+            let ns_app: *mut AnyObject = msg_send![cls, sharedApplication];
+            let Some(ns_app) = ns_app.as_ref() else {
+                return;
+            };
+            let has_activate: bool = msg_send![ns_app, respondsToSelector: sel!(activate)];
+            if has_activate {
+                let () = msg_send![ns_app, activate];
+            } else {
+                let () = msg_send![ns_app, activateIgnoringOtherApps: true];
+            }
+        }
+    });
+}
+
 fn log_open_time(d: Duration) {
     let f = std::env::temp_dir().join("uc-panel-open.log");
     let mut lines: Vec<String> = std::fs::read_to_string(&f)
