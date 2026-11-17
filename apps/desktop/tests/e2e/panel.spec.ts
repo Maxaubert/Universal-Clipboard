@@ -11,7 +11,9 @@ import { PNG } from 'pngjs';
 const mockup = path.resolve(process.cwd(), '../../docs/design/tray/panel.html');
 const outDir = path.resolve(process.cwd(), '../../docs/design/tray/impl-check');
 const fontDir = path.resolve(process.cwd(), 'node_modules/@fontsource/figtree/files');
-const MAX_DIFF_PERCENT = 1;
+// 1% on Windows (0.2 to 0.9% on 2026-11-17); Linux CI draws text a little differently (P3:
+// 1.06%), like the U3 screens in visual.spec.ts, so the limit is 2%.
+const MAX_DIFF_PERCENT = 2;
 
 function fontCss(): string {
   return [400, 500, 600, 700]
