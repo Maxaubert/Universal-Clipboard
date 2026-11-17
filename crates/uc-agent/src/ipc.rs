@@ -49,10 +49,13 @@ pub const CALLS: &[&str] = &[
     "update.status",
     "update.apply",
     "update.later",
+    "quit",
 ];
 
-/// Calls for the installers and the updater (not window actions, so no `uc` command).
-pub const SERVICE_CALLS: &[&str] = &["quit"];
+/// Calls for the installers and the updater only (not window actions, so no `uc` command).
+/// Empty since 0.3.0: `quit` moved to [`CALLS`] for the tray's Quit and `uc quit` (tray spec
+/// 3.5).
+pub const SERVICE_CALLS: &[&str] = &[];
 
 /// Calls that exist only in test profiles (the real app refuses them).
 pub const DEBUG_CALLS: &[&str] = &[

@@ -20,7 +20,7 @@ Limit: 1% of pixels.
 | L06 | L06-connected | locked design | 0.06% | ![L06](L06-connected.png) |
 | L07 | L07-home | H3 mockup end frame (file buttons hidden) | 0.27% | ![L07](L07-home.png) |
 | L08 | L08-device | locked design | 0.00% | ![L08](L08-device.png) |
-| L09 | L09-settings | locked design | 0.00% | ![L09](L09-settings.png) |
+| L09 | L09-settings | locked design | 1.62% | ![L09](L09-settings.png) |
 | L10 | L10-paused | app baseline (H3 layout, paused) | 0.00% | ![L10](L10-paused.png) |
 | L11 | L11-attention | locked design | 0.00% | ![L11](L11-attention.png) |
 | L12 | L12-other-network | locked design | 0.00% | ![L12](L12-other-network.png) |

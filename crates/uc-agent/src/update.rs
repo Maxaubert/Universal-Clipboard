@@ -469,6 +469,17 @@ pub fn disabled_status_json(p: &Profile) -> serde_json::Value {
 /// Test profiles never start anything: the route is appended to
 /// `<state>/update/window-opens.log`.
 pub fn open_window(p: &Profile, route: &str) -> std::io::Result<()> {
+    launch_app(p, &["--route", route], route, false)
+}
+
+/// Start the app in tray mode (`--tray`: the icon, no window; tray spec 3.1). An app that
+/// already runs keeps its one process (single instance); on macOS `open -g` does not bring it
+/// to the front. Test profiles append `tray` to `<state>/update/window-opens.log`.
+pub fn open_tray(p: &Profile) -> std::io::Result<()> {
+    launch_app(p, &["--tray"], "tray", true)
+}
+
+fn launch_app(p: &Profile, args: &[&str], log: &str, background: bool) -> std::io::Result<()> {
     if p.is_test() {
         use std::io::Write;
         let dir = p.state_dir().join("update");
@@ -477,15 +488,15 @@ pub fn open_window(p: &Profile, route: &str) -> std::io::Result<()> {
             .create(true)
             .append(true)
             .open(dir.join("window-opens.log"))?;
-        return writeln!(f, "{route}");
+        return writeln!(f, "{log}");
     }
-    let mut c = window_command(route)?;
+    let mut c = window_command(args, background)?;
     detach(&mut c);
     c.spawn().map(|_| ())
 }
 
 #[cfg(target_os = "macos")]
-fn window_command(route: &str) -> std::io::Result<Command> {
+fn window_command(args: &[&str], background: bool) -> std::io::Result<Command> {
     let app = install_dir()
         .filter(|d| d.extension().is_some_and(|e| e == "app"))
         .ok_or_else(|| std::io::Error::other("the agent is not in an app bundle"))?;
@@ -498,12 +509,15 @@ fn window_command(route: &str) -> std::io::Result<Command> {
         return Err(std::io::Error::other("this build has no window"));
     }
     let mut c = Command::new("/usr/bin/open");
-    c.arg("-a").arg(&app).args(["--args", "--route", route]);
+    if background {
+        c.arg("-g");
+    }
+    c.arg("-a").arg(&app).arg("--args").args(args);
     Ok(c)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn window_command(route: &str) -> std::io::Result<Command> {
+fn window_command(args: &[&str], _background: bool) -> std::io::Result<Command> {
     let name = if cfg!(windows) {
         "Universal Clipboard.exe"
     } else {
@@ -514,7 +528,7 @@ fn window_command(route: &str) -> std::io::Result<Command> {
         .filter(|e| e.exists())
         .ok_or_else(|| std::io::Error::other("this build has no window"))?;
     let mut c = Command::new(exe);
-    c.args(["--route", route]);
+    c.args(args);
     Ok(c)
 }
 
@@ -719,6 +733,21 @@ impl AgentCtl for IpcAgent {
     }
 
     fn start(&mut self) -> std::io::Result<()> {
+        // The old tray icon (and window) would keep the old code running: end it, and the new
+        // agent starts the new one (tray spec 3.6). Windows: the NSIS installer does this.
+        #[cfg(target_os = "macos")]
+        if !self.profile.is_test()
+            && let Some(app) = install_dir().filter(|d| d.extension().is_some_and(|e| e == "app"))
+        {
+            let bin = app
+                .join("Contents")
+                .join("MacOS")
+                .join("universal-clipboard");
+            let mut c = Command::new("/usr/bin/pkill");
+            c.arg("-f").arg(bin);
+            detach(&mut c);
+            let _ = c.status();
+        }
         // The files are in place: whoever starts the agent now starts this version.
         crate::launch::set_update_marker(&self.profile, false);
         // macOS bundle: through launchd (the login item if it is on), so the new agent is not

@@ -12,10 +12,15 @@
 //! "Copy files..." and "Copy folder..." on Home open the system file picker here
 //! (`pick_paths`, tauri-plugin-dialog, called from Rust only, so the page gets no file access);
 //! the page then sends the picked paths with `files.copy`.
+//!
+//! The tray icon and its panel (0.3.0) live in this process too: see [`tray`]. With the icon
+//! on, the process starts with `--tray` (no window) and closing the window does not end it.
+
+pub mod tray;
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
 use uc_agent::ipc::Client;
 use uc_agent::profile::Profile;
 
@@ -44,6 +49,7 @@ pub const ALLOWED: &[&str] = &[
     "update.status",
     "update.apply",
     "update.later",
+    "quit",
 ];
 
 pub fn is_allowed(call: &str) -> bool {
@@ -63,12 +69,17 @@ fn fail(code: &str, message: impl Into<String>) -> Failure {
     }
 }
 
-fn profile() -> Result<Profile, Failure> {
+pub(crate) fn profile() -> Result<Profile, Failure> {
     Profile::from_env().map_err(|_| fail("bad-profile", "UCLIP_PROFILE is not a valid name."))
 }
 
 #[tauri::command]
 async fn ipc_call(call: String, params: Value) -> Result<Value, Failure> {
+    agent_call(call, params).await
+}
+
+/// One allowed call to the agent, starting it if none answers (like `uc`).
+pub(crate) async fn agent_call(call: String, params: Value) -> Result<Value, Failure> {
     if !is_allowed(&call) {
         return Err(fail("unknown-call", format!("Unknown call \"{call}\".")));
     }
@@ -105,7 +116,7 @@ async fn firewall_add() -> Result<Value, Failure> {
         }
         _ => return Err(fail("firewall", "The firewall rule could not be added.")),
     }
-    ipc_call("firewall.check".into(), json!({})).await
+    agent_call("firewall.check".into(), json!({})).await
 }
 
 /// "Copy files..." (`folder` false: one or more files) and "Copy folder..." (`folder` true): the
@@ -113,10 +124,16 @@ async fn firewall_add() -> Result<Value, Failure> {
 /// the picked paths, absolute, or none when the user cancelled.
 #[tauri::command]
 async fn pick_paths(app: AppHandle, folder: bool) -> Vec<String> {
+    pick(&app, folder, true).await
+}
+
+/// The system picker. `parent`: attach it to the main window when there is one (the tray's
+/// picker has none).
+pub(crate) async fn pick(app: &AppHandle, folder: bool, parent: bool) -> Vec<String> {
     use tauri_plugin_dialog::{DialogExt, FilePath};
     let (tx, rx) = tokio::sync::oneshot::channel::<Vec<FilePath>>();
     let mut d = app.dialog().file();
-    if let Some(w) = app.get_webview_window("main") {
+    if parent && let Some(w) = app.get_webview_window("main") {
         d = d.set_parent(&w);
     }
     if folder {
@@ -146,10 +163,39 @@ pub fn route_arg(args: &[String]) -> Option<String> {
     args.get(i + 1).filter(|r| *r == "update").cloned()
 }
 
-/// The screen this process was started for (`--route update` from the agent), or none.
+/// The screen this window was opened for: from the tray (Settings, VPN help), or
+/// `--route update` from the agent (put there once at start). Read once: a later window of the
+/// same process (the tray keeps it alive) opens on Home.
 #[tauri::command]
-fn launch_route() -> Option<String> {
-    route_arg(&std::env::args().collect::<Vec<_>>())
+fn launch_route(app: AppHandle) -> Option<String> {
+    app.state::<tray::Tray>()
+        .pending_route
+        .lock()
+        .unwrap()
+        .take()
+}
+
+/// Calls the tray panel may make. They never start the agent: a stopped agent shows as
+/// "Not running" (tray spec 3.4).
+pub const PANEL_CALLS: &[&str] = &["status", "devices.list", "pause.set", "transfer.stop"];
+
+#[tauri::command]
+async fn panel_call(call: String, params: Value) -> Result<Value, Failure> {
+    if !PANEL_CALLS.contains(&call.as_str()) {
+        return Err(fail("unknown-call", format!("Unknown call \"{call}\".")));
+    }
+    let p = profile()?;
+    let mut c = Client::connect(&p)
+        .await
+        .map_err(|_| fail("agent-down", "Universal Clipboard is not running."))?;
+    match c.call(&call, params).await {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => Err(Failure {
+            code: e.code,
+            message: e.message,
+        }),
+        Err(e) => Err(fail("agent-down", format!("Cannot talk to the agent: {e}"))),
+    }
 }
 
 /// Bring the window up. `ask`: the agent opened it for an update: put it in the middle of the
@@ -179,53 +225,190 @@ fn present(app: &AppHandle, ask: bool) {
     }
 }
 
-/// Forward the agent's events to the page. Reconnects when the agent restarts.
-async fn event_loop(app: tauri::AppHandle) {
+/// One subscription to the agent (it never starts the agent): forwards its events to the
+/// pages, keeps the tray icon right, shows or removes the icon when `tray-icon` changes, and
+/// ends this process when the agent quits. Reconnects when the agent restarts.
+async fn agent_loop(app: tauri::AppHandle) {
     let Ok(p) = profile() else { return };
+    let mut misses = 0u32;
     loop {
+        // Started with `--tray` but no agent answers for a minute and nothing is on screen:
+        // do not stay as an invisible process.
+        if misses >= 30
+            && app.webview_windows().is_empty()
+            && !app
+                .state::<tray::Tray>()
+                .shown
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            app.exit(0);
+            return;
+        }
         if let Ok(mut c) = Client::connect(&p).await
             && matches!(c.call("subscribe", json!({})).await, Ok(Ok(_)))
         {
             // (Re)connected, for example to the new agent after an update: the page checks
             // again, so it leaves the "agent is down" screen by itself.
+            misses = 0;
             let _ = app.emit("uc-event", json!({"event": "status", "data": {}}));
-            while let Some(e) = c.next_event().await {
-                let _ = app.emit("uc-event", json!({"event": e.event, "data": e.data}));
+            refresh_tray(&app, &p, true).await;
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+            tick.tick().await;
+            loop {
+                tokio::select! {
+                    e = c.next_event() => {
+                        let Some(e) = e else { break };
+                        // Before the pages hear of it: an open page would call `status`, which
+                        // starts the agent again.
+                        if e.event == "quitting" {
+                            app.exit(0);
+                            return;
+                        }
+                        let _ = app.emit("uc-event", json!({"event": e.event, "data": e.data}));
+                        match e.event.as_str() {
+                            "transfer" => tray::set_transfer(&app, &e.data),
+                            // macOS: the agent's `open -a ... --args --route update` reaches a
+                            // running app only as a Reopen, without the route. The update event
+                            // carries it here instead.
+                            #[cfg(target_os = "macos")]
+                            "update" if app.get_webview_window("main").is_none()
+                                && matches!(e.data["state"].as_str(), Some("available" | "failed" | "updated"))
+                                && e.data["dismissed"] != true =>
+                            {
+                                tray::open_window(&app, Some("update".into()));
+                                present(&app, true);
+                            }
+                            "settings" if e.data["key"] == "tray-icon" => {
+                                if e.data["value"] == "on" {
+                                    tray::show(&app);
+                                } else {
+                                    tray::hide(&app);
+                                }
+                            }
+                            _ => refresh_tray(&app, &p, false).await,
+                        }
+                    }
+                    _ = tick.tick() => refresh_tray(&app, &p, false).await,
+                }
             }
             // The agent went away: tell the page so it checks again.
             let _ = app.emit("uc-event", json!({"event": "status", "data": {}}));
         }
+        misses += 1;
+        tray::set_status(&app, None);
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }
 
+/// Read the status (and with `settings`, whether the icon is on) and update the icon.
+async fn refresh_tray(app: &AppHandle, p: &Profile, settings: bool) {
+    let Ok(mut c) = Client::connect(p).await else {
+        tray::set_status(app, None);
+        return;
+    };
+    if settings && let Ok(Ok(s)) = c.call("settings.get", json!({})).await {
+        if s["tray-icon"]["value"] == "on" {
+            tray::show(app);
+        } else {
+            tray::hide(app);
+        }
+    }
+    match c.call("status", json!({})).await {
+        Ok(Ok(s)) => tray::set_status(app, Some(&s)),
+        _ => tray::set_status(app, None),
+    }
+}
+
 pub fn run() {
-    tauri::Builder::default()
-        // A second launch only brings the first window to the front. The agent's
-        // `--route update` also moves the page to the update screen.
+    let app = tauri::Builder::default()
+        // A second launch goes to this process: `--tray` (the agent at its start) changes
+        // nothing, any other start opens the window. The agent's `--route update` also moves
+        // the page to the update screen.
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if tray::tray_arg(&args) {
+                return;
+            }
             let route = route_arg(&args);
-            if let Some(r) = &route {
-                let _ = app.emit("uc-event", json!({"event": "open", "data": {"route": r}}));
-            }
-            present(app, route.is_some());
+            // Not in this callback: building a webview here deadlocks on Windows.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if app.get_webview_window("main").is_none() {
+                    tray::open_window(&app, route.clone());
+                } else if let Some(r) = &route {
+                    let _ = app.emit("uc-event", json!({"event": "open", "data": {"route": r}}));
+                }
+                present(&app, route.is_some());
+            });
         }))
+        .manage(tray::Tray::default())
         .setup(|app| {
-            if launch_route().is_some() {
-                present(app.handle(), true);
+            let args: Vec<String> = std::env::args().collect();
+            // `--tray`: the icon only. Otherwise the window, as before.
+            #[cfg(target_os = "macos")]
+            if tray::tray_arg(&args) {
+                tray::dock_icon(app.handle(), false);
             }
-            tauri::async_runtime::spawn(event_loop(app.handle().clone()));
+            if !tray::tray_arg(&args) {
+                tray::open_window(app.handle(), route_arg(&args));
+                if route_arg(&args).is_some() {
+                    present(app.handle(), true);
+                }
+            }
+            tauri::async_runtime::spawn(agent_loop(app.handle().clone()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             ipc_call,
             firewall_add,
             launch_route,
-            pick_paths
+            panel_call,
+            pick_paths,
+            tray::panel_ready,
+            tray::tray_copy,
+            tray::tray_open,
+            tray::tray_quit
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running the Universal Clipboard window");
+        .build(tauri::generate_context!())
+        .expect("error while building the Universal Clipboard window");
+    app.run(|app, e| {
+        // macOS: opening the app while it runs (the tray, no window) is a Reopen, not a new
+        // process: open the window.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Reopen { .. } = e {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if app.get_webview_window("main").is_none() {
+                    tray::open_window(&app, None);
+                }
+                present(&app, false);
+            });
+            return;
+        }
+        // macOS: the window closed, so the Dock icon goes; the menu bar icon stays.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } = &e
+            && label == "main"
+        {
+            tray::dock_icon(app, false);
+        }
+        // With the icon shown, closing the last window (the window or the panel) keeps the
+        // process. Quit, "icon off" and the agent quitting exit with a code.
+        if let RunEvent::ExitRequested {
+            code: None, api, ..
+        } = e
+            && app
+                .state::<tray::Tray>()
+                .shown
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            api.prevent_exit();
+        }
+    });
 }
 
 #[cfg(test)]

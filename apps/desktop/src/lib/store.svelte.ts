@@ -81,6 +81,7 @@ class Store {
       }
       // The shell asks for a screen: the agent started the window again with `--route update`.
       if (e.event === 'open' && e.data.route === 'update' && this.loaded) this.openUpdate();
+      if (e.event === 'open' && this.loaded) this.openFromTray(e.data.route as string | undefined);
       for (const l of this.listeners) l(e);
     });
     await this.refresh();
@@ -100,9 +101,13 @@ class Store {
     }
     this.back = [];
     // The agent opened the window for an update (`--route update`).
-    if ((await this.api.launchRoute()) === 'update' && this.update?.state !== 'none') {
+    const launch = await this.api.launchRoute();
+    if (launch === 'update' && this.update?.state !== 'none' && !this.update?.dismissed) {
       this.back = [this.route];
       this.route = 'update';
+    } else if ((launch === 'settings' || launch === 'vpn') && this.route === 'home') {
+      this.back = ['home'];
+      this.route = launch;
     }
     this.nav = { kind: 'boot', from: null };
     this.loaded = true;
@@ -132,6 +137,13 @@ class Store {
 
   /** Show the update news: on Home as the card (U3), elsewhere the update screen (U1), and
    * during a pairing right after it. */
+  /** The tray asked for a screen (Settings, VPN help) while the window is open. */
+  openFromTray(route: string | undefined): void {
+    if ((route === 'settings' || route === 'vpn') && this.route !== route && this.view !== 'welcome') {
+      this.go(route);
+    }
+  }
+
   openUpdate(): void {
     if (this.route === 'update') return;
     if (this.route === 'show' || this.route === 'enter') {

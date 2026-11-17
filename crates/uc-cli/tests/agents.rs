@@ -7,7 +7,7 @@ mod common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::*;
 use serde_json::{Value, json};
@@ -1225,5 +1225,67 @@ fn keep_3_never_deletes_a_received_folder_that_is_copied_again() {
         )),
         "{}",
         b.uc_json(&["status"])
+    );
+}
+
+/// Tray spec 3.1, 3.5: the agent starts the tray icon at its start (a test profile only logs
+/// it), again when `tray-icon` is turned on, and `uc quit` stops it with exit code 0, so
+/// launchd and the Linux supervisor do not start it again. `uc quit` never starts an agent.
+#[test]
+fn tray_icon_starts_with_the_agent_and_uc_quit_stops_it() {
+    let opens = |a: &Agent| {
+        std::fs::read_to_string(a.dir.join("update").join("window-opens.log")).unwrap_or_default()
+    };
+    let mut a = Agent::new(42);
+    a.start();
+    assert_eq!(opens(&a), "tray\n");
+    assert_eq!(a.uc_json(&["settings"])["tray-icon"]["value"], "on");
+    a.uc_json(&["settings", "set", "tray-icon", "off"]);
+    a.stop();
+    a.start();
+    assert_eq!(opens(&a), "tray\n", "off: no tray at the next start");
+    a.uc_json(&["settings", "set", "tray-icon", "on"]);
+    assert_eq!(opens(&a), "tray\ntray\n", "turned on: the tray starts");
+
+    // A subscriber (the tray) hears `quitting` before the agent goes.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut sub = rt.block_on(async {
+        let mut c = uc_agent::ipc::Client::connect(&a.profile).await.unwrap();
+        c.call("subscribe", json!({})).await.unwrap().unwrap();
+        c
+    });
+    let v = a.uc_json(&["quit"]);
+    assert_eq!(v["quitting"], true);
+    let heard = rt.block_on(async {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = sub.next_event().await {
+                if e.event == "quitting" {
+                    return true;
+                }
+            }
+            false
+        })
+        .await
+        .unwrap_or(false)
+    });
+    assert!(heard, "no quitting event");
+    let mut child = a.child.take().unwrap();
+    let t = Instant::now();
+    let code = loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            break s.code();
+        }
+        assert!(t.elapsed() < Duration::from_secs(20), "agent did not quit");
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert_eq!(code, Some(0));
+    let v = a.uc_json(&["quit"]);
+    assert_eq!(v["running"], false);
+    assert!(
+        a.try_call("status", json!({})).is_err(),
+        "uc quit started no agent"
     );
 }

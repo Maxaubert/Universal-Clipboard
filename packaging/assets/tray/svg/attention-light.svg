@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <defs><mask id="cut"><rect width="16" height="16" fill="#fff"/><circle cx="12.8" cy="12.8" r="3.9" fill="#000"/></mask></defs>
+  <g mask="url(#cut)">
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.2 6.2L8 3.6l5.8 2.6L8 8.8z"/><path d="M2.2 8.9L8 11.5l5.8-2.6"/><path d="M2.2 11.5L8 14.1l5.8-2.6"/>
+  </g>
+  <rect x="6.1" y="2.9" width="3.8" height="1.6" rx=".7" fill="#FFFFFF" opacity=".6"/></g>
+  <circle cx="12.8" cy="12.8" r="2.6" fill="#F08A4B"/>
+</svg>

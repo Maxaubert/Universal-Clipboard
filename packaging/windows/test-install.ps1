@@ -89,6 +89,11 @@ AssertNew "first install"
 #        "uc status" (which starts the agent, like the window) every second.
 #        First make every installed program differ from the new build ("the old version").
 $null = Run $agent "--stop"
+# The agent started the tray icon (`Universal Clipboard.exe --tray`, 0.3.0); it ends when the
+# agent quits (tray spec 3.4). Wait for it before its file is replaced by the stand-in.
+$t = [Diagnostics.Stopwatch]::StartNew()
+while ((OursRunning "Universal Clipboard.exe").Count -gt 0 -and $t.Elapsed.TotalSeconds -lt 15) { Start-Sleep -Milliseconds 250 }
+if ((OursRunning "Universal Clipboard.exe").Count -gt 0) { Fail "the tray icon did not end with the agent" }
 foreach ($e in "uc-agent.exe", "uc.exe") { [IO.File]::AppendAllText((Join-Path $dir $e), "old") }
 Copy-Item (Join-Path $env:WINDIR "System32\cmd.exe") (Join-Path $dir "Universal Clipboard.exe") -Force
 $restart = Join-Path $env:RUNNER_TEMP "uc-window-standin.cmd"

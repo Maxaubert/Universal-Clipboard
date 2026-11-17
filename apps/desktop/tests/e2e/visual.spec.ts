@@ -77,7 +77,10 @@ const screens: Screen[] = [
     why: 'H3 mockup end frame (file buttons hidden)',
   },
   { id: 'L08', file: 'L08-device', scenario: 'home', route: 'device' },
-  { id: 'L09', file: 'L09-settings', scenario: 'home', route: 'settings', hide: '[data-files]' },
+  // L09: since 0.3.0 three tiles (Start at sign-in, Show icon in the taskbar, Skip passwords)
+  // instead of the design's two, so the tiles are smaller (tray spec, Max 2026-11-17). 1.62%
+  // on 2026-11-17; the whole screen is the app baseline F3.
+  { id: 'L09', file: 'L09-settings', scenario: 'home', route: 'settings', hide: '[data-files]', maxDiff: 2 },
   { id: 'L10', file: 'L10-paused', scenario: 'paused', ref: { kind: 'baseline' }, why: 'app baseline (H3 layout, paused)' },
   { id: 'L11', file: 'L11-attention', scenario: 'attention' },
   { id: 'L12', file: 'L12-other-network', scenario: 'home', route: 'vpn' },

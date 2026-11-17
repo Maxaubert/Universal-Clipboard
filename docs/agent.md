@@ -37,7 +37,9 @@ never touches `state.json`), and it needs no extra cipher.
 JSON lines: request `{"id","call","params"}`, reply `{"id","ok","result"|"error"}`, events
 `{"event","data"}` after `subscribe`. Calls: the plan's list plus `setup.status`,
 `setup.step`, `firewall.check` (looks at the Windows rule again; `uc firewall check|add`),
-`version`, `files.copy` and `transfer.stop` (file sync, below), and `update.status`, `update.apply`, `update.later` (`uc update [--install | now |
+`version`, `quit` (0.3.0: the tray's Quit and `uc quit`; it sends the event `quitting`
+first, so the tray icon ends too, and exits 0, so launchd and the Linux supervisor leave it
+stopped; `uc quit` never starts an agent), `files.copy` and `transfer.stop` (file sync, below), and `update.status`, `update.apply`, `update.later` (`uc update [--install | now |
 later]`; the agent checks once at start and never installs without the user, see
 `docs/install.md` "Self-update"). Event `update` carries the `update.status` reply. Test profiles also accept `debug.copy`, `debug.copy_files`,
 `debug.clipboard` (text, file paths, and the BLAKE3 of the PNG next to them), `debug.wake` and
@@ -103,7 +105,9 @@ Hardening:
 
 ## Settings
 
-Keys (`uc settings set <key> <value>`): `start-at-login`, `sync-images`, `image-limit-mb`
+Keys (`uc settings set <key> <value>`): `start-at-login`, `tray-icon` (0.3.0, on: the agent
+starts the window binary with `--tray` at its start and when it is turned on; test profiles
+append `tray` to `<state>/update/window-opens.log` instead), `sync-images`, `image-limit-mb`
 (1 to 25, the plan's "image size cap"), `keep-formatting`, `forward-apple-clips` (macOS
 only), `device-name` (a `rename` change when in a group).
 

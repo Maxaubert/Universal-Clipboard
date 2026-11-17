@@ -15,6 +15,21 @@ export interface Api {
    * Windows cannot pick both in one dialog). The picked paths, or none when cancelled. Not an
    * agent call: the window shell opens the picker; `files.copy` then sends the paths. */
   pickPaths(folder: boolean): Promise<string[]>;
+  /** The tray panel's actions (tray spec 3.3). They run in the shell, so they finish even
+   * when the panel closes. */
+  tray: {
+    /** An agent call that never starts the agent (status, devices.list, pause.set,
+     * transfer.stop). A stopped agent fails with `agent-down`. */
+    call<T = unknown>(name: string, params?: Record<string, unknown>): Promise<T>;
+    /** The panel measured itself (CSS px, clear edge included): place and show it. */
+    ready(height: number): Promise<void>;
+    /** Close the panel, open the picker, copy what was picked. */
+    copy(folder: boolean): Promise<void>;
+    /** Open the window, on `settings`, `vpn` or Home (null). */
+    open(route: string | null): Promise<void>;
+    /** Stop the agent (never starts one) and end the app. */
+    quit(): Promise<void>;
+  };
   window: {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<void>;
@@ -47,6 +62,7 @@ export const ALLOWED_CALLS = [
   'update.status',
   'update.apply',
   'update.later',
+  'quit',
 ] as const;
 
 export function isFailure(e: unknown): e is IpcFailure {
@@ -83,6 +99,14 @@ function tauriApi(): Api {
     async pickPaths(folder: boolean) {
       const { invoke } = await core();
       return ((await invoke('pick_paths', { folder })) as string[] | null) ?? [];
+    },
+    tray: {
+      call: async <T,>(name: string, params: Record<string, unknown> = {}) =>
+        (await (await core()).invoke('panel_call', { call: name, params })) as T,
+      ready: async (height: number) => void (await (await core()).invoke('panel_ready', { height })),
+      copy: async (folder: boolean) => void (await (await core()).invoke('tray_copy', { folder })),
+      open: async (route: string | null) => void (await (await core()).invoke('tray_open', { route })),
+      quit: async () => void (await (await core()).invoke('tray_quit')),
     },
     onEvent(cb) {
       let off: (() => void) | null = null;

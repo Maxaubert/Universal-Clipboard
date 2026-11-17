@@ -72,7 +72,7 @@ works without attention.
 - No account and no cloud storage. Content is end-to-end encrypted between your devices.
   **There is no server at all.** Devices talk directly to each other on the local network
   (sections 3.14 and 4.1).
-- No system tray icon. A background agent starts at login. Opening the app shows the settings window.
+- ~~No system tray icon.~~ **A tray / menu bar icon with a small panel, on by default, a setting turns it off (decision 2026-11-17, Max; `docs/plan/2026-11-17-tray.md`).** A background agent starts at login. Opening the app shows the settings window.
 - Skips copies that a password manager marks as private.
 - Updates itself, with a rollback if an update is bad.
 
@@ -136,7 +136,7 @@ when a row is done.
 | macOS | Find devices on your network **(2026-11-14: shown only when macOS blocks the network; the launchd agent gets it without a prompt)** | "Local Network" prompt. | Needed to reach devices on the LAN. | Sync does not work on the network until this is allowed. The row shows how to turn it on in System Settings. |
 | macOS | Read what you copy | Onboarding makes one clipboard read on purpose, so the app appears in "Paste from Other Apps". The row then opens that settings page, where the user picks Allow. Shown only if macOS needs it (section 3.9). | The agent must read the clipboard without a prompt each time. | Sync from this Mac does not work. Sync to this Mac still works. |
 | macOS | ~~Start at login~~ **On by default from the first run (decision 2026-11-14, Max), not a row.** | A system notice "Login item added". No question. | Works after a restart. | Same as Windows. |
-| macOS | Tell me when sync stops (optional) | Notification prompt. | The app has no tray icon, so this is the only way to warn. | No warnings. The settings window still shows the state. |
+| macOS | Tell me when sync stops (optional) | Notification prompt. | The icon shows the state (since 0.3.0), but a notification also reaches a user who does not look at it. | No warnings. The settings window still shows the state. |
 | Linux | ~~Start at login~~ **On by default from the first run (decision 2026-11-14, Max), not a row. Linux has no setup rows, so the window skips this screen.** | None. | Works after a restart. | Same as Windows. |
 
 **Order rule on Windows** (changed by decision 2026-11-14, Max): the agent no longer waits for a
@@ -155,7 +155,7 @@ On a Linux desktop that we cannot support, the app says so on this screen and st
 - "I have a code" shows one input field.
 
 When pairing ends, the window shows "Done. You can close this window. Copy something to try it."
-Closing the window leaves the agent running. There is no tray icon and no Dock icon.
+Closing the window leaves the agent running. There is no Dock icon; the tray / menu bar icon stays (0.3.0, `docs/plan/2026-11-17-tray.md`).
 
 ### 2.3 Adding a device with a code
 
@@ -276,7 +276,7 @@ because the Simulator does not enforce pasteboard and Local Network privacy.
 
 ### 2.7 What users see when something breaks
 
-There is no tray icon, so the rules are strict:
+The tray icon (0.3.0) shows the state, but it is easy to miss, so the rules stay strict:
 - The app sends an OS notification only when the user must act: permission lost, device removed,
   this device was removed by another device, update needs a manual step, sync blocked for more
   than 24 hours on a network where it worked before. At most one notification per day.
@@ -1425,7 +1425,7 @@ user can remove it there. M9's acceptance has an uninstall test per desktop OS t
 | The GitHub exe is unsigned for months | SmartScreen warning | The Store is the main Windows channel. SignPath after the public beta. |
 | A bad silent update | Every device breaks, nobody sees it | Staged rollout, health check, automatic rollback, tested in M9. |
 | Password managers that set no private marker | A password is synced | Honest help text. Pause switch. A per-app ignore list is a candidate for v1.1. |
-| Competing apps improve (UniClipboard, CrossPaste) | Less reason to build | Our edge is setup, no tray, VPN handling and honesty. Recheck them before M15. |
+| Competing apps improve (UniClipboard, CrossPaste) | Less reason to build | Our edge is setup, a quiet app, VPN handling and honesty. Recheck them before M15. |
 | Size of v1 (five platforms, a lab) | Schedule slips | Desktop beta is a full product at M10. Phones follow. Rich text can move to v1.1. |
 
 ---

@@ -22,6 +22,9 @@ grep -q 'command line tool is "uc"' /tmp/install.log || fail "postinst message"
 [ -e /usr/share/applications/io.github.maxaubert.uclip.desktop ] || fail "menu entry missing"
 # The window needs WebKitGTK and GTK 3: apt must have pulled them in.
 if ldd /usr/lib/universal-clipboard/universal-clipboard | grep "not found"; then fail "window has missing libraries"; fi
+# The tray icon loads Ayatana AppIndicator at run time (ldd does not show it): apt must have
+# pulled it in too (tray spec 3.6).
+ls /usr/lib/*/libayatana-appindicator3.so.1 >/dev/null 2>&1 || fail "tray library missing"
 [ "$(readlink /usr/bin/uc)" = /usr/lib/universal-clipboard/uc ] || fail "uc link"
 uc --version | grep -q "uc " || fail "uc --version"
 uc-agent --version | grep -q "uc-agent " || fail "uc-agent --version"

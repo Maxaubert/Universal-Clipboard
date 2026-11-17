@@ -96,6 +96,7 @@ function baseSettings(): Settings {
     'sync-images': { value: 'on', label: 'Sync images' },
     'image-limit-mb': { value: '25', label: 'Largest image to sync (MB)' },
     'keep-formatting': { value: 'off', label: 'Keep formatting' },
+    'tray-icon': { value: 'on', label: 'Show icon in the taskbar' },
     'auto-file-copy': { value: 'on', label: 'Copy smaller files automatically' },
     'file-limit-mb': { value: '100', label: 'Largest automatic file copy (MB), on this device' },
     'device-name': { value: "Max's PC", label: 'Device name' },
@@ -461,7 +462,7 @@ export function createMockApi(initial?: Scenario): Api {
     }
   }
 
-  return {
+  const api: Api = {
     inTauri: false,
     async call<T>(name: string, p: Record<string, unknown> = {}) {
       h.calls.push({ call: name, params: p });
@@ -490,6 +491,16 @@ export function createMockApi(initial?: Scenario): Api {
       h.calls.push({ call: 'pick', params: { folder } });
       return [...(folder ? h.pickResult.folder : h.pickResult.files)];
     },
+    tray: {
+      call: async <T,>(name: string, params: Record<string, unknown> = {}) => {
+        if (h.world.down) throw fail('agent-down', 'Universal Clipboard is not running.');
+        return (await api.call(name, params)) as T;
+      },
+      ready: async (height: number) => void h.windowLog.push(`panel-ready ${Math.round(height)}`),
+      copy: async (folder: boolean) => void h.calls.push({ call: 'tray.copy', params: { folder } }),
+      open: async (route: string | null) => void h.calls.push({ call: 'tray.open', params: { route } }),
+      quit: async () => void h.calls.push({ call: 'tray.quit', params: {} }),
+    },
     onEvent(cb) {
       subs.add(cb);
       return () => subs.delete(cb);
@@ -500,4 +511,5 @@ export function createMockApi(initial?: Scenario): Api {
       close: async () => void h.windowLog.push('close'),
     },
   };
+  return api;
 }

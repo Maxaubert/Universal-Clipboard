@@ -288,6 +288,37 @@ pub fn reg_exists(path: &str, name: &str) -> bool {
     }
 }
 
+/// A `REG_DWORD` value under `HKCU\<path>`, if it is there.
+pub fn reg_dword(path: &str, name: &str) -> Option<u32> {
+    let k = open_key(path).ok()??;
+    let n = wide(name);
+    let mut v = 0u32;
+    let mut len = 4u32;
+    let mut kind = 0u32;
+    // SAFETY: `v` is a 4-byte buffer and `len` says so.
+    let r = unsafe {
+        RegQueryValueExW(
+            k.0,
+            n.as_ptr(),
+            std::ptr::null(),
+            &mut kind,
+            (&mut v as *mut u32).cast(),
+            &mut len,
+        )
+    };
+    // 4 = REG_DWORD.
+    (r == 0 && kind == 4 && len == 4).then_some(v)
+}
+
+/// True when the taskbar uses the light theme (Settings > Personalization > Colors), so the
+/// tray icon is drawn black. Dark is the Windows 11 default.
+pub fn taskbar_is_light() -> bool {
+    reg_dword(
+        r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        "SystemUsesLightTheme",
+    ) == Some(1)
+}
+
 /// Delete `HKCU\<path>` and everything under it (test sandbox cleanup).
 pub fn reg_delete_tree(path: &str) -> io::Result<()> {
     let p = wide(path);

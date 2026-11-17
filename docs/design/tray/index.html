@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tray and menu bar icon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #EDEBE8; --card: #F7F6F4; --ink: #1D1C1A; --ink2: #5B5853; --line: #CFCBC5; --pick: #1D1C1A;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Figtree', system-ui, sans-serif;
+         -webkit-font-smoothing: antialiased; line-height: 1.45; }
+  ::selection { background: #1D1C1A; color: #F7F6F4; }
+  main { max-width: 1180px; margin: 0 auto; padding: 48px 32px 96px; }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; margin: 56px 0 6px; }
+  h3 { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+  p.lead { font-size: 15px; color: var(--ink2); max-width: 70ch; margin: 0; }
+  p.note { font-size: 13.5px; color: var(--ink2); max-width: 72ch; margin: 6px 0 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px;
+           box-shadow: 0 1px 2px rgba(40,35,30,.06), 0 10px 28px rgba(40,35,30,.08); }
+  .label { font-size: 12px; color: var(--ink2); margin-top: 8px; }
+  .pickname { display: inline-block; font-size: 12px; font-weight: 700; border: 1.5px solid var(--ink);
+              border-radius: 999px; padding: 1px 9px; margin-right: 8px; }
+
+  /* ---------- Glyph grids ---------- */
+  table.glyphs { border-collapse: separate; border-spacing: 0; }
+  table.glyphs th { font-size: 12px; font-weight: 600; color: var(--ink2); text-align: left; padding: 0 18px 10px 0; }
+  table.glyphs td { padding: 0 18px 14px 0; vertical-align: middle; }
+  .bar { display: inline-flex; align-items: center; gap: 14px; height: 40px; padding: 0 14px; border-radius: 6px; }
+  .win-dark { background: #202020; color: #fff; }
+  .win-light { background: #F3F3F3; color: #000; border: 1px solid #E5E5E5; }
+  .mac-light { background: rgba(246,246,246,.92); color: #000; height: 26px; border-radius: 4px; border: 1px solid #ddd; }
+  .mac-dark { background: #2A2A2C; color: #fff; height: 26px; border-radius: 4px; }
+  .gnome { background: #000; color: #fff; height: 30px; border-radius: 4px; }
+  .kde { background: #E3E5E7; color: #232629; height: 36px; border-radius: 4px; border: 1px solid #c9ccce; }
+  .bar .clock { font: 12px 'Segoe UI', system-ui, sans-serif; opacity: .9; }
+  .mac-light .clock, .mac-dark .clock { font: 13px -apple-system, 'SF Pro Text', system-ui, sans-serif; }
+  .bar svg { display: block; }
+  .big { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: inline-block; }
+
+  /* ---------- Menus ---------- */
+  .menus { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 26px; }
+  .shot { display: flex; flex-direction: column; }
+  .shot .cap { font-size: 12.5px; color: var(--ink2); margin-top: 10px; }
+  .shot .cap b { color: var(--ink); font-weight: 600; }
+
+  /* Windows 11 context menu */
+  .m-win { width: 262px; background: #F9F9F9; border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 4px;
+           box-shadow: 0 8px 16px rgba(0,0,0,.14); font: 14px 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif; color: #000; }
+  .m-win.dark { background: #2C2C2C; border-color: rgba(255,255,255,.08); color: #fff; box-shadow: 0 8px 16px rgba(0,0,0,.4); }
+  .m-win .it { height: 32px; display: flex; align-items: center; padding: 0 12px; border-radius: 4px; gap: 10px; }
+  .m-win .it.hot { background: rgba(0,0,0,.05); }
+  .m-win.dark .it.hot { background: rgba(255,255,255,.07); }
+  .m-win .it.dis { color: #6E6E6E; }
+  .m-win.dark .it.dis { color: #9D9D9D; }
+  .m-win .it.def { font-weight: 600; }
+  .m-win .sep { height: 1px; background: rgba(0,0,0,.08); margin: 4px 0; }
+  .m-win.dark .sep { background: rgba(255,255,255,.08); }
+  .m-win .stat { height: auto; padding: 7px 12px; line-height: 1.3; }
+
+  /* macOS menu */
+  .m-mac { width: 252px; background: rgba(236,236,236,.86); backdrop-filter: blur(20px); border: .5px solid rgba(0,0,0,.18);
+           border-radius: 7px; padding: 5px; box-shadow: 0 10px 30px rgba(0,0,0,.22);
+           font: 13px -apple-system, 'SF Pro Text', system-ui, sans-serif; color: #000; }
+  .m-mac.dark { background: rgba(40,40,42,.9); border-color: rgba(255,255,255,.14); color: #fff; }
+  .m-mac .it { height: 22px; display: flex; align-items: center; padding: 0 10px; border-radius: 4px; }
+  .m-mac .it.hot { background: #0A64D6; color: #fff; }
+  .m-mac .it.dis { color: rgba(0,0,0,.35); }
+  .m-mac.dark .it.dis { color: rgba(255,255,255,.4); }
+  .m-mac .stat { height: auto; padding: 3px 10px 4px; line-height: 1.3; }
+  .m-mac .sep { height: 1px; background: rgba(0,0,0,.1); margin: 5px 10px; }
+  .m-mac.dark .sep { background: rgba(255,255,255,.12); }
+  .m-mac .key { margin-left: auto; color: rgba(0,0,0,.4); }
+  .m-mac.dark .key { color: rgba(255,255,255,.45); }
+  .m-mac .it.hot .key { color: rgba(255,255,255,.85); }
+
+  /* GNOME (AppIndicator extension, Adwaita dark) */
+  .m-gnome { width: 262px; background: #2E2E32; border-radius: 12px; padding: 6px; color: #fff;
+             box-shadow: 0 2px 6px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.06) inset;
+             font: 14.5px Cantarell, 'Noto Sans', system-ui, sans-serif; }
+  .m-gnome .it { height: 36px; display: flex; align-items: center; padding: 0 12px; border-radius: 8px; }
+  .m-gnome .it.hot { background: rgba(255,255,255,.1); }
+  .m-gnome .it.dis { color: rgba(255,255,255,.5); }
+  .m-gnome .stat { height: auto; padding: 8px 12px; line-height: 1.3; }
+  .m-gnome .sep { height: 1px; background: rgba(255,255,255,.1); margin: 6px 12px; }
+
+  /* KDE Plasma (Breeze light) */
+  .m-kde { width: 262px; background: #F4F5F6; border: 1px solid #BDBFC1; border-radius: 5px; padding: 4px 0;
+           box-shadow: 0 6px 16px rgba(0,0,0,.18); font: 13.5px 'Noto Sans', system-ui, sans-serif; color: #232629; }
+  .m-kde .it { height: 28px; display: flex; align-items: center; padding: 0 14px 0 34px; }
+  .m-kde .it.hot { background: #D6E9F7; outline: 1px solid #3DAEE9; outline-offset: -1px; }
+  .m-kde .it.dis { color: #8A8D90; }
+  .m-kde .stat { height: auto; padding: 6px 14px 6px 34px; line-height: 1.3; }
+  .m-kde .sep { height: 1px; background: #D3D5D7; margin: 4px 8px; }
+
+  .pct { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .anchor { display: flex; justify-content: flex-end; margin-bottom: 6px; width: 100%; max-width: 262px; }
+  .anchor .bar { height: 28px; padding: 0 10px; }
+
+  .rules li { font-size: 14px; margin: 4px 0; max-width: 78ch; }
+  .rules { padding-left: 20px; margin: 8px 0 0; }
+  code { font: 12.5px ui-monospace, 'Cascadia Mono', Consolas, monospace; background: #E6E3DE; padding: 1px 5px; border-radius: 4px; }
+  @media (max-width: 640px) { main { padding: 28px 16px 64px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tray and menu bar icon</h1>
+  <p class="lead">Universal Clipboard gets a small icon next to the clock on Windows, in the menu bar on the Mac, and in the top bar or panel on Linux.
+  A click opens a short native menu: the status, Open, Copy files, Copy folder, Pause, and Quit. Mockups for Max, 2026-11-17.</p>
+
+  <!-- ========================= ICON ========================= -->
+  <h2>1. The icon</h2>
+  <p class="note">The app icon is Paper Layers: three stacked sheets with a clip tab. At 16 pixels three strokes run together, so there are two options.
+  Pick one. The Mac draws the icon in black or white by itself (a template image), so the states use shape, never color. Each panel shows the icon at the size it ships at.</p>
+
+  <div class="row" style="gap:28px">
+    <div class="panel">
+      <h3><span class="pickname">A</span>Three layers (the app icon, as is)</h3>
+      <div class="big"><svg width="64" height="64" viewBox="0 0 16 16"><use href="#gA"/></svg></div>
+      <div class="label">Most faithful. Busy below 20 px.</div>
+    </div>
+    <div class="panel">
+      <h3><span class="pickname">B</span>Two layers (simplified)</h3>
+      <div class="big"><svg width="64" height="64" viewBox="0 0 16 16"><use href="#gB"/></svg></div>
+      <div class="label">Same idea, one sheet fewer. Clear at 16 px. Recommended.</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:28px">Option B in its four states, at real size</h3>
+  <table class="glyphs">
+    <tr><th></th><th>Working</th><th>No device connected or needs attention</th><th>Paused</th><th>Files moving</th></tr>
+    <tr><td class="label">Windows 11, dark taskbar (16 px)</td>
+      <td><span class="bar win-dark"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" color="#fff"><use href="#gB"/></svg><span class="clock">14:32</span></span></td>
+      <td><span class="bar win-dark"><svg width="16" height="16" viewBox="0 0 16 16" color="#fff"><use href="#gB-dot"/></svg><span class="clock">14:32</span></span></td>
+      <td><span class="bar win-dark"><svg width="16" height="16" viewBox="0 0 16 16" color="#fff"><use href="#gB-pause"/></svg><span class="clock">14:32</span></span></td>
+      <td><span class="bar win-dark"><svg width="16" height="16" viewBox="0 0 16 16" color="#fff"><use href="#gB-move"/></svg><span class="clock">14:32</span></span></td></tr>
+    <tr><td class="label">Windows 11, light taskbar (20 px, 125 %)</td>
+      <td><span class="bar win-light"><svg width="20" height="20" viewBox="0 0 16 16" color="#000"><use href="#gB"/></svg><span class="clock">14:32</span></span></td>
+      <td><span class="bar win-light"><svg width="20" height="20" viewBox="0 0 16 16" color="#000"><use href="#gB-dot"/></svg><span class="clock">14:32</span></span></td>
+      <td><span class="bar win-light"><svg width="20" height="20" viewBox="0 0 16 16" color="#000"><use href="#gB-pause"/></svg><span class="clock">14:32</span></span></td>
+      <td><span class="bar win-light"><svg width="20" height="20" viewBox="0 0 16 16" color="#000"><use href="#gB-move"/></svg><span class="clock">14:32</span></span></td></tr>
+    <tr><td class="label">macOS menu bar, light (18 pt)</td>
+      <td><span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gB"/></svg><span class="clock">Mon 14:32</span></span></td>
+      <td><span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gB-dot"/></svg><span class="clock">Mon 14:32</span></span></td>
+      <td><span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gB-pause"/></svg><span class="clock">Mon 14:32</span></span></td>
+      <td><span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gB-move"/></svg><span class="clock">Mon 14:32</span></span></td></tr>
+    <tr><td class="label">macOS menu bar, dark (18 pt)</td>
+      <td><span class="bar mac-dark"><svg width="18" height="18" viewBox="0 0 16 16" color="#fff"><use href="#gB"/></svg><span class="clock">Mon 14:32</span></span></td>
+      <td><span class="bar mac-dark"><svg width="18" height="18" viewBox="0 0 16 16" color="#fff"><use href="#gB-dot"/></svg><span class="clock">Mon 14:32</span></span></td>
+      <td><span class="bar mac-dark"><svg width="18" height="18" viewBox="0 0 16 16" color="#fff"><use href="#gB-pause"/></svg><span class="clock">Mon 14:32</span></span></td>
+      <td><span class="bar mac-dark"><svg width="18" height="18" viewBox="0 0 16 16" color="#fff"><use href="#gB-move"/></svg><span class="clock">Mon 14:32</span></span></td></tr>
+    <tr><td class="label">GNOME top bar (22 px)</td>
+      <td><span class="bar gnome"><svg width="22" height="22" viewBox="0 0 16 16" color="#fff"><use href="#gB"/></svg></span></td>
+      <td><span class="bar gnome"><svg width="22" height="22" viewBox="0 0 16 16" color="#fff"><use href="#gB-dot"/></svg></span></td>
+      <td><span class="bar gnome"><svg width="22" height="22" viewBox="0 0 16 16" color="#fff"><use href="#gB-pause"/></svg></span></td>
+      <td><span class="bar gnome"><svg width="22" height="22" viewBox="0 0 16 16" color="#fff"><use href="#gB-move"/></svg></span></td></tr>
+    <tr><td class="label">KDE Plasma panel (22 px)</td>
+      <td><span class="bar kde"><svg width="22" height="22" viewBox="0 0 16 16" color="#232629"><use href="#gB"/></svg></span></td>
+      <td><span class="bar kde"><svg width="22" height="22" viewBox="0 0 16 16" color="#232629"><use href="#gB-dot"/></svg></span></td>
+      <td><span class="bar kde"><svg width="22" height="22" viewBox="0 0 16 16" color="#232629"><use href="#gB-pause"/></svg></span></td>
+      <td><span class="bar kde"><svg width="22" height="22" viewBox="0 0 16 16" color="#232629"><use href="#gB-move"/></svg></span></td></tr>
+  </table>
+
+  <h3 style="margin-top:16px">Option A at the same sizes, for comparison</h3>
+  <div class="row">
+    <span class="bar win-dark"><svg width="16" height="16" viewBox="0 0 16 16" color="#fff"><use href="#gA"/></svg><span class="clock">16 px</span></span>
+    <span class="bar win-light"><svg width="20" height="20" viewBox="0 0 16 16" color="#000"><use href="#gA"/></svg><span class="clock">20 px</span></span>
+    <span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gA"/></svg><span class="clock">18 pt</span></span>
+    <span class="bar mac-dark"><svg width="18" height="18" viewBox="0 0 16 16" color="#fff"><use href="#gA"/></svg><span class="clock">18 pt</span></span>
+  </div>
+
+  <!-- ========================= MENUS ========================= -->
+  <h2>2. The menu</h2>
+  <p class="note">The menu is the system's own menu on every platform, so it looks right everywhere and works with the keyboard and screen readers.
+  The first line is the status, in the words the app already uses. It is grey because it is a fact, not an action.
+  On Windows a left click opens the window and a right click opens this menu. On the Mac and Linux a click opens the menu.</p>
+
+  <h3>Windows 11</h3>
+  <div class="menus">
+    <div class="shot">
+      <div class="m-win">
+        <div class="it dis stat">Working. Max's Mac is connected.</div>
+        <div class="sep"></div>
+        <div class="it def hot">Open Universal Clipboard</div>
+        <div class="it">Copy files...</div>
+        <div class="it">Copy folder...</div>
+        <div class="sep"></div>
+        <div class="it">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard</div>
+      </div>
+      <div class="cap"><b>Working.</b> Open is bold: it is what a left click does.</div>
+    </div>
+    <div class="shot">
+      <div class="m-win dark">
+        <div class="it dis stat">Receiving from Max's Mac... <span class="pct">40 %</span></div>
+        <div class="it">Stop</div>
+        <div class="sep"></div>
+        <div class="it def">Open Universal Clipboard</div>
+        <div class="it">Copy files...</div>
+        <div class="it">Copy folder...</div>
+        <div class="sep"></div>
+        <div class="it hot">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard</div>
+      </div>
+      <div class="cap"><b>Files moving</b> (dark mode). Stop shows only while files move. The percent updates while the menu is open.</div>
+    </div>
+    <div class="shot">
+      <div class="m-win">
+        <div class="it dis stat">Paused</div>
+        <div class="sep"></div>
+        <div class="it def">Open Universal Clipboard</div>
+        <div class="it">Copy files...</div>
+        <div class="it">Copy folder...</div>
+        <div class="sep"></div>
+        <div class="it hot">Resume</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard</div>
+      </div>
+      <div class="cap"><b>Paused.</b> Pause becomes Resume.</div>
+    </div>
+    <div class="shot">
+      <div class="m-win">
+        <div class="it dis stat">No other device is on right now</div>
+        <div class="sep"></div>
+        <div class="it def hot">Open Universal Clipboard</div>
+        <div class="it">Copy files...</div>
+        <div class="it">Copy folder...</div>
+        <div class="sep"></div>
+        <div class="it">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard</div>
+      </div>
+      <div class="cap"><b>No device connected</b>, or any problem from the window's Needs attention screen (its first sentence). The icon shows the dot.</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:34px">macOS</h3>
+  <div class="menus">
+    <div class="shot">
+      <div class="anchor"><span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gB"/></svg></span></div>
+      <div class="m-mac">
+        <div class="it dis stat">Working. Max's Windows PC is connected.</div>
+        <div class="sep"></div>
+        <div class="it hot">Open Universal Clipboard<span class="key">&#8984;O</span></div>
+        <div class="it">Copy Files...</div>
+        <div class="it">Copy Folder...</div>
+        <div class="sep"></div>
+        <div class="it">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard<span class="key">&#8984;Q</span></div>
+      </div>
+      <div class="cap"><b>Working.</b> Title Case, as Mac menus use. No Dock icon.</div>
+    </div>
+    <div class="shot">
+      <div class="anchor"><span class="bar mac-dark"><svg width="18" height="18" viewBox="0 0 16 16" color="#fff"><use href="#gB-move"/></svg></span></div>
+      <div class="m-mac dark">
+        <div class="it dis stat">Sending to Max's Windows PC... <span class="pct">72 %</span></div>
+        <div class="it hot">Stop</div>
+        <div class="sep"></div>
+        <div class="it">Open Universal Clipboard<span class="key">&#8984;O</span></div>
+        <div class="it">Copy Files...</div>
+        <div class="it">Copy Folder...</div>
+        <div class="sep"></div>
+        <div class="it">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard<span class="key">&#8984;Q</span></div>
+      </div>
+      <div class="cap"><b>Files moving</b> (dark mode).</div>
+    </div>
+    <div class="shot">
+      <div class="anchor"><span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gB-pause"/></svg></span></div>
+      <div class="m-mac">
+        <div class="it dis stat">Paused</div>
+        <div class="sep"></div>
+        <div class="it">Open Universal Clipboard<span class="key">&#8984;O</span></div>
+        <div class="it">Copy Files...</div>
+        <div class="it">Copy Folder...</div>
+        <div class="sep"></div>
+        <div class="it hot">Resume</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard<span class="key">&#8984;Q</span></div>
+      </div>
+      <div class="cap"><b>Paused.</b></div>
+    </div>
+    <div class="shot">
+      <div class="anchor"><span class="bar mac-light"><svg width="18" height="18" viewBox="0 0 16 16" color="#000"><use href="#gB-dot"/></svg></span></div>
+      <div class="m-mac">
+        <div class="it dis stat">macOS asks before this app can read what you copy.</div>
+        <div class="sep"></div>
+        <div class="it hot">Open Universal Clipboard<span class="key">&#8984;O</span></div>
+        <div class="it">Copy Files...</div>
+        <div class="it">Copy Folder...</div>
+        <div class="sep"></div>
+        <div class="it">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard<span class="key">&#8984;Q</span></div>
+      </div>
+      <div class="cap"><b>Needs attention.</b> Open shows the fix.</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:34px">Linux</h3>
+  <div class="menus">
+    <div class="shot">
+      <div class="anchor"><span class="bar gnome"><svg width="22" height="22" viewBox="0 0 16 16" color="#fff"><use href="#gB"/></svg></span></div>
+      <div class="m-gnome">
+        <div class="it dis stat">Working. Max's Mac is connected.</div>
+        <div class="sep"></div>
+        <div class="it hot">Open Universal Clipboard</div>
+        <div class="it">Copy files...</div>
+        <div class="it">Copy folder...</div>
+        <div class="sep"></div>
+        <div class="it">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard</div>
+      </div>
+      <div class="cap"><b>GNOME</b> (Ubuntu ships the AppIndicator extension on; Fedora needs it added).</div>
+    </div>
+    <div class="shot">
+      <div class="anchor"><span class="bar kde"><svg width="22" height="22" viewBox="0 0 16 16" color="#232629"><use href="#gB-move"/></svg></span></div>
+      <div class="m-kde">
+        <div class="it dis stat">Receiving from Max's Mac... <span class="pct">40 %</span></div>
+        <div class="it">Stop</div>
+        <div class="sep"></div>
+        <div class="it hot">Open Universal Clipboard</div>
+        <div class="it">Copy files...</div>
+        <div class="it">Copy folder...</div>
+        <div class="sep"></div>
+        <div class="it">Pause</div>
+        <div class="sep"></div>
+        <div class="it">Quit Universal Clipboard</div>
+      </div>
+      <div class="cap"><b>KDE Plasma</b>, files moving.</div>
+    </div>
+  </div>
+
+  <h2>3. Behaviour</h2>
+  <ul class="rules">
+    <li><b>Open Universal Clipboard</b> opens the window you know (Home). Closing the window keeps the icon.</li>
+    <li><b>Copy files... / Copy folder...</b> open the system picker, like the buttons on Home. What you pick becomes the latest copy.</li>
+    <li><b>Pause / Resume</b> work like the Pause button on Home.</li>
+    <li><b>Stop</b> appears only while files move. It ends that transfer.</li>
+    <li><b>Quit Universal Clipboard</b> closes the icon and stops syncing. Opening the app, or the next login, starts both again.</li>
+    <li>The icon starts at login next to the agent. A setting, <b>Show icon in the menu bar</b> (Mac) / <b>Show icon in the taskbar</b> (Windows, Linux), turns it off; <code>uc settings set tray-icon off</code> does the same.</li>
+    <li>The menu never shows clipboard content, only facts, as everywhere else in the app.</li>
+  </ul>
+</main>
+
+<!-- Glyphs: 16-unit grid, stroke = currentColor. A = app icon as is; B = simplified. Badges cut a
+     knockout ring so they read on any background, and stay monochrome for the macOS template image. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="gA" viewBox="0 0 16 16">
+      <g fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.2 6.2L8 3.6l5.8 2.6L8 8.8z"/><path d="M2.2 8.9L8 11.5l5.8-2.6"/><path d="M2.2 11.5L8 14.1l5.8-2.6"/>
+      </g>
+      <rect x="6.1" y="2.9" width="3.8" height="1.6" rx=".7" fill="currentColor" opacity=".6"/>
+    </symbol>
+    <symbol id="gB" viewBox="0 0 16 16">
+      <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1.8 7L8 4.2 14.2 7 8 9.8z"/><path d="M1.8 10.6L8 13.4l6.2-2.8"/>
+      </g>
+      <rect x="5.9" y="2.5" width="4.2" height="2" rx=".9" fill="currentColor"/>
+    </symbol>
+    <mask id="cutBR"><rect width="16" height="16" fill="#fff"/><circle cx="12.8" cy="12.8" r="3.9" fill="#000"/></mask>
+    <symbol id="gB-dot" viewBox="0 0 16 16">
+      <g mask="url(#cutBR)"><use href="#gB"/></g>
+      <circle cx="12.8" cy="12.8" r="2.5" fill="currentColor"/>
+    </symbol>
+    <symbol id="gB-pause" viewBox="0 0 16 16">
+      <g mask="url(#cutBR)"><use href="#gB"/></g>
+      <rect x="10.9" y="10.4" width="1.4" height="4.8" rx=".5" fill="currentColor"/>
+      <rect x="13.3" y="10.4" width="1.4" height="4.8" rx=".5" fill="currentColor"/>
+    </symbol>
+    <symbol id="gB-move" viewBox="0 0 16 16">
+      <g mask="url(#cutBR)"><use href="#gB"/></g>
+      <path d="M12.8 9.9v5.2M10.7 13.1l2.1 2.1 2.1-2.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+</body>
+</html>
