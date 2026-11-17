@@ -208,12 +208,32 @@ impl std::fmt::Debug for LanEndpoint {
     }
 }
 
+/// Receive window of one stream (frame stream and each data stream): the bytes a peer may
+/// send ahead of what this side has read. 8 MiB per round trip is far above LAN speed even at
+/// a 10 ms Wi-Fi round trip, and it bounds the memory one stalled transfer can hold.
+pub const STREAM_WINDOW: u32 = 8 << 20;
+
+/// Receive window of a whole connection: room for the frame stream plus every data stream at
+/// its full window, so stalled transfers can never block clipboard frames (quinn's default is
+/// unlimited; this makes the memory bound explicit).
+pub const CONNECTION_WINDOW: u32 = (crate::link::MAX_DATA_STREAMS as u32 + 1) * STREAM_WINDOW;
+
+/// Unacknowledged bytes this side may have in flight on a connection (quinn's default is
+/// 10 MB). Two stream windows: enough to keep a LAN busy, small enough that a clipboard frame
+/// is not queued behind much file data.
+pub const SEND_WINDOW: u64 = 2 * STREAM_WINDOW as u64;
+
 fn transport(t: &Timing) -> Arc<quinn::TransportConfig> {
     let mut c = quinn::TransportConfig::default();
     c.keep_alive_interval(Some(t.keep_alive));
     c.max_idle_timeout(quinn::IdleTimeout::try_from(t.idle_timeout).ok());
+    // 0 at the handshake for every connection: pairing connections and probation links never
+    // carry data streams. `Link::allow_streams` raises it on member links only.
     c.max_concurrent_uni_streams(0u8.into());
     c.max_concurrent_bidi_streams(4u8.into());
+    c.stream_receive_window(STREAM_WINDOW.into());
+    c.receive_window(CONNECTION_WINDOW.into());
+    c.send_window(SEND_WINDOW);
     Arc::new(c)
 }
 

@@ -1,12 +1,16 @@
 //! Multi-agent tests (plan 6.2, milestone M7): two and three real agents on loopback, paired
-//! through the `uc` CLI, with the copy matrix on test clipboards.
+//! through the `uc` CLI, with the copy matrix on test clipboards. File sync (spec 7): folders,
+//! the exec bit, a zip, the limit, `uc copy` of a 300 MB file, cancel, stop, keep-3, the image
+//! companion and an old peer. Fake clipboards; the files are real, in temp folders.
 
 mod common;
 
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use common::*;
-use serde_json::json;
+use serde_json::{Value, json};
 
 /// Three agents: pair through the CLI (the third from the second device), the copy matrix,
 /// device list, rename, pause, settings, remove, leave.
@@ -376,5 +380,850 @@ fn no_usable_network_is_named_in_status_and_pairing() {
     assert!(
         log.contains("vEthernet (Default Switch): virtual, no LAN default gateway"),
         "{log}"
+    );
+}
+
+// ------------------------------------------------------------------ file sync (spec 7)
+
+/// Bytes that differ along the file, so a misplaced chunk is caught.
+fn pattern(n: usize, seed: u8) -> Vec<u8> {
+    (0..n)
+        .map(|i| (i as u32).wrapping_mul(2654435761).to_le_bytes()[1] ^ seed)
+        .collect()
+}
+
+/// The file paths on an agent's (test) clipboard.
+fn files_on(a: &Agent) -> Vec<PathBuf> {
+    a.call("debug.clipboard", json!({}))["files"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Value::as_str)
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// The newest activity entry.
+fn last_activity(a: &Agent) -> Value {
+    a.uc_json(&["status"])["activity"][0].clone()
+}
+
+/// True if one of the last activity entries has exactly this note.
+fn has_note(a: &Agent, note: &str) -> bool {
+    a.uc_json(&["status"])["activity"]
+        .as_array()
+        .is_some_and(|l| l.iter().any(|x| x["note"] == note))
+}
+
+/// What moves now (`transfer` of `uc status --json`).
+fn transfer(a: &Agent) -> Value {
+    a.uc_json(&["status"])["transfer"].clone()
+}
+
+/// Received copies in an agent's files folder (`<state>/files` for test profiles).
+fn received_folders(a: &Agent) -> Vec<String> {
+    std::fs::read_dir(a.dir.join("files"))
+        .map(|rd| {
+            rd.filter_map(Result::ok)
+                .filter(|e| e.path().is_dir())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Two started agents named Alpha and Bravo, paired and connected. `a_env` and `b_env` are
+/// extra test switches for each.
+fn alpha_bravo(n: u8, a_env: &[(&str, &str)], b_env: &[(&str, &str)]) -> (Agent, Agent) {
+    let mut a = Agent::new(n);
+    let mut b = Agent::new(n + 1);
+    for (x, env) in [(&mut a, a_env), (&mut b, b_env)] {
+        x.extra_env
+            .extend(env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+        x.start();
+    }
+    a.uc_json(&["settings", "set", "device-name", "Alpha"]);
+    b.uc_json(&["settings", "set", "device-name", "Bravo"]);
+    pair(&a, &mut b);
+    assert!(
+        until(Duration::from_secs(10), || {
+            a.uc_json(&["status"])["connected"] == 1 && b.uc_json(&["status"])["connected"] == 1
+        }),
+        "not connected:\n{}",
+        a.log()
+    );
+    (a, b)
+}
+
+/// Every entry under `root`: `/`-separated relative path, and the bytes (`None` for a
+/// folder).
+fn tree(root: &Path) -> BTreeMap<String, Option<Vec<u8>>> {
+    fn walk(base: &Path, dir: &Path, out: &mut BTreeMap<String, Option<Vec<u8>>>) {
+        for e in std::fs::read_dir(dir).unwrap().map(Result::unwrap) {
+            let p = e.path();
+            let rel = p
+                .strip_prefix(base)
+                .unwrap()
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
+            if p.is_dir() {
+                out.insert(rel, None);
+                walk(base, &p, out);
+            } else {
+                out.insert(rel, Some(std::fs::read(&p).unwrap()));
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk(root, root, &mut out);
+    out
+}
+
+/// CRC-32 (IEEE), for the test zip.
+fn crc32(data: &[u8]) -> u32 {
+    let mut c = !0u32;
+    for b in data {
+        c ^= u32::from(*b);
+        for _ in 0..8 {
+            c = if c & 1 != 0 {
+                (c >> 1) ^ 0xEDB8_8320
+            } else {
+                c >> 1
+            };
+        }
+    }
+    !c
+}
+
+/// A real zip archive with one stored (not compressed) file.
+fn zip_with(name: &str, data: &[u8]) -> Vec<u8> {
+    let crc = crc32(data);
+    let len = data.len() as u32;
+    let n = name.len() as u16;
+    let mut z = Vec::new();
+    // Local file header.
+    z.extend(0x0403_4b50u32.to_le_bytes());
+    z.extend(20u16.to_le_bytes()); // version needed
+    z.extend([0u8; 4]); // flags, method (stored)
+    z.extend(0u16.to_le_bytes()); // time
+    z.extend(0x21u16.to_le_bytes()); // date 1980-01-01
+    z.extend(crc.to_le_bytes());
+    z.extend(len.to_le_bytes());
+    z.extend(len.to_le_bytes());
+    z.extend(n.to_le_bytes());
+    z.extend(0u16.to_le_bytes());
+    z.extend(name.as_bytes());
+    z.extend(data);
+    let cd = z.len() as u32;
+    // Central directory.
+    z.extend(0x0201_4b50u32.to_le_bytes());
+    z.extend(20u16.to_le_bytes());
+    z.extend(20u16.to_le_bytes());
+    z.extend([0u8; 4]);
+    z.extend(0u16.to_le_bytes());
+    z.extend(0x21u16.to_le_bytes());
+    z.extend(crc.to_le_bytes());
+    z.extend(len.to_le_bytes());
+    z.extend(len.to_le_bytes());
+    z.extend(n.to_le_bytes());
+    z.extend([0u8; 12]); // extra, comment, disk, internal and external attributes
+    z.extend(0u32.to_le_bytes()); // offset of the local header
+    z.extend(name.as_bytes());
+    let cd_len = z.len() as u32 - cd;
+    // End of central directory.
+    z.extend(0x0605_4b50u32.to_le_bytes());
+    z.extend([0u8; 4]);
+    z.extend(1u16.to_le_bytes());
+    z.extend(1u16.to_le_bytes());
+    z.extend(cd_len.to_le_bytes());
+    z.extend(cd.to_le_bytes());
+    z.extend(0u16.to_le_bytes());
+    z
+}
+
+/// A 1x1 PNG.
+const PNG_1X1: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82,
+];
+
+/// BLAKE3 of a file, read in pieces.
+fn file_hash(p: &Path) -> blake3::Hash {
+    let mut h = blake3::Hasher::new();
+    h.update_reader(std::fs::File::open(p).unwrap()).unwrap();
+    h.finalize()
+}
+
+/// Write `mib` MiB of the pattern to `p`, 1 MiB at a time.
+fn write_big(p: &Path, mib: usize) {
+    use std::io::Write;
+    let mut f = std::io::BufWriter::new(std::fs::File::create(p).unwrap());
+    for i in 0..mib {
+        f.write_all(&pattern(1 << 20, i as u8)).unwrap();
+    }
+    f.flush().unwrap();
+}
+
+/// Wait until `b` receives from Alpha and some bytes are in; `a` shows the send.
+fn wait_receiving(a: &Agent, b: &Agent) {
+    let mut t = Value::Null;
+    assert!(
+        until(Duration::from_secs(20), || {
+            t = transfer(b);
+            t["phase"] == "receiving" && t["done"].as_u64().unwrap_or(0) > 0
+        }),
+        "no transfer on B: {t}\nA:\n{}\nB:\n{}",
+        a.log(),
+        b.log()
+    );
+    assert_eq!(t["device"], "Alpha");
+    let s = transfer(a);
+    assert_eq!(s["phase"], "sending", "{s}");
+    assert_eq!(s["device"], "Bravo", "{s}");
+}
+
+/// An automatic copy of a folder tree (nested files, an empty folder, an executable script)
+/// and a zip next to it: everything arrives byte for byte, the exec bit too (macOS and Linux),
+/// and the zip stays a zip.
+#[test]
+fn folder_tree_exec_bit_and_zip_arrive_intact() {
+    let (a, b) = alpha_bravo(71, &[], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let proj = src.path().join("Project");
+    std::fs::create_dir_all(proj.join("src").join("deep").join("er")).unwrap();
+    std::fs::create_dir_all(proj.join("empty")).unwrap();
+    std::fs::create_dir_all(proj.join("bin")).unwrap();
+    std::fs::write(proj.join("src").join("main.rs"), b"fn main() {}\n").unwrap();
+    std::fs::write(
+        proj.join("src").join("deep").join("er").join("data.bin"),
+        pattern(700_000, 9),
+    )
+    .unwrap();
+    std::fs::write(proj.join("bin").join("run.sh"), b"#!/bin/sh\necho hi\n").unwrap();
+    std::fs::write(proj.join("README"), b"").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let run = proj.join("bin").join("run.sh");
+        std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let zip = src.path().join("archive.zip");
+    std::fs::write(&zip, zip_with("hello.txt", b"hello from the zip")).unwrap();
+
+    a.call("debug.copy_files", json!({ "paths": [proj, zip] }));
+    assert!(
+        until(Duration::from_secs(20), || files_on(&b).len() == 2),
+        "files did not arrive:\nA:\n{}\nB:\n{}",
+        a.log(),
+        b.log()
+    );
+    let got = files_on(&b);
+    let dir = got.iter().find(|p| p.is_dir()).expect("the folder");
+    let z = got.iter().find(|p| p.is_file()).expect("the zip");
+    assert_eq!(dir.file_name().unwrap(), "Project");
+    assert_eq!(z.file_name().unwrap(), "archive.zip");
+    assert_eq!(tree(dir), tree(&proj), "the tree arrives as it was");
+    assert!(dir.join("empty").is_dir());
+    assert_eq!(std::fs::read(z).unwrap(), std::fs::read(&zip).unwrap());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&dir.join("bin").join("run.sh")), 0o755);
+        assert_eq!(mode(&dir.join("src").join("main.rs")), 0o644);
+    }
+    let act = last_activity(&b);
+    assert_eq!(act["direction"], "received");
+    assert_eq!(act["device"], "Alpha");
+    // 5 files: main.rs, data.bin, run.sh, README and the zip.
+    assert!(
+        act["kind"].as_str().unwrap().starts_with("5 files, "),
+        "{act}"
+    );
+    // A received copy is never sent back: A's clipboard still has its own paths.
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(files_on(&a), vec![proj.clone(), zip.clone()]);
+}
+
+/// `uc copy` of a 300 MB file: over the automatic limit (100 MB), sent anyway because it was
+/// picked, intact on the other side.
+#[test]
+fn uc_copy_sends_a_300_mb_file() {
+    let (a, b) = alpha_bravo(73, &[], &[]);
+    assert_eq!(a.uc_json(&["settings"])["file-limit-mb"]["value"], "100");
+    let src = tempfile::tempdir().unwrap();
+    let big = src.path().join("big.bin");
+    write_big(&big, 300);
+    let t = std::time::Instant::now();
+    let r = a.uc_json(&["copy", big.to_str().unwrap()]);
+    assert_eq!(r["preparing"], true);
+    assert!(
+        until(Duration::from_secs(300), || files_on(&b).len() == 1),
+        "300 MB did not arrive:\nA:\n{}\nB:\n{}",
+        a.log(),
+        b.log()
+    );
+    let took = t.elapsed();
+    eprintln!(
+        "300 MiB by uc copy: {took:?} ({:.0} MiB/s, hash and send)",
+        300.0 / took.as_secs_f64()
+    );
+    let got = files_on(&b).remove(0);
+    assert_eq!(got.file_name().unwrap(), "big.bin");
+    assert_eq!(std::fs::metadata(&got).unwrap().len(), 300 << 20);
+    assert_eq!(file_hash(&got), file_hash(&big));
+    let act = last_activity(&b);
+    assert!(
+        act["kind"].as_str().unwrap().starts_with("1 file, "),
+        "{act}"
+    );
+    assert!(act["note"].is_null(), "{act}");
+    assert!(
+        !has_note(
+            &a,
+            "Files over 100 MB are not sent automatically. Use Copy files... in the app."
+        ),
+        "a picked copy gives no over-limit note"
+    );
+    assert!(b.uc_json(&["status"])["last_transfer_error"].is_null());
+}
+
+/// A newer copy cancels a running transfer: text copied on the sender, then text copied on
+/// the receiver. The partial folder is deleted and the receiver says why.
+#[test]
+fn a_newer_copy_cancels_the_running_transfer() {
+    // 4 MB/s, so 40 MiB takes about 10 s.
+    let (a, b) = alpha_bravo(75, &[("UCLIP_TEST_SEND_RATE", "4000000")], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let one = src.path().join("one.bin");
+    let two = src.path().join("two.bin");
+    write_big(&one, 40);
+    write_big(&two, 41);
+
+    // A newer copy on the sending device.
+    a.uc_json(&["copy", one.to_str().unwrap()]);
+    wait_receiving(&a, &b);
+    a.copy("newer text on Alpha");
+    assert!(
+        until(Duration::from_secs(10), || b.clipboard().as_deref()
+            == Some("newer text on Alpha")),
+        "{}",
+        b.log()
+    );
+    assert!(until(Duration::from_secs(10), || {
+        transfer(&a).is_null() && transfer(&b).is_null()
+    }));
+    assert!(
+        has_note(&b, "A newer copy replaced these files."),
+        "{}",
+        b.uc_json(&["status"])
+    );
+    assert!(until(Duration::from_secs(5), || received_folders(&b).is_empty()));
+    assert!(files_on(&b).is_empty());
+
+    // A newer copy on the receiving device.
+    a.uc_json(&["copy", two.to_str().unwrap()]);
+    wait_receiving(&a, &b);
+    b.copy("newer text on Bravo");
+    assert!(
+        until(Duration::from_secs(10), || a.clipboard().as_deref()
+            == Some("newer text on Bravo")),
+        "{}",
+        a.log()
+    );
+    assert!(until(Duration::from_secs(10), || {
+        transfer(&a).is_null() && transfer(&b).is_null()
+    }));
+    assert!(until(Duration::from_secs(5), || received_folders(&b).is_empty()));
+    assert!(files_on(&b).is_empty());
+    // Text still syncs both ways.
+    copy_matrix(&[&a, &b], "after cancel");
+}
+
+/// `uc transfer stop` on the receiver, then on the sender: the transfer ends on both sides,
+/// nothing lands on the receiver's clipboard, and the notes say who stopped it.
+#[test]
+fn uc_transfer_stop_ends_it_on_both_sides() {
+    let (a, b) = alpha_bravo(77, &[("UCLIP_TEST_SEND_RATE", "4000000")], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let one = src.path().join("one.bin");
+    let two = src.path().join("two.bin");
+    write_big(&one, 40);
+    write_big(&two, 41);
+
+    a.uc_json(&["copy", one.to_str().unwrap()]);
+    wait_receiving(&a, &b);
+    assert_eq!(b.uc_json(&["transfer", "stop"])["stopped"], true);
+    assert!(until(Duration::from_secs(10), || {
+        transfer(&a).is_null() && transfer(&b).is_null()
+    }));
+    assert!(has_note(&b, "Stopped."), "{}", b.uc_json(&["status"]));
+    assert_eq!(b.uc_json(&["transfer", "stop"])["stopped"], false);
+    std::thread::sleep(Duration::from_millis(1000));
+    assert!(
+        files_on(&b).is_empty(),
+        "a stopped copy is not fetched again"
+    );
+    assert!(received_folders(&b).is_empty());
+
+    a.uc_json(&["copy", two.to_str().unwrap()]);
+    wait_receiving(&a, &b);
+    let o = a.uc(&["transfer", "stop"]);
+    assert!(o.status.success());
+    assert!(until(Duration::from_secs(10), || {
+        transfer(&a).is_null() && transfer(&b).is_null()
+    }));
+    assert!(
+        until(Duration::from_secs(5), || has_note(
+            &b,
+            "Alpha stopped sending the files."
+        )),
+        "{}",
+        b.uc_json(&["status"])
+    );
+    assert!(until(Duration::from_secs(5), || received_folders(&b).is_empty()));
+    assert!(files_on(&b).is_empty());
+}
+
+/// A single small image file also puts the image itself on the receiver's clipboard (spec
+/// 2.2.5). Not for a text file, and not when Sync images is off there.
+#[test]
+fn a_single_image_file_brings_the_image_along() {
+    let (a, b) = alpha_bravo(79, &[], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let png = src.path().join("shot.png");
+    std::fs::write(&png, PNG_1X1).unwrap();
+    let png_hash = blake3::hash(PNG_1X1).to_hex().to_string();
+    let arrived = |name: &str| {
+        until(Duration::from_secs(15), || {
+            files_on(&b)
+                .first()
+                .is_some_and(|p| p.file_name().is_some_and(|n| n == name))
+        })
+    };
+
+    a.call("debug.copy_files", json!({ "paths": [png] }));
+    assert!(arrived("shot.png"), "{}", b.log());
+    let c = b.call("debug.clipboard", json!({}));
+    assert_eq!(c["png"], png_hash.as_str(), "{c}");
+
+    let txt = src.path().join("notes.txt");
+    std::fs::write(&txt, b"no image").unwrap();
+    a.call("debug.copy_files", json!({ "paths": [txt] }));
+    assert!(arrived("notes.txt"));
+    assert!(b.call("debug.clipboard", json!({}))["png"].is_null());
+
+    b.uc_json(&["settings", "set", "sync-images", "off"]);
+    let png2 = src.path().join("shot2.png");
+    std::fs::write(&png2, PNG_1X1).unwrap();
+    a.call("debug.copy_files", json!({ "paths": [png2] }));
+    assert!(arrived("shot2.png"));
+    assert!(b.call("debug.clipboard", json!({}))["png"].is_null());
+}
+
+/// A peer without the files bit (a 0.1.x agent) stays connected, gets no files, and the
+/// copying device says it needs an update. Text keeps syncing.
+#[test]
+fn an_old_peer_stays_connected_and_gets_the_note() {
+    let (a, b) = alpha_bravo(81, &[], &[("UCLIP_TEST_NO_FILES", "1")]);
+    let src = tempfile::tempdir().unwrap();
+    let f = src.path().join("small.txt");
+    std::fs::write(&f, b"for the old peer").unwrap();
+    a.call("debug.copy_files", json!({ "paths": [f] }));
+    assert!(
+        until(Duration::from_secs(10), || has_note(
+            &a,
+            "Bravo needs an update to receive files."
+        )),
+        "{}",
+        a.uc_json(&["status"])
+    );
+    std::thread::sleep(Duration::from_millis(800));
+    assert!(files_on(&b).is_empty());
+    assert!(received_folders(&b).is_empty());
+    assert_eq!(a.uc_json(&["status"])["connected"], 1);
+    assert_eq!(b.uc_json(&["status"])["connected"], 1);
+    copy_matrix(&[&a, &b], "old peer");
+}
+
+/// `uc copy` of a folder and a file, an automatic copy over the limit (note on this device),
+/// keep-3 in the files folder, "Copy smaller files automatically" off (still receives, `uc copy`
+/// still sends, Ctrl+C of files is not sent), and no file names in logs.
+#[test]
+fn files_reach_the_other_agent() {
+    let mut a = Agent::new(91);
+    let mut b = Agent::new(92);
+    a.start();
+    b.start();
+    a.uc_json(&["settings", "set", "device-name", "Alpha"]);
+    b.uc_json(&["settings", "set", "device-name", "Bravo"]);
+    pair(&a, &mut b);
+    assert!(
+        until(Duration::from_secs(10), || {
+            a.uc_json(&["status"])["connected"] == 1 && b.uc_json(&["status"])["connected"] == 1
+        }),
+        "not connected:\n{}",
+        a.log()
+    );
+    assert_eq!(a.uc_json(&["settings"])["auto-file-copy"]["value"], "on");
+    assert_eq!(a.uc_json(&["settings"])["file-limit-mb"]["value"], "100");
+
+    // A folder with a nested file, an empty folder, and a loose file, picked with `uc copy`.
+    let src = tempfile::tempdir().unwrap();
+    let photos = src.path().join("Secret Photos");
+    std::fs::create_dir_all(photos.join("trip")).unwrap();
+    std::fs::create_dir_all(photos.join("empty")).unwrap();
+    let big = pattern(3 << 20, 7);
+    std::fs::write(photos.join("trip").join("beach.bin"), &big).unwrap();
+    std::fs::write(photos.join("note-zebra.txt"), b"hello").unwrap();
+    let loose = src.path().join("report-walrus.pdf");
+    std::fs::write(&loose, pattern(1000, 3)).unwrap();
+    let missing = src.path().join("nope");
+    let o = a.uc(&["copy", missing.to_str().unwrap()]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("There is no file or folder"));
+
+    let r = a.uc_json(&["copy", photos.to_str().unwrap(), loose.to_str().unwrap()]);
+    assert_eq!(r["preparing"], true);
+    assert!(
+        until(Duration::from_secs(20), || files_on(&b).len() == 2),
+        "files did not arrive:\nA:\n{}\nB:\n{}",
+        a.log(),
+        b.log()
+    );
+    let got = files_on(&b);
+    let root = b.dir.join("files");
+    for p in &got {
+        assert!(p.is_absolute() && p.starts_with(&root), "{}", p.display());
+    }
+    let dir = got.iter().find(|p| p.is_dir()).expect("the folder");
+    let file = got.iter().find(|p| p.is_file()).expect("the file");
+    assert_eq!(dir.file_name().unwrap(), "Secret Photos");
+    assert_eq!(
+        std::fs::read(dir.join("trip").join("beach.bin")).unwrap(),
+        big
+    );
+    assert_eq!(std::fs::read(dir.join("note-zebra.txt")).unwrap(), b"hello");
+    assert!(dir.join("empty").is_dir());
+    assert_eq!(std::fs::read(file).unwrap(), pattern(1000, 3));
+    // No partial folder is left.
+    assert!(received_folders(&b).iter().all(|n| !n.ends_with(".part")));
+    let first = dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap();
+
+    // The picked items are on A's own clipboard too (written with our marker).
+    let mine = files_on(&a);
+    assert_eq!(mine, vec![photos.clone(), loose.clone()]);
+
+    // Last activity: counts and sizes only.
+    let ra = last_activity(&b);
+    assert_eq!(ra["direction"], "received");
+    assert_eq!(ra["device"], "Alpha");
+    assert_eq!(ra["kind"], "3 files, 3 MB");
+    assert!(until(
+        Duration::from_secs(5),
+        || last_activity(&a)["direction"] == "sent"
+    ));
+    assert_eq!(last_activity(&a)["kind"], "3 files, 3 MB");
+    assert!(until(Duration::from_secs(5), || {
+        a.uc_json(&["status"])["transfer"].is_null() && b.uc_json(&["status"])["transfer"].is_null()
+    }));
+    assert!(b.uc_json(&["status"])["last_transfer_error"].is_null());
+    assert_eq!(a.uc_json(&["transfer", "stop"])["stopped"], false);
+
+    // An automatic copy over the limit is not sent, with a note on this device.
+    a.uc_json(&["settings", "set", "file-limit-mb", "1"]);
+    let over = src.path().join("over.bin");
+    std::fs::write(&over, pattern(2 << 20, 1)).unwrap();
+    a.call("debug.copy_files", json!({ "paths": [over] }));
+    assert!(
+        until(Duration::from_secs(10), || {
+            last_activity(&a)["note"]
+                .as_str()
+                .is_some_and(|n| n.contains("Files over 1 MB are not sent automatically"))
+        }),
+        "{}",
+        a.uc_json(&["status"])
+    );
+
+    // Small automatic copies sync; the files folder keeps the last 3.
+    for i in 0..3 {
+        let f = src.path().join(format!("small-{i}.txt"));
+        std::fs::write(&f, format!("small {i}")).unwrap();
+        a.call("debug.copy_files", json!({ "paths": [f] }));
+        assert!(
+            until(Duration::from_secs(15), || {
+                files_on(&b)
+                    .first()
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .as_deref()
+                    == Some(format!("small {i}").as_str())
+            }),
+            "small copy {i} did not arrive:\nA:\n{}\nB:\n{}",
+            a.log(),
+            b.log()
+        );
+    }
+    assert!(
+        until(Duration::from_secs(5), || received_folders(&b).len() == 3),
+        "{:?}",
+        received_folders(&b)
+    );
+    assert!(
+        !received_folders(&b).contains(&first),
+        "the oldest of 4 copies is deleted: {:?}",
+        received_folders(&b)
+    );
+
+    // "Copy smaller files automatically" off on B (2026-11-17): it only stops B's own
+    // automatic copies. A copy from A is still received.
+    b.uc_json(&["settings", "set", "auto-file-copy", "off"]);
+    assert_eq!(b.uc_json(&["settings"])["auto-file-copy"]["value"], "off");
+    let f = src.path().join("while-off.txt");
+    std::fs::write(&f, b"off").unwrap();
+    a.call("debug.copy_files", json!({ "paths": [f] }));
+    assert!(
+        until(Duration::from_secs(15), || files_on(&b)
+            .first()
+            .is_some_and(|p| p.ends_with("while-off.txt"))),
+        "a copy to a device with the setting off did not arrive:
+A:
+{}
+B:
+{}",
+        a.log(),
+        b.log()
+    );
+    // B's own Ctrl+C of a file is not sent, with a note on B.
+    let mine_b = src.path().join("b-auto.txt");
+    std::fs::write(&mine_b, b"b auto").unwrap();
+    b.call("debug.copy_files", json!({ "paths": [mine_b] }));
+    assert!(
+        until(Duration::from_secs(10), || has_note(
+            &b,
+            "Automatic file copies are off. Use Copy files... in the app."
+        )),
+        "{}",
+        b.uc_json(&["status"])
+    );
+    std::thread::sleep(Duration::from_millis(800));
+    assert!(files_on(&a).iter().all(|p| !p.ends_with("b-auto.txt")));
+    // `uc copy` on B still works and reaches A.
+    let r = b.uc_json(&["copy", loose.to_str().unwrap()]);
+    assert_eq!(r["preparing"], true);
+    assert!(
+        until(Duration::from_secs(15), || files_on(&a)
+            .first()
+            .is_some_and(
+                |p| p.ends_with("report-walrus.pdf") && p.starts_with(a.dir.join("files"))
+            )),
+        "uc copy with the setting off did not arrive:
+A:
+{}
+B:
+{}",
+        a.log(),
+        b.log()
+    );
+
+    // Logs and the report hold no file or folder names.
+    for x in [&a, &b] {
+        let log = x.log();
+        for name in [
+            "Secret Photos",
+            "note-zebra",
+            "report-walrus",
+            "beach.bin",
+            "small-",
+        ] {
+            assert!(!log.contains(name), "agent {} logged {name}", x.n);
+        }
+        let r = x.uc_json(&["diagnostics"])["report"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(!r.contains("walrus") && !r.contains("zebra"));
+    }
+}
+
+/// Review fix 1: removing a device whose send runs starts the send that waited in the queue
+/// (at most 2 run at once). Before the fix the agent dropped the engine's start event, so
+/// the waiting device showed "Receiving" with 0 bytes for good.
+#[test]
+fn removing_a_receiver_starts_the_queued_send() {
+    let mut a = Agent::new(111);
+    a.extra_env
+        .push(("UCLIP_TEST_SEND_RATE".into(), "2000000".into()));
+    a.start();
+    a.uc_json(&["settings", "set", "device-name", "Alpha"]);
+    let mut others = Vec::new();
+    for (n, name) in [(112, "Bravo"), (113, "Charlie"), (114, "Delta")] {
+        let mut x = Agent::new(n);
+        x.start();
+        x.uc_json(&["settings", "set", "device-name", name]);
+        pair(&a, &mut x);
+        others.push((x, name));
+    }
+    assert!(
+        until(Duration::from_secs(15), || {
+            a.uc_json(&["status"])["connected"] == 3
+                && others
+                    .iter()
+                    .all(|(x, _)| x.uc_json(&["status"])["connected"] == 3)
+        }),
+        "not all connected:\n{}",
+        a.log()
+    );
+    let src = tempfile::tempdir().unwrap();
+    let f = src.path().join("eight.bin");
+    write_big(&f, 8);
+    a.uc_json(&["copy", f.to_str().unwrap()]);
+
+    // Two sends run, one waits: its receiver asked but has no bytes.
+    let mut running = Vec::new();
+    assert!(
+        until(Duration::from_secs(20), || {
+            running = others
+                .iter()
+                .enumerate()
+                .filter(|(_, (x, _))| transfer(x)["done"].as_u64().unwrap_or(0) > 0)
+                .map(|(i, _)| i)
+                .collect();
+            running.len() == 2
+        }),
+        "two sends did not start:\n{}",
+        a.log()
+    );
+    let waiting = (0..3).find(|i| !running.contains(i)).unwrap();
+    let w = transfer(&others[waiting].0);
+    assert_eq!(w["phase"], "receiving", "{w}");
+    assert_eq!(w["done"], 0, "{w}");
+
+    // Remove a device whose send runs: the waiting one starts and finishes.
+    let (gone, keep) = (running[0], running[1]);
+    a.uc_json(&["remove", others[gone].1, "--yes"]);
+    for i in [waiting, keep] {
+        let (x, name) = &others[i];
+        assert!(
+            until(Duration::from_secs(30), || files_on(x)
+                .first()
+                .is_some_and(|p| p.ends_with("eight.bin"))),
+            "{name} did not get the files: {}\nA:\n{}\n{name}:\n{}",
+            transfer(x),
+            a.log(),
+            x.log()
+        );
+        assert_eq!(file_hash(&files_on(x)[0]), file_hash(&f));
+    }
+    assert!(until(Duration::from_secs(10), || transfer(&a).is_null()));
+}
+
+/// Review fix 2: a send that fails before its stream opens (here: the test switch makes
+/// every stream open fail, as if the receiver granted no stream) tells the receiver, which
+/// stops waiting instead of showing "Receiving" with 0 bytes for good.
+#[test]
+fn a_send_that_cannot_open_its_stream_tells_the_receiver() {
+    let (a, b) = alpha_bravo(115, &[("UCLIP_TEST_SERVE_REFUSED", "1")], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let f = src.path().join("small.txt");
+    std::fs::write(&f, b"never arrives").unwrap();
+    a.call("debug.copy_files", json!({ "paths": [f] }));
+    assert!(
+        until(Duration::from_secs(10), || has_note(
+            &b,
+            "Alpha could not send the files. Copy them again."
+        )),
+        "{}\nA:\n{}\nB:\n{}",
+        b.uc_json(&["status"]),
+        a.log(),
+        b.log()
+    );
+    assert!(until(Duration::from_secs(5), || {
+        transfer(&a).is_null() && transfer(&b).is_null()
+    }));
+    assert!(files_on(&b).is_empty());
+    assert!(received_folders(&b).is_empty());
+    copy_matrix(&[&a, &b], "after a refused send");
+}
+
+/// Review item 10 (spec 2.5): keep-3 never deletes a received folder that was copied again
+/// on this device (the source of its sends), even when 3 newer copies arrive after it.
+#[test]
+fn keep_3_never_deletes_a_received_folder_that_is_copied_again() {
+    let (a, b) = alpha_bravo(117, &[], &[]);
+    let src = tempfile::tempdir().unwrap();
+    let send = |name: &str| {
+        let f = src.path().join(name);
+        std::fs::write(&f, name.as_bytes()).unwrap();
+        a.call("debug.copy_files", json!({ "paths": [f] }));
+        assert!(
+            until(Duration::from_secs(15), || files_on(&b)
+                .first()
+                .is_some_and(|p| p.ends_with(name))),
+            "{name} did not arrive:\nA:\n{}\nB:\n{}",
+            a.log(),
+            b.log()
+        );
+        files_on(&b)[0].clone()
+    };
+    let folder = |p: &Path| {
+        p.parent()
+            .and_then(|d| d.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap()
+    };
+    let first = send("first.txt");
+    let second = send("second.txt");
+    let (f1, f2) = (folder(&first), folder(&second));
+
+    // B copies the first received file again: B now sends it from its files folder.
+    b.uc_json(&["copy", first.to_str().unwrap()]);
+    assert!(
+        until(Duration::from_secs(15), || files_on(&a)
+            .first()
+            .is_some_and(
+                |p| p.ends_with("first.txt") && p.starts_with(a.dir.join("files"))
+            )),
+        "A did not get B's copy:\nA:\n{}\nB:\n{}",
+        a.log(),
+        b.log()
+    );
+
+    // Three newer copies reach B.
+    for name in ["third.txt", "fourth.txt", "fifth.txt"] {
+        send(name);
+    }
+    assert!(
+        until(Duration::from_secs(5), || !received_folders(&b)
+            .contains(&f2)),
+        "the unused older copy goes: {:?}",
+        received_folders(&b)
+    );
+    let left = received_folders(&b);
+    assert!(left.contains(&f1), "the send source was deleted: {left:?}");
+    assert_eq!(left.len(), 4, "{left:?}");
+    assert_eq!(std::fs::read(&first).unwrap(), b"first.txt");
+
+    // Review fix 7: `files.copy` does not look at the disk on the main loop; a path that is
+    // not there fails in the walk, with a note.
+    let missing = src.path().join("not-there.txt");
+    let r = b.call("files.copy", json!({ "paths": [missing] }));
+    assert_eq!(r["preparing"], true, "{r}");
+    assert!(
+        until(Duration::from_secs(10), || has_note(
+            &b,
+            "The files could not be read, so they were not sent."
+        )),
+        "{}",
+        b.uc_json(&["status"])
     );
 }

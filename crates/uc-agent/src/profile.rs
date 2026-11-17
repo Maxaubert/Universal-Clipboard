@@ -9,10 +9,13 @@
 //! | `UCLIP_STATE_DIR` | state folder (tests use temp folders) |
 //! | `UCLIP_TEST_KEYSTORE=file` | file key store (`uc-keys`) |
 //! | `UCLIP_TEST_CLIPBOARD=os` | the OS backend, but only an isolated one: a private window station (Windows), a named pasteboard (`UCLIP_TEST_PASTEBOARD`, macOS), any display (Linux, for Docker). Else a fake clipboard. |
-//! | `UCLIP_TEST_LOOPBACK=127.0.0.n` | bind only this loopback address, no mDNS |
+//! | `UCLIP_TEST_LOOPBACK=127.0.0.n` | bind only this loopback address, no mDNS (the network lab passes its namespace's LAN address, `10.77.0.n`, which counts as a physical /24) |
 //! | `UCLIP_TEST_PAIR_ADDRS=ip:port,...` | where a joiner looks for the inviter (no mDNS on loopback) |
 //! | `UCLIP_TEST_FAST=1` | short timers |
 //! | `UCLIP_TEST_NO_LAN=1` | the only interface is a Hyper-V internal switch: no socket, the "no network it can use" path (used when `UCLIP_TEST_LOOPBACK` is not set) |
+//! | `UCLIP_TEST_NO_FILES=1` | no feature bits in the `Hello` extension: acts as a 0.1.x peer that cannot receive files |
+//! | `UCLIP_TEST_SEND_RATE=<bytes/s>` | file sends go no faster than this, so a test can act while one runs |
+//! | `UCLIP_TEST_SERVE_REFUSED=1` | every file send fails before its stream opens, as if the receiver granted no stream |
 
 use std::path::PathBuf;
 
@@ -126,6 +129,37 @@ impl Profile {
         }
     }
 
+    /// The folder for received files (file sync spec 2.5): the user's cache or temp space,
+    /// never the state folder and never a RAM disk. Windows `%LOCALAPPDATA%\Temp\Universal
+    /// Clipboard`, macOS `~/Library/Caches/Universal Clipboard` (`$TMPDIR` is purged by macOS),
+    /// Linux `$XDG_CACHE_HOME/Universal Clipboard` (`/tmp` is often in RAM). Profiles add
+    /// `-<name>`; test profiles with their own state folder use `<state folder>/files`.
+    pub fn files_dir(&self) -> PathBuf {
+        if let Some(d) = self.dir_override.as_ref().filter(|_| self.is_test()) {
+            return d.join("files");
+        }
+        let name = format!("Universal Clipboard{}", self.suffix());
+        let home = || {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_default()
+        };
+        if cfg!(windows) {
+            let base = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            base.join("Temp").join(name)
+        } else if cfg!(target_os = "macos") {
+            home().join("Library/Caches").join(name)
+        } else {
+            let base = std::env::var_os("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute())
+                .unwrap_or_else(|| home().join(".cache"));
+            base.join(name)
+        }
+    }
+
     /// The Unix socket path (plan 3.2): `$XDG_RUNTIME_DIR/uclip[-profile]/agent.sock` on
     /// Linux when that folder exists, else `agent.sock` in the state folder.
     #[cfg(unix)]
@@ -198,5 +232,27 @@ mod tests {
         assert_ne!(a.default_port(), DEFAULT_PORT);
         assert!(a.state_dir().to_string_lossy().ends_with("-dev"));
         assert_ne!(a.state_dir(), b.state_dir());
+    }
+
+    #[test]
+    fn files_folder_per_profile() {
+        let real = Profile::new("").unwrap();
+        let dev = Profile::new("dev").unwrap();
+        assert!(real.files_dir().ends_with("Universal Clipboard"));
+        assert!(dev.files_dir().ends_with("Universal Clipboard-dev"));
+        if cfg!(windows) {
+            assert!(real.files_dir().parent().unwrap().ends_with("Temp"));
+        } else if cfg!(target_os = "macos") {
+            assert!(
+                real.files_dir()
+                    .parent()
+                    .unwrap()
+                    .ends_with("Library/Caches")
+            );
+        }
+        // Never inside the state folder of the real app.
+        assert!(!real.files_dir().starts_with(real.state_dir()));
+        let t = Profile::test("t1", PathBuf::from("/tmp/uc-t1")).unwrap();
+        assert_eq!(t.files_dir(), PathBuf::from("/tmp/uc-t1").join("files"));
     }
 }

@@ -42,6 +42,33 @@ Date: 2026-11-14. Crate: `uc-clip-mac`. Plan: sections 3.8, 3.9, 3.10, 6.4, mile
 5. Read `changeCount` again. If it changed during the read, start again (3 tries), then report
    `Busy`.
 
+## File copies (0.2.0, 2026-11-16)
+
+Spec: `docs/plan/2026-11-16-file-sync.md` sections 2.4 and 6. Pure code in `types.rs` (tested
+on every OS), OS calls in `mac.rs`.
+- **Read:** a clip with `public.file-url`, `NSFilenamesPboardType` or a promised-file type is a
+  file copy; its text and icon are not read. Each pasteboard item gives its file URL. Finder
+  writes file reference URLs (`file:///.file/id=...`); they are resolved to a path. When no
+  item has a URL, the old `NSFilenamesPboardType` list (a property list of paths) is read.
+- **Virtual (all or nothing):** a promised file (Photos, Mail), a URL with no local path, or a
+  reference to a deleted file makes the whole copy virtual, so a partial copy is never sent.
+- **iCloud:** `cloud_only(path)` reads `st_flags` only (never downloads). `SF_DATALESS` (an
+  evicted iCloud Drive file) skips the whole copy.
+- **Write** (`write_files`): `prepareForNewContents(.currentHostOnly)`, then one `NSURL` per
+  path with `writeObjects` (Finder pastes them as files), then the PNG and TIFF of the
+  single-image companion if any, then our marker, all on the first item. A path that is not
+  UTF-8 is refused before the pasteboard is touched.
+- **Received files** go to `~/Library/Caches/Universal Clipboard[-profile]/` (not `$TMPDIR`,
+  which macOS purges). Exec bits arrive as mode `0o755` or `0o644`. Names are compared in NFC
+  (APFS keeps the form it was given).
+- **Privacy prompt:** reading a file in Desktop, Documents or Downloads may show a one-time
+  macOS prompt for the agent. Until it is allowed, the send fails with "A file could not be
+  opened (in use or no access)".
+- **Tests** (named pasteboards, headless): file URLs from another app keep their order, a
+  reference URL is resolved, a deleted reference is virtual, the old list is the fallback,
+  promised files and web URLs are virtual, `write_files` puts URLs then the marker, with an
+  image adds PNG and TIFF, bad paths refused, and the engine starts a walk for a Finder copy.
+
 ## Remote clips (plan decision 8)
 - The backend only flags them (`Snapshot::remote`). The engine does not look at the flag yet.
 - `set_read_remote_content(false)` makes the backend skip the content of a remote clip, so macOS

@@ -83,6 +83,8 @@ a bridge and one namespace per device; the device runs `examples/lan-node.rs`: r
 | Address change | node 2 moves from .2 to .12 | Both peers reconnect to `.12`, same port, in 0.5 to 0.75 s (plan: under 5 s). |
 | Sleep and wake | `SIGSTOP` node 2, copy on node 1, `SIGCONT` | Reconnect and the newest clip arrives about 0.3 s after wake. Run with 60 s and with 300 s (the plan's 5 minutes): healed 0.31 s after `SIGCONT`. |
 | Lossy Wi-Fi | netem 5 % loss, 100 ms on every port | 20 copies in a row; every node ends with the last one. |
+| Files over lossy Wi-Fi (row 11, 0.2.0) | two real agents, `uc copy` of 200 MiB; netem 5 ms and 0.5 % loss on every port | Arrives intact in 30 s (6.6 MiB/s, debug build, WSL, 2026-11-16). With 2 ms jitter added (netem reorders heavily): 128 s. |
+| Files, sleep and wake (row 12, 0.2.0) | 200 MiB at 80 Mbit/s; receiver `SIGSTOP` 40 s at 40 MiB, then `SIGCONT` | Wake seen, link redialled, the receiver asks again from the start (2 asks); intact 67 s after the copy. |
 
 Detection rule checks (false alarms and misses), all in the table above:
 - VPN up and LAN works: no alarm (row 3, 4).

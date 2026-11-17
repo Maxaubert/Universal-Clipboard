@@ -4,6 +4,8 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use std::path::PathBuf;
+
 use uc_clip::{Clipboard, ClipboardError, RawPart, Snapshot};
 
 use crate::BackendKind;
@@ -263,6 +265,15 @@ impl Clipboard for LinuxClipboard {
 
     fn write(&mut self, parts: &[RawPart]) -> Result<u64, ClipboardError> {
         self.backend.set(mime::write_items(parts))
+    }
+
+    fn write_files(
+        &mut self,
+        paths: &[PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        uc_clip::check_file_paths(paths)?;
+        self.backend.set(mime::write_file_items(paths, image))
     }
 }
 

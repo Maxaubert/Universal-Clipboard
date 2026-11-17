@@ -187,6 +187,39 @@ impl Backend {
         }
     }
 
+    /// Test profiles: copy files as a file manager would (no marker). Only the fake
+    /// clipboard: the OS backends are tested in their own crates.
+    pub fn debug_copy_files(
+        &mut self,
+        paths: &[std::path::PathBuf],
+    ) -> Result<u64, ClipboardError> {
+        uc_clip::check_file_paths(paths)?;
+        match self {
+            Backend::Fake(f) => Ok(f.copy_paths(paths)),
+            #[allow(unreachable_patterns)]
+            _ => Err(ClipboardError::Unsupported),
+        }
+    }
+
+    /// Test profiles: the file paths on the clipboard, if it holds a file copy.
+    pub fn debug_files(&mut self) -> Vec<String> {
+        let files = match self {
+            Backend::Fake(f) => f.files().to_vec(),
+            #[allow(unreachable_patterns)]
+            _ => self.read().map(|s| s.files).unwrap_or_default(),
+        };
+        files.iter().map(|p| p.display().to_string()).collect()
+    }
+
+    /// Test profiles: the PNG next to the current clip, if any. Only the fake clipboard.
+    pub fn debug_png(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Backend::Fake(f) => f.part(Format::ImagePng).map(<[u8]>::to_vec),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
     /// Test profiles: the current text, if any.
     pub fn debug_text(&mut self) -> Option<String> {
         // Our own writes carry the marker, and the macOS and Linux backends do not read the
@@ -234,6 +267,22 @@ impl Clipboard for Backend {
             Backend::Mac(m) => m.write(parts),
             #[cfg(target_os = "linux")]
             Backend::Linux(l) => l.write(parts),
+        }
+    }
+
+    fn write_files(
+        &mut self,
+        paths: &[std::path::PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        match self {
+            Backend::Fake(f) => f.write_files(paths, image),
+            #[cfg(windows)]
+            Backend::Win(w) => w.write_files(paths, image),
+            #[cfg(target_os = "macos")]
+            Backend::Mac(m) => m.write_files(paths, image),
+            #[cfg(target_os = "linux")]
+            Backend::Linux(l) => l.write_files(paths, image),
         }
     }
 

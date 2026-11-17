@@ -1,5 +1,7 @@
 //! An in-memory clipboard for tests. It never touches the OS.
 
+use std::path::PathBuf;
+
 use crate::{Clipboard, ClipboardError, LineEnding, RawPart, Snapshot};
 
 /// An in-memory clipboard that behaves like an OS clipboard: every change bumps a counter,
@@ -42,14 +44,34 @@ impl FakeClipboard {
         self.set(parts, false, true, false)
     }
 
-    /// A file manager copies a file reference, with a file name text next to it.
-    pub fn copy_files(&mut self, name_text: &str) -> u64 {
-        self.set(
+    /// A file manager copies a file reference that is not a real path (a virtual file), with
+    /// a file name text next to it.
+    pub fn copy_virtual_files(&mut self, name_text: &str) -> u64 {
+        let seq = self.set(
             vec![(crate::Format::TextPlain, name_text.as_bytes().to_vec())],
             false,
             false,
             true,
-        )
+        );
+        self.state.files_virtual = true;
+        seq
+    }
+
+    /// A file manager copies `paths`, with a file name text next to them (as Finder does).
+    pub fn copy_paths(&mut self, paths: &[PathBuf]) -> u64 {
+        let name = paths
+            .first()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let seq = self.set(
+            vec![(crate::Format::TextPlain, name.into_bytes())],
+            false,
+            false,
+            true,
+        );
+        self.state.files = paths.to_vec();
+        seq
     }
 
     /// Set the whole state from outside, as any program could. Returns the new counter.
@@ -59,8 +81,16 @@ impl FakeClipboard {
         self.state.has_marker = marker;
         self.state.private = private;
         self.state.has_files = files;
+        self.state.files = Vec::new();
+        self.state.files_virtual = false;
         self.state.remote = false;
         self.state.seq
+    }
+
+    /// The current content came from another Apple device (Apple's Universal Clipboard sets
+    /// `com.apple.is-remote-clipboard`). The next change clears it again.
+    pub fn mark_remote(&mut self) {
+        self.state.remote = true;
     }
 
     /// The next `n` reads fail with [`ClipboardError::Busy`].
@@ -88,7 +118,12 @@ impl FakeClipboard {
             .map(|(_, b)| b.as_slice())
     }
 
-    /// How many times [`Clipboard::write`] was called.
+    /// The file paths on the clipboard (empty if it holds no file copy).
+    pub fn files(&self) -> &[PathBuf] {
+        &self.state.files
+    }
+
+    /// How many times [`Clipboard::write`] or [`Clipboard::write_files`] was called.
     pub fn write_count(&self) -> u64 {
         self.writes
     }
@@ -106,6 +141,21 @@ impl Clipboard for FakeClipboard {
     fn write(&mut self, parts: &[RawPart]) -> Result<u64, ClipboardError> {
         self.writes += 1;
         Ok(self.set(parts.to_vec(), true, false, false))
+    }
+
+    fn write_files(
+        &mut self,
+        paths: &[PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        crate::check_file_paths(paths)?;
+        self.writes += 1;
+        let parts = image
+            .map(|png| vec![(crate::Format::ImagePng, png.to_vec())])
+            .unwrap_or_default();
+        let seq = self.set(parts, true, false, true);
+        self.state.files = paths.to_vec();
+        Ok(seq)
     }
 
     fn line_ending(&self) -> LineEnding {
@@ -153,8 +203,59 @@ mod tests {
         let mut c = FakeClipboard::new();
         c.copy_private(vec![(Format::TextPlain, b"pw".to_vec())]);
         assert!(c.read().unwrap().private);
-        c.copy_files("report.pdf");
+        c.copy_virtual_files("report.pdf");
         let s = c.read().unwrap();
-        assert!(s.has_files && !s.private);
+        assert!(s.has_files && s.files_virtual && s.files.is_empty() && !s.private);
+        c.copy_paths(&[PathBuf::from("/home/max/report.pdf")]);
+        let s = c.read().unwrap();
+        assert!(s.has_files && !s.files_virtual && !s.has_marker);
+        assert_eq!(s.files, vec![PathBuf::from("/home/max/report.pdf")]);
+        assert_eq!(c.text().as_deref(), Some("report.pdf"));
+        // A later text copy clears the file list.
+        c.copy_text("x");
+        assert!(c.read().unwrap().files.is_empty());
+    }
+
+    #[test]
+    fn write_files_carries_marker_and_optional_image() {
+        let mut c = FakeClipboard::new();
+        let abs = std::env::temp_dir().join("a.png");
+        let seq = c
+            .write_files(std::slice::from_ref(&abs), Some(b"png"))
+            .unwrap();
+        let s = c.read().unwrap();
+        assert_eq!(s.seq, seq);
+        assert!(s.has_marker && s.has_files);
+        assert_eq!(s.files, vec![abs]);
+        assert_eq!(c.part(Format::ImagePng), Some(&b"png"[..]));
+        assert_eq!(c.write_count(), 1);
+    }
+
+    #[test]
+    fn write_files_refuses_bad_paths_without_touching_the_clipboard() {
+        let mut c = FakeClipboard::new();
+        let seq = c.copy_text("keep");
+        assert!(c.write_files(&[], None).is_err());
+        assert!(c.write_files(&[PathBuf::from("relative/x")], None).is_err());
+        assert_eq!(c.read().unwrap().seq, seq);
+        assert_eq!(c.write_count(), 0);
+    }
+
+    #[test]
+    fn default_write_files_is_unsupported() {
+        struct Plain;
+        impl Clipboard for Plain {
+            fn read(&mut self) -> Result<Snapshot, ClipboardError> {
+                Ok(Snapshot::default())
+            }
+            fn write(&mut self, _: &[RawPart]) -> Result<u64, ClipboardError> {
+                Ok(0)
+            }
+        }
+        let abs = std::env::temp_dir();
+        assert_eq!(
+            Plain.write_files(&[abs], None),
+            Err(ClipboardError::Unsupported)
+        );
     }
 }

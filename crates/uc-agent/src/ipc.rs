@@ -38,6 +38,8 @@ pub const CALLS: &[&str] = &[
     "pause.set",
     "settings.get",
     "settings.set",
+    "files.copy",
+    "transfer.stop",
     "diagnostics",
     "leave",
     "setup.status",
@@ -55,6 +57,7 @@ pub const SERVICE_CALLS: &[&str] = &["quit"];
 /// Calls that exist only in test profiles (the real app refuses them).
 pub const DEBUG_CALLS: &[&str] = &[
     "debug.copy",
+    "debug.copy_files",
     "debug.clipboard",
     "debug.shutdown",
     "debug.wake",

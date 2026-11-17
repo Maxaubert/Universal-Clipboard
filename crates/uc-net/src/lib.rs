@@ -15,7 +15,7 @@
 //! | [`binder`] | socket binding trait, per-interface sockets (3.1, 3.5) |
 //! | [`tls`] | TLS 1.3 with raw Ed25519 keys (3.3) |
 //! | [`endpoint`] | the QUIC endpoint (3.3) |
-//! | [`link`] | a sync link and the `uc_core::Peer` over it (3.3, 3.8) |
+//! | [`link`] | a sync link, the `uc_core::Peer` over it and data streams (3.3, 3.8, file sync 3) |
 //! | [`book`] | `LanBook`, remembered addresses (3.4) |
 //! | [`gossip`] | signed address announcements (3.4) |
 //! | [`tags`] | rotating discovery tags (3.4, protocol 5.8) |
@@ -42,7 +42,9 @@ pub use book::LanBook;
 pub use discovery::{Discovery, FakeLan, FakeMdns, MdnsSd, NoDiscovery};
 pub use endpoint::{ALPN_PAIR, ALPN_SYNC, Conn, LanEndpoint, Timing};
 pub use ifaces::{ClassifyOptions, Interface, Kind};
-pub use link::{Link, QuicPeer};
+pub use link::{
+    Link, QuicPeer, RecvStream, STREAM_ABORTED, STREAM_SUPERSEDED, SendStream, StreamError,
+};
 pub use node::{Net, NetConfig, NetEvent, NetHandle, Status};
 pub use path::{Attention, NoPath, PathState};
 pub use tags::Secrets;

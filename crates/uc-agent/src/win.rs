@@ -506,6 +506,28 @@ pub fn no_inherit_std_handles() {
     }
 }
 
+/// Free bytes for this user on the volume of `dir` (file sync spec 2.2.2).
+pub fn free_space(dir: &std::path::Path) -> io::Result<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut free: u64 = 0;
+    // SAFETY: `wide` is NUL-terminated and `free` is a valid out pointer; the other two out
+    // pointers may be null.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(free)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

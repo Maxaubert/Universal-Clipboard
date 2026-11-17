@@ -3,6 +3,9 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::ffi::OsString;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -12,6 +15,7 @@ use windows_sys::Win32::Foundation::{
     ERROR_CLASS_ALREADY_EXISTS, GetLastError, GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, LRESULT,
     WPARAM,
 };
+use windows_sys::Win32::Storage::FileSystem::{GetFileAttributesW, INVALID_FILE_ATTRIBUTES};
 use windows_sys::Win32::System::DataExchange::{
     AddClipboardFormatListener, CloseClipboard, EmptyClipboard, EnumClipboardFormats,
     GetClipboardData, GetClipboardFormatNameW, GetClipboardSequenceNumber, OpenClipboard,
@@ -27,7 +31,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_CLOSE, WM_DESTROY, WNDCLASSEXW,
 };
 
-use crate::{dib, formats, html};
+use crate::{dib, files, formats, html};
 
 /// No single clipboard format is copied out if it is larger than this (memory guard). A
 /// 100-megapixel DIB is 400 MB, so this is above it.
@@ -91,6 +95,7 @@ struct Ids {
     history: u32,
     cloud: u32,
     file_group: u32,
+    drop_effect: u32,
 }
 
 impl Ids {
@@ -104,6 +109,7 @@ impl Ids {
             history: register_format(formats::CAN_INCLUDE_IN_HISTORY)?,
             cloud: register_format(formats::CAN_UPLOAD_TO_CLOUD)?,
             file_group: register_format(formats::FILE_GROUP_DESCRIPTOR)?,
+            drop_effect: register_format(formats::PREFERRED_DROP_EFFECT)?,
         })
     }
 }
@@ -340,6 +346,7 @@ struct Raw {
     png: Option<Vec<u8>>,
     dibv5: Option<Vec<u8>>,
     dib: Option<Vec<u8>>,
+    hdrop: Option<Vec<u8>>,
 }
 
 impl WinClipboard {
@@ -539,6 +546,7 @@ fn read_raw_state(hwnd: usize, ids: Ids, retry: Retry) -> Result<Raw, ClipboardE
         png: None,
         dibv5: None,
         dib: None,
+        hdrop: None,
         formats,
     };
     let private = formats::is_private(
@@ -547,9 +555,18 @@ fn read_raw_state(hwnd: usize, ids: Ids, retry: Retry) -> Result<Raw, ClipboardE
         raw.cloud,
         raw.formats.contains(&ids.origin),
     );
-    let files = raw.formats.contains(&formats::CF_HDROP) || raw.formats.contains(&ids.file_group);
-    if private || files {
-        // Never read the content of a private or file copy.
+    if private {
+        // Never read the content of a private copy.
+        return Ok(raw);
+    }
+    if raw.formats.contains(&formats::CF_HDROP) {
+        // A file copy: only the path list is read. The text and image next to it (a file
+        // name, an icon) are ignored (spec 2.1).
+        raw.hdrop = get_bytes(formats::CF_HDROP).ok();
+        return Ok(raw);
+    }
+    if raw.formats.contains(&ids.file_group) {
+        // Virtual files: no paths, nothing to read.
         return Ok(raw);
     }
     if raw.formats.contains(&formats::CF_UNICODETEXT) {
@@ -593,8 +610,9 @@ fn png_signature(b: &[u8]) -> bool {
 
 impl Clipboard for WinClipboard {
     /// Read the clipboard: text, HTML (fragment only), and an image as PNG (the registered
-    /// `PNG` format if present, else `CF_DIBV5`, else `CF_DIB`, converted). File lists and
-    /// private copies come back with flags set and no parts.
+    /// `PNG` format if present, else `CF_DIBV5`, else `CF_DIB`, converted). A file copy comes
+    /// back with its paths (`CF_HDROP`) or as virtual (`FileGroupDescriptorW` only) and no
+    /// parts. A private copy comes back with the flag set and no parts.
     fn read(&mut self) -> Result<Snapshot, ClipboardError> {
         let raw = self.read_raw_timed()?;
         let ids = self.ids;
@@ -605,8 +623,9 @@ impl Clipboard for WinClipboard {
             raw.cloud,
             has_marker,
         );
-        let has_files =
-            raw.formats.contains(&formats::CF_HDROP) || raw.formats.contains(&ids.file_group);
+        let has_hdrop = raw.formats.contains(&formats::CF_HDROP);
+        let has_files = has_hdrop || raw.formats.contains(&ids.file_group);
+        let files = raw.hdrop.as_deref().map(hdrop_paths).unwrap_or_default();
         let mut parts: Vec<RawPart> = Vec::new();
         if let Some(t) = &raw.text {
             parts.push((Format::TextPlain, formats::utf16_to_utf8(t)));
@@ -631,6 +650,10 @@ impl Clipboard for WinClipboard {
             has_marker,
             private,
             has_files,
+            files,
+            // A `CF_HDROP` that cannot be read (ANSI, damaged) is not called virtual; it has
+            // no paths either, so the engine skips it the same way.
+            files_virtual: has_files && !has_hdrop,
             remote: false,
         })
     }
@@ -667,7 +690,69 @@ impl Clipboard for WinClipboard {
         self.put(items)
     }
 
+    /// Replace the clipboard with a file copy, in one open and close: our origin marker,
+    /// `CanUploadToCloudClipboard = 0`, `CF_HDROP` (wide, absolute, without `\\?\` where a
+    /// plain path says the same), `Preferred DropEffect = 1` (copy, never cut) and, when
+    /// `image` is given, `PNG` plus `CF_DIBV5` so the image itself pastes into a chat or
+    /// document too (spec 2.2.5).
+    fn write_files(
+        &mut self,
+        paths: &[PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        uc_clip::check_file_paths(paths)?;
+        let wide: Vec<Vec<u16>> = paths
+            .iter()
+            .map(|p| files::strip_verbatim(&p.as_os_str().encode_wide().collect::<Vec<u16>>()))
+            .collect();
+        let hdrop = files::build_hdrop(&wide)
+            .ok_or_else(|| ClipboardError::Other("bad-file-paths".into()))?;
+        let ids = self.ids;
+        let mut items = vec![
+            (ids.origin, Global::new(&[1])?),
+            (ids.cloud, Global::new(&0u32.to_le_bytes())?),
+            (formats::CF_HDROP, Global::new(&hdrop)?),
+            (
+                ids.drop_effect,
+                Global::new(&files::DROP_EFFECT_COPY.to_le_bytes())?,
+            ),
+        ];
+        if let Some(png) = image {
+            items.push((ids.png, Global::new(png)?));
+            if let Ok(dibv5) = dib::png_to_rgba(png).and_then(|i| dib::rgba_to_dibv5(&i)) {
+                items.push((formats::CF_DIBV5, Global::new(&dibv5)?));
+            }
+        }
+        self.put(items)
+    }
+
     fn line_ending(&self) -> LineEnding {
         LineEnding::CrLf
     }
+}
+
+/// The absolute paths in `CF_HDROP` memory, exact (`OsString::from_wide`, so names that are
+/// not valid Unicode survive). Relative entries are left out; an unreadable list gives none.
+fn hdrop_paths(bytes: &[u8]) -> Vec<PathBuf> {
+    files::parse_hdrop(bytes)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|w| PathBuf::from(OsString::from_wide(&w)))
+        .filter(|p| p.is_absolute())
+        .collect()
+}
+
+/// Whether `path` is a cloud placeholder that is not on disk (OneDrive "online-only" and
+/// other sync clients, see [`files::is_cloud_placeholder`]). Reads only the attributes, which
+/// never downloads the file. A path that cannot be read gives `false`; the walk reports it.
+///
+/// The agent's walk asks this for every item of a file copy (top level and inside folders)
+/// and skips the whole copy when one is cloud-only (spec 2.4). While walking a folder, the
+/// attributes from the directory listing (`MetadataExt::file_attributes`) can go straight to
+/// [`files::is_cloud_placeholder`] instead.
+pub fn cloud_only(path: &Path) -> bool {
+    let w: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: `w` is a NUL-terminated UTF-16 string that lives for the call.
+    let attributes = unsafe { GetFileAttributesW(w.as_ptr()) };
+    attributes != INVALID_FILE_ATTRIBUTES && files::is_cloud_placeholder(attributes)
 }

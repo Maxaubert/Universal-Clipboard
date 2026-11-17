@@ -23,4 +23,6 @@ export const trio = "<svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=
 export const pencil = "<path d=\"M4 20h4L19 9l-4-4L4 16z\"></path><path d=\"M13.5 6.5l4 4\"></path>";
 export const iconPower = "<path d=\"M12 3v8\"></path><path d=\"M6.3 6.8a8 8 0 1 0 11.4 0\"></path>";
 export const iconKey = "<circle cx=\"8\" cy=\"15\" r=\"4\"></circle><path d=\"M11 12l9-9M16 7l3 3M14 9l2 2\"></path>";
+export const iconFiles = "<path d=\"M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z\"></path><path d=\"M14 3v5h5\"></path><path d=\"M9 13h6M9 17h4\"></path>";
+export const iconLimit = "<path d=\"M4 20h16\"></path><path d=\"M7 16v-4M12 16V7M17 16V4\"></path>";
 export const lock = "<rect x=\"5\" y=\"11\" width=\"14\" height=\"10\" rx=\"2\"></rect><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"></path>";

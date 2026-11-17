@@ -59,6 +59,8 @@ pub struct Agent {
     pub child: Option<Child>,
     pub extra_env: Vec<(String, String)>,
     pub remove_env: Vec<String>,
+    /// Linux network lab: run this agent and its `uc` calls in this network namespace.
+    pub netns: Option<String>,
     _tmp: Option<tempfile::TempDir>,
 }
 
@@ -78,6 +80,7 @@ impl Agent {
             child: None,
             extra_env: Vec::new(),
             remove_env: Vec::new(),
+            netns: None,
             _tmp: Some(tmp),
         }
     }
@@ -97,9 +100,21 @@ impl Agent {
         e
     }
 
+    /// A command for `program`, inside this agent's network namespace if it has one.
+    pub fn command(&self, program: impl AsRef<std::ffi::OsStr>) -> Command {
+        match &self.netns {
+            Some(ns) => {
+                let mut c = Command::new("ip");
+                c.args(["netns", "exec", ns]).arg(program);
+                c
+            }
+            None => Command::new(program),
+        }
+    }
+
     /// Start the process and wait until it answers.
     pub fn start(&mut self) {
-        let mut c = Command::new(agent_exe());
+        let mut c = self.command(agent_exe());
         c.envs(self.env())
             .env_remove("UCLIP_TEST_CLIPBOARD")
             .stdin(Stdio::null())
@@ -134,7 +149,7 @@ impl Agent {
 
     /// Run `uc` with this agent's environment.
     pub fn uc(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_uc"))
+        self.command(env!("CARGO_BIN_EXE_uc"))
             .args(args)
             .envs(self.env())
             .stdin(Stdio::null())
@@ -252,7 +267,8 @@ pub fn until(limit: Duration, mut f: impl FnMut() -> bool) -> bool {
 /// process, like a user waiting at the screen) and `uc pair enter <code>` on the joiner.
 pub fn pair(inviter: &Agent, joiner: &mut Agent) {
     use std::io::{BufRead, BufReader};
-    let mut show = Command::new(env!("CARGO_BIN_EXE_uc"))
+    let mut show = inviter
+        .command(env!("CARGO_BIN_EXE_uc"))
         .args(["pair", "show", "--json"])
         .envs(inviter.env())
         .stdin(Stdio::null())
@@ -268,7 +284,7 @@ pub fn pair(inviter: &Agent, joiner: &mut Agent) {
     let code = v["code"].as_str().expect("a code").replace(' ', "");
     assert!(v["qr"].as_str().unwrap().starts_with("UCLIP1:"));
     let port = v["port"].as_u64().unwrap();
-    let mut j = Command::new(env!("CARGO_BIN_EXE_uc"));
+    let mut j = joiner.command(env!("CARGO_BIN_EXE_uc"));
     j.args(["pair", "enter", &code, "--json", "--yes"])
         .envs(joiner.env())
         .env("UCLIP_TEST_PAIR_ADDRS", format!("{}:{port}", inviter.ip))

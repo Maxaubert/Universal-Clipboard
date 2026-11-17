@@ -9,7 +9,7 @@
   import * as art from '../lib/art';
   import { failureText } from '../lib/ipc';
   import { anim, canAnimate, IN, IO, OUT, reduced, rollIn, rollOut, track } from '../lib/motion';
-  import { copyFact, S, thisLabel } from '../lib/strings';
+  import { copyFact, S, thisLabel, transferText } from '../lib/strings';
   import { store } from '../lib/store.svelte';
   import type { Activity, Device } from '../lib/types';
   import { cardCloses, cardOpens } from '../lib/update-motion';
@@ -218,6 +218,33 @@
     await store.refreshUpdate();
   }
 
+  // File sync (spec 2026-11-16, no mockups: built from the locked parts). "Copy files..." and
+  // "Copy folder..." open the system picker; what is picked becomes the latest copy at any
+  // size. While a file copy moves, a progress line with Stop sits above them.
+  const xfer = $derived(store.transfer ? transferText(store.transfer) : null);
+  const xferPct = $derived.by(() => {
+    const t = store.transfer;
+    return t && t.total > 0 ? Math.min(100, (t.done / t.total) * 100) : 0;
+  });
+  async function pick(folder: boolean) {
+    error = null;
+    try {
+      const paths = await store.api!.pickPaths(folder);
+      if (paths.length === 0) return;
+      await store.api!.call('files.copy', { paths, picked: true });
+    } catch (e) {
+      error = failureText(e);
+    }
+  }
+  async function stopTransfer() {
+    error = null;
+    try {
+      await store.api!.call('transfer.stop');
+    } catch (e) {
+      error = failureText(e);
+    }
+  }
+
   function open(d: Device) {
     store.selected = d.id;
     store.go('device');
@@ -345,23 +372,39 @@
       </button>
     {/if}
   </div>
-  {#if me}
-    <button type="button" class="here" data-m="here" data-device={me.name} onclick={() => open(me)}>
-      <span class="here-line" bind:this={hereLine}></span>
-      <span class="here-g"><Logo os={me.os} size={26} fill="#FFFFFF" /><span class="here-ring" bind:this={hereRing}></span></span>
-      <span class="here-t"><b>{me.name}</b><span>{thisLabel(me.os)}</span></span>
-      {#if fact && last}
-        <span class="here-f">
-          <span class="here-l">{S.lastCopy}</span>
-          <span class="stack end" data-testid="last-copy">
-            {#key last.time_ms}
-              <span in:rollIn={{ dist: '10px', d: 520, delay: fDelay() }} out:rollOut={{ dist: '10px', d: 440, delay: fDelay() }}>{fact}</span>
-            {/key}
+  <div class="dock">
+    {#if xfer && store.transfer}
+      <div class="xfer" data-testid="transfer" data-phase={store.transfer.phase}>
+        <div class="xf-txt" role="status">
+          <span class="xf-t">{xfer.title}</span>
+          <span class="xf-s">{xfer.amount}</span>
+        </div>
+        <button type="button" class="link xf-stop" onclick={stopTransfer}>{S.stop}</button>
+        <span class="xf-bar" aria-hidden="true"><span style={`width: ${xferPct}%;`}></span></span>
+      </div>
+    {/if}
+    <div class="picks" data-m="files">
+      <button type="button" class="btn sm ghost" onclick={() => pick(false)}>{S.copyFiles}</button>
+      <button type="button" class="btn sm ghost" onclick={() => pick(true)}>{S.copyFolder}</button>
+    </div>
+    {#if me}
+      <button type="button" class="here" data-m="here" data-device={me.name} onclick={() => open(me)}>
+        <span class="here-line" bind:this={hereLine}></span>
+        <span class="here-g"><Logo os={me.os} size={26} fill="#FFFFFF" /><span class="here-ring" bind:this={hereRing}></span></span>
+        <span class="here-t"><b>{me.name}</b><span>{thisLabel(me.os)}</span></span>
+        {#if fact && last}
+          <span class="here-f">
+            <span class="here-l">{S.lastCopy}</span>
+            <span class="stack end" data-testid="last-copy">
+              {#key last.time_ms}
+                <span in:rollIn={{ dist: '10px', d: 520, delay: fDelay() }} out:rollOut={{ dist: '10px', d: 440, delay: fDelay() }}>{fact}</span>
+              {/key}
+            </span>
           </span>
-        </span>
-      {/if}
-    </button>
-  {/if}
+        {/if}
+      </button>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -413,6 +456,22 @@
   .here-f { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 13px; color: #E9E6E1; text-align: right; }
   .here-l { color: #B3AEA7; font-size: 12.5px; }
   .here:focus-visible { outline: 2px solid #1D1C1A; outline-offset: 2px; }
+
+  /* File sync: the picker buttons and the progress line, docked above this device's bar. Built
+     from the locked parts (ghost buttons, the white card, the link) with the same tokens. */
+  .dock { margin-top: auto; display: flex; flex-direction: column; gap: 10px; flex: none; }
+  .picks { display: flex; gap: 10px; }
+  .picks .btn { flex: 1; }
+  .xfer {
+    position: relative; background: #FFFFFF; border: 1px solid #D9D6D1; border-radius: 12px; padding: 10px 12px 12px 16px;
+    display: flex; align-items: center; gap: 12px; overflow: hidden; box-sizing: border-box;
+  }
+  .xf-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .xf-t { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .xf-s { font-size: 12.5px; color: #5E5B56; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .xf-stop { flex: none; font-weight: 600; }
+  .xf-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #EFEDEA; }
+  .xf-bar > span { display: block; height: 100%; background: #1E7A46; transition: width 250ms linear; }
 
   /* U3: the update card at the top (sizes from the mockup's .ucard). */
   .ucard {

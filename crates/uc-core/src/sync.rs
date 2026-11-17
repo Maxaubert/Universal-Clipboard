@@ -19,17 +19,39 @@
 //! - Automatic apply only if the clip is less than 1 hour old (full member). A pull-only client
 //!   and an explicit fetch take the newest clip with no age limit.
 //! - Four echo and loop layers, see [`SkipReason`].
+//!
+//! File copies (file sync spec 4). The engine decides; the agent walks, hashes and moves bytes:
+//! - The current copy is a clip or a file copy ([`Current`]); both carry a clock stamp and the
+//!   highest stamp wins, whatever the kind.
+//! - A local file copy starts a walk ([`Event::WalkFiles`], with a generation number). Any
+//!   newer local copy or applied remote copy ends the walk, so a stale result is dropped. Only
+//!   when the walk and hashes are done ([`Engine::on_local_files`]) does the copy get a stamp.
+//! - Only the origin offers and serves a file copy, and only to peers whose engine `Hello` has
+//!   the files bit. A receiver keeps one pending offer and fetches it if it is the newest copy.
+//! - At most [`SERVE_MAX`] sends run at once; more wait in a FIFO queue.
+//! - Any newer copy cancels the pending fetch and the running sends
+//!   ([`Event::CancelTransfer`]). A fetch cut by a lost link is asked again from the start
+//!   when the origin is back, at most [`FETCH_RETRIES`] times.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::path::PathBuf;
 
 use uc_clip::{Clipboard, Format, RawPart};
 
 use crate::caps::{self, Dropped};
 use crate::clip::{Clip, ClipError, ClipKind};
+use crate::files::{self, FilesSummary, Manifest};
 use crate::hlc::{FUTURE_LIMIT_MS, Hlc, Stamp};
-use crate::ids::{ClipId, ContentHash, DeviceId};
-use crate::msg::{self, ClipHeader, CodecError, DeviceRecord, Hello, Message, Role};
+use crate::ids::{ClipId, ContentHash, DeviceId, FilesId};
+use crate::msg::{
+    self, ClipHeader, CodecError, DeviceRecord, FilesOffer, Hello, HelloExt, Message, Role,
+};
 use crate::text;
+
+/// Most file sends that run at once; more wait in a FIFO queue (file sync spec 4).
+pub const SERVE_MAX: usize = 2;
+/// How often a fetch cut by a lost link is asked again from the start (file sync spec 2.2.7).
+pub const FETCH_RETRIES: u32 = 3;
 
 /// Automatic apply limit: 1 hour.
 pub const AUTO_APPLY_MAX_AGE_MS: u64 = 60 * 60 * 1000;
@@ -76,6 +98,15 @@ pub struct Config {
     pub forward_remote: bool,
     /// Group ID sent in `Hello` (protocol 5.9).
     pub group: [u8; 32],
+    /// "Copy smaller files automatically" setting (file sync spec 5). Off only stops automatic
+    /// file copies made on this device (Ctrl+C / Cmd+C of files): picked copies, receiving and
+    /// serving a copy already offered go on.
+    pub auto_file_copy: bool,
+    /// Largest file copy that syncs automatically, in bytes (setting `file-limit-mb`).
+    /// Picked copies have no byte limit.
+    pub file_max: u64,
+    /// Feature bits sent in the `Hello` extension (tests turn them off to act as a 0.1.x peer).
+    pub features: u32,
 }
 
 impl Config {
@@ -94,6 +125,9 @@ impl Config {
             image_max: caps::IMAGE_MAX,
             forward_remote: false,
             group: [0; 32],
+            auto_file_copy: true,
+            file_max: caps::file_limit_bytes(caps::FILE_LIMIT_DEFAULT_MB),
+            features: msg::FEATURES,
         }
     }
 }
@@ -116,8 +150,19 @@ pub enum SkipReason {
     SeenContent,
     /// The source marked it as private (password manager).
     Private,
-    /// It holds copied files.
-    Files,
+    /// An automatic file copy (Ctrl+C / Cmd+C of files), and "Copy smaller files
+    /// automatically" is off.
+    FilesOff,
+    /// A file copy over the automatic limit ("Use Copy files... in the app").
+    FilesOverLimit,
+    /// Virtual files without a path (Outlook attachment, zip item, promised file).
+    FilesVirtual,
+    /// Cloud placeholders that are not on disk: reading them would download them.
+    FilesCloudOnly,
+    /// Over the entry, depth or manifest limits.
+    FilesTooMany,
+    /// This peer cannot receive files (its `Hello` has no files bit): "needs an update".
+    PeerNoFiles(DeviceId),
     /// macOS: it came from another Apple device through Apple's Universal Clipboard, and
     /// passing such clips on is off (plan decision 8).
     Remote,
@@ -147,6 +192,49 @@ pub enum FetchOutcome {
     AlreadyCurrent,
     /// Nobody holds a clip.
     NothingHeld,
+}
+
+/// Why a file transfer is cancelled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CancelReason {
+    /// A newer copy (of anything) replaced it.
+    Superseded,
+    /// The user pressed Stop (or `uc transfer stop`).
+    Stopped,
+    /// Sync was paused.
+    Paused,
+    /// The same peer asked for the same copy again: its old stream is reset first.
+    Requested,
+    /// The other side cancelled, with this code.
+    ByPeer(u8),
+}
+
+impl CancelReason {
+    /// The stream error code and `FilesCancel` reason for it (file sync spec 3).
+    pub fn code(self) -> u8 {
+        match self {
+            CancelReason::Superseded | CancelReason::Requested => files::CODE_SUPERSEDED,
+            CancelReason::Stopped | CancelReason::Paused => files::CODE_ABORTED,
+            CancelReason::ByPeer(c) => c,
+        }
+    }
+}
+
+/// Why a fetch failed on the receiving side. The agent reports it with
+/// [`Engine::transfer_failed`]; the engine reports it back in [`Event::TransferFailed`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransferFailure {
+    /// The link or stream broke (Wi-Fi blip, wake, network change). Asked again when the
+    /// origin is back, at most [`FETCH_RETRIES`] times.
+    Interrupted,
+    /// The data did not match: manifest hash or rules, a file hash, more bytes than declared.
+    BadData,
+    /// Not enough disk space (also a quota).
+    NoSpace,
+    /// Writing the files failed for another reason.
+    WriteFailed,
+    /// Only from the engine: the link broke more than [`FETCH_RETRIES`] times.
+    Retries,
 }
 
 /// Something that happened, for "Last activity", logs and error states. Never content.
@@ -250,12 +338,99 @@ pub enum Event {
     },
     /// A pull-only client tried to sync, but no full member is connected.
     NoMemberOnline,
+    /// A file copy: walk these paths (folders recursively, sizes summed) off the main loop,
+    /// then call [`Engine::on_walked`]. "Preparing files..."
+    WalkFiles {
+        /// The walk's generation. A newer copy ends it; a stale result is dropped.
+        generation: u64,
+        /// The copied (or picked) items, absolute.
+        paths: Vec<PathBuf>,
+        /// Picked with "Copy files..." or `uc copy`: no byte limit.
+        picked: bool,
+    },
+    /// The walk passed the limits: hash the files, build the manifest, then call
+    /// [`Engine::on_local_files`].
+    HashFiles {
+        /// The walk's generation.
+        generation: u64,
+    },
+    /// A local file copy became the current copy and was offered.
+    FilesSent {
+        /// The copy.
+        id: FilesId,
+        /// Total bytes.
+        total: u64,
+        /// Number of files.
+        count: u32,
+        /// To how many peers.
+        peers: usize,
+    },
+    /// Fetch this file copy from its origin: check the free space, then call
+    /// [`Engine::files_want`] (or [`Engine::transfer_failed`] with `NoSpace`).
+    FetchFiles {
+        /// The origin.
+        peer: DeviceId,
+        /// The copy.
+        id: FilesId,
+        /// Total bytes.
+        total: u64,
+        /// Number of files.
+        count: u32,
+    },
+    /// Open a data stream to `peer` and send this file copy. Call [`Engine::serve_done`] when
+    /// the send ends, however it ends.
+    ServeFiles {
+        /// The receiver.
+        peer: DeviceId,
+        /// The copy.
+        id: FilesId,
+    },
+    /// Stop a transfer: reset the stream (sending) or stop it and delete the partial folder
+    /// (receiving), with [`CancelReason::code`].
+    CancelTransfer {
+        /// The copy.
+        id: FilesId,
+        /// The other side.
+        peer: DeviceId,
+        /// Why.
+        reason: CancelReason,
+        /// True for a send, false for a fetch.
+        sending: bool,
+    },
+    /// A received file copy is the current copy (the agent already wrote the clipboard).
+    FilesApplied {
+        /// The copy.
+        id: FilesId,
+        /// The device where the copy happened.
+        origin: DeviceId,
+        /// Total bytes.
+        total: u64,
+        /// Number of files.
+        count: u32,
+    },
+    /// A newer file copy was offered but is only remembered, not fetched (older than 1 hour,
+    /// or paused).
+    FilesHeldOnly {
+        /// The copy.
+        id: FilesId,
+    },
+    /// A fetch failed for good; the partial folder must be gone.
+    TransferFailed {
+        /// The copy.
+        id: FilesId,
+        /// The origin.
+        peer: DeviceId,
+        /// Why.
+        failure: TransferFailure,
+    },
 }
 
 struct PeerState {
     link: Box<dyn Peer>,
     role: Role,
     latest: Option<ClipHeader>,
+    /// The `Hello` extension of the peer's engine `Hello`; `None` until it arrived.
+    ext: Option<HelloExt>,
 }
 
 struct Held {
@@ -265,16 +440,79 @@ struct Held {
     content: ContentHash,
 }
 
+/// A file copy that is the current copy.
+struct HeldFiles {
+    offer: FilesOffer,
+    /// Content hash of the manifest, for echo layer 4.
+    content: ContentHash,
+    /// The user stopped its sends: no more offers or sends of it.
+    stopped: bool,
+}
+
+/// The current copy: the newest one this device knows and holds.
+enum Current {
+    Clip(Held),
+    Files(HeldFiles),
+}
+
+impl Current {
+    fn stamp(&self) -> Stamp {
+        match self {
+            Current::Clip(h) => h.header.stamp,
+            Current::Files(f) => f.offer.stamp,
+        }
+    }
+}
+
+/// A local walk in progress.
+#[derive(Clone, Copy)]
+struct Walk {
+    generation: u64,
+    picked: bool,
+}
+
+/// Where a pending fetch stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fetch {
+    /// Only remembered: too old, paused, stopped or failed. Never fetched.
+    Remembered,
+    /// `FetchFiles` was emitted; waiting for the agent's free space check.
+    Asking,
+    /// `FilesWant` was sent; the stream may come.
+    Wanted,
+    /// The link broke; waiting for the origin to come back.
+    Waiting,
+}
+
+/// A file copy offered by a peer, newer than the current copy.
+struct Pending {
+    offer: FilesOffer,
+    fetch: Fetch,
+    /// Fetches cut by a lost link so far.
+    interruptions: u32,
+    /// A break was counted and no new link or stream came since. The broken stream and the
+    /// link going down are often both reported for one blip (in either order), and the ask
+    /// in between goes out on the dying link: that is still one break.
+    charged: bool,
+}
+
 /// The sync state machine of one device.
 pub struct Engine {
     cfg: Config,
     hlc: Hlc,
-    held: Option<Held>,
+    current: Option<Current>,
     applied: Option<ClipId>,
     peers: BTreeMap<DeviceId, PeerState>,
     last_write_seq: Option<u64>,
     explicit: BTreeSet<ClipId>,
     paused: bool,
+    walk: Option<Walk>,
+    next_gen: u64,
+    pending: Option<Pending>,
+    /// Sends that run, as (receiver, copy).
+    running: Vec<(DeviceId, FilesId)>,
+    /// Sends that wait, oldest first.
+    queue: VecDeque<(DeviceId, FilesId)>,
 }
 
 impl Engine {
@@ -284,12 +522,17 @@ impl Engine {
         Self {
             cfg,
             hlc,
-            held: None,
+            current: None,
             applied: None,
             peers: BTreeMap::new(),
             last_write_seq: None,
             explicit: BTreeSet::new(),
             paused: false,
+            walk: None,
+            next_gen: 0,
+            pending: None,
+            running: Vec::new(),
+            queue: VecDeque::new(),
         }
     }
 
@@ -303,14 +546,58 @@ impl Engine {
         self.cfg.role
     }
 
-    /// The header of the newest clip held, if any.
+    /// The header of the newest clip held, if any (`None` while the current copy is files).
     pub fn held(&self) -> Option<&ClipHeader> {
-        self.held.as_ref().map(|h| &h.header)
+        self.held_ref().map(|h| &h.header)
     }
 
-    /// The newest clip held, if any.
+    /// The newest clip held, if any (`None` while the current copy is files).
     pub fn held_clip(&self) -> Option<&Clip> {
-        self.held.as_ref().map(|h| &h.clip)
+        self.held_ref().map(|h| &h.clip)
+    }
+
+    /// The current file copy, if the current copy is files.
+    pub fn current_files(&self) -> Option<&FilesOffer> {
+        match &self.current {
+            Some(Current::Files(f)) => Some(&f.offer),
+            _ => None,
+        }
+    }
+
+    /// The pending file copy offered by a peer (being fetched, or only remembered).
+    pub fn pending_files(&self) -> Option<&FilesOffer> {
+        self.pending.as_ref().map(|p| &p.offer)
+    }
+
+    /// The copy being fetched right now (asked for or wanted), if any.
+    pub fn fetching(&self) -> Option<FilesId> {
+        self.pending
+            .as_ref()
+            .filter(|p| matches!(p.fetch, Fetch::Asking | Fetch::Wanted))
+            .map(|p| p.offer.id)
+    }
+
+    /// The sends that run, as (receiver, copy).
+    pub fn running_sends(&self) -> &[(DeviceId, FilesId)] {
+        &self.running
+    }
+
+    /// The sends that wait, oldest first.
+    pub fn queued_sends(&self) -> Vec<(DeviceId, FilesId)> {
+        self.queue.iter().copied().collect()
+    }
+
+    /// The generation of the walk in progress, if any.
+    pub fn walk_gen(&self) -> Option<u64> {
+        self.walk.map(|w| w.generation)
+    }
+
+    /// The `Hello` extension this device sends. The agent's gate `Hello` uses it too, so both
+    /// `Hello`s carry the same features (file sync spec 3).
+    pub fn hello_ext(&self) -> HelloExt {
+        HelloExt {
+            features: self.cfg.features,
+        }
     }
 
     /// The wire ID of the last clip this engine put on, or sent from, the clipboard.
@@ -324,8 +611,29 @@ impl Engine {
     }
 
     /// Pause or resume. While paused nothing is sent and received clips are held, not applied.
-    pub fn set_paused(&mut self, paused: bool) {
+    /// Pausing ends a walk and cancels file transfers.
+    pub fn set_paused(&mut self, paused: bool) -> Vec<Event> {
+        let mut out = Vec::new();
         self.paused = paused;
+        if paused {
+            self.walk = None;
+            self.halt_transfers(CancelReason::Paused, &mut out);
+        }
+        out
+    }
+
+    /// Change the "Copy smaller files automatically" setting. Off ends a running automatic
+    /// (not picked) walk; picked walks, fetches and sends go on.
+    pub fn set_auto_file_copy(&mut self, on: bool) {
+        self.cfg.auto_file_copy = on;
+        if !on && self.walk.is_some_and(|w| !w.picked) {
+            self.walk = None;
+        }
+    }
+
+    /// Change the largest file copy that syncs automatically, in bytes.
+    pub fn set_file_max(&mut self, bytes: u64) {
+        self.cfg.file_max = bytes;
     }
 
     /// Is sync paused?
@@ -370,12 +678,21 @@ impl Engine {
     pub fn connect(&mut self, link: Box<dyn Peer>, now_ms: u64) -> Vec<Event> {
         let mut out = Vec::new();
         let id = link.id();
+        // A replaced link takes its transfers with it.
+        if self.peers.remove(&id).is_some() {
+            self.link_lost(id, &mut out);
+        }
+        // A new link to the origin: the next break of a fetch from it counts again.
+        if let Some(p) = self.pending.as_mut().filter(|p| p.offer.origin == id) {
+            p.charged = false;
+        }
         self.peers.insert(
             id,
             PeerState {
                 link,
                 role: Role::Full,
                 latest: None,
+                ext: None,
             },
         );
         let hello = Message::Hello(Hello {
@@ -387,6 +704,7 @@ impl Engine {
             epoch: self.cfg.epoch,
             wall_ms: now_ms,
             group: self.cfg.group,
+            ext: self.hello_ext(),
         });
         self.send(id, &hello, &mut out);
         let latest = self.latest_msg();
@@ -394,9 +712,14 @@ impl Engine {
         out
     }
 
-    /// The connection to a peer ended.
-    pub fn disconnect(&mut self, peer: DeviceId) {
-        self.peers.remove(&peer);
+    /// The connection to a peer ended. Its sends end; a fetch from it waits for it to come
+    /// back.
+    pub fn disconnect(&mut self, peer: DeviceId) -> Vec<Event> {
+        let mut out = Vec::new();
+        if self.peers.remove(&peer).is_some() {
+            self.link_lost(peer, &mut out);
+        }
+        out
     }
 
     /// The local clipboard changed. Read it and, if it passes every check, send it.
@@ -423,16 +746,27 @@ impl Engine {
             out.push(Event::Skipped(SkipReason::Marker));
             return out;
         }
+        // A new copy by the user: it ends any walk still running.
+        self.walk = None;
         if snap.private {
             out.push(Event::Skipped(SkipReason::Private));
             return out;
         }
-        if snap.has_files {
-            out.push(Event::Skipped(SkipReason::Files));
-            return out;
-        }
+        // Decision 8 holds for file copies too: what Apple's Universal Clipboard brought is
+        // not forwarded unless the setting says so.
         if snap.remote && !self.cfg.forward_remote {
             out.push(Event::Skipped(SkipReason::Remote));
+            return out;
+        }
+        // A file copy: its text and image parts (a file name, an icon) are ignored.
+        if snap.has_files || snap.files_virtual || !snap.files.is_empty() {
+            if !self.cfg.auto_file_copy {
+                out.push(Event::Skipped(SkipReason::FilesOff));
+            } else if snap.files.is_empty() {
+                out.push(Event::Skipped(SkipReason::FilesVirtual));
+            } else {
+                out.push(self.start_walk(snap.files, false));
+            }
             return out;
         }
         let mut parts: Vec<RawPart> = Vec::with_capacity(snap.parts.len());
@@ -525,7 +859,7 @@ impl Engine {
             return out;
         }
         let content = clip.content_hash();
-        if self.held.as_ref().is_some_and(|h| h.content == content) {
+        if self.held_ref().is_some_and(|h| h.content == content) {
             out.push(Event::Skipped(SkipReason::SeenContent));
             return out;
         }
@@ -539,11 +873,14 @@ impl Engine {
         };
         self.applied = Some(clip.id());
         let (id, kind, size) = (clip.id(), clip.kind(), clip.size());
-        self.held = Some(Held {
-            clip,
-            header,
-            content,
-        });
+        self.set_current(
+            Current::Clip(Held {
+                clip,
+                header,
+                content,
+            }),
+            &mut out,
+        );
 
         let targets: Vec<DeviceId> = self.peers.keys().copied().collect();
         if self.cfg.role == Role::PullOnly && !self.has_full_peer() {
@@ -609,7 +946,274 @@ impl Engine {
                 changes,
             }),
             Message::AddrUpdate { signed } => out.push(Event::AddrUpdate { peer: from, signed }),
+            Message::FilesOffer(o) => self.on_files_offer(from, o, now_ms, &mut out),
+            Message::FilesWant { id } => self.on_files_want(from, id, &mut out),
+            Message::FilesCancel { id, reason } => self.on_files_cancel(from, id, reason, &mut out),
         }
+        out
+    }
+
+    /// "Copy files..." in the window or `uc copy`: make `paths` the latest copy, at any size.
+    /// Starts a walk like a file copy on the clipboard does.
+    pub fn pick_files(&mut self, paths: Vec<PathBuf>) -> Vec<Event> {
+        let reason = if self.paused {
+            Some(SkipReason::Paused)
+        } else if paths.is_empty() {
+            Some(SkipReason::Empty)
+        } else {
+            None
+        };
+        match reason {
+            Some(r) => vec![Event::Skipped(r)],
+            None => vec![self.start_walk(paths, true)],
+        }
+    }
+
+    /// The walk of generation `generation` found `total` bytes. Returns [`Event::HashFiles`] if the
+    /// copy may go on, a skip if it is over the automatic limit, and nothing if the walk is
+    /// stale. The limit is checked on the copying device only.
+    pub fn on_walked(&mut self, generation: u64, total: u64) -> Vec<Event> {
+        let Some(w) = self.walk.filter(|w| w.generation == generation) else {
+            return Vec::new();
+        };
+        if !w.picked && total > self.cfg.file_max {
+            self.walk = None;
+            return vec![Event::Skipped(SkipReason::FilesOverLimit)];
+        }
+        vec![Event::HashFiles { generation }]
+    }
+
+    /// The walk of generation `generation` failed (cloud placeholders, too many entries, ...).
+    /// Returns the skip, or nothing if the walk is stale.
+    pub fn walk_failed(&mut self, generation: u64, reason: SkipReason) -> Vec<Event> {
+        if self.walk.is_some_and(|w| w.generation == generation) {
+            self.walk = None;
+            vec![Event::Skipped(reason)]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// The walk of generation `generation` is hashed and its manifest built. If the walk is still
+    /// current, the copy gets a stamp, becomes the current copy and is offered.
+    pub fn on_local_files(
+        &mut self,
+        generation: u64,
+        summary: FilesSummary,
+        now_ms: u64,
+    ) -> Vec<Event> {
+        let mut out = Vec::new();
+        let Some(w) = self.walk.filter(|w| w.generation == generation) else {
+            return out;
+        };
+        self.walk = None;
+        let skip = if self.paused {
+            Some(SkipReason::Paused)
+        } else if !w.picked && !self.cfg.auto_file_copy {
+            Some(SkipReason::FilesOff)
+        } else if !w.picked && summary.total > self.cfg.file_max {
+            Some(SkipReason::FilesOverLimit)
+        } else if matches!(&self.current,
+            Some(Current::Files(f)) if f.content == summary.content && !f.stopped)
+        {
+            // Layer 4: the same files as the current copy (received here, or copied twice).
+            Some(SkipReason::SeenContent)
+        } else {
+            None
+        };
+        if let Some(r) = skip {
+            out.push(Event::Skipped(r));
+            return out;
+        }
+        let stamp = self.hlc.tick(now_ms);
+        let offer = FilesOffer {
+            id: files::files_id(&summary.manifest_hash, &stamp),
+            origin: self.id(),
+            stamp,
+            total: summary.total,
+            count: summary.count,
+            manifest_hash: summary.manifest_hash,
+            picked: w.picked,
+        };
+        self.applied = None;
+        self.set_current(
+            Current::Files(HeldFiles {
+                offer: offer.clone(),
+                content: summary.content,
+                stopped: false,
+            }),
+            &mut out,
+        );
+        let targets: Vec<DeviceId> = self.peers.keys().copied().collect();
+        let mut sent = 0;
+        for peer in targets {
+            if self.offer_files(peer, &mut out) {
+                sent += 1;
+            }
+        }
+        out.push(Event::FilesSent {
+            id: offer.id,
+            total: offer.total,
+            count: offer.count,
+            peers: sent,
+        });
+        out
+    }
+
+    /// The agent wrote the clipboard itself (the picked items after "Copy files..."). Echo
+    /// layer 2 then skips that change.
+    pub fn note_own_write(&mut self, seq: u64) {
+        self.last_write_seq = Some(seq);
+    }
+
+    /// The free space check for [`Event::FetchFiles`] passed: ask the origin for the copy.
+    pub fn files_want(&mut self, id: FilesId) -> Vec<Event> {
+        let mut out = Vec::new();
+        let Some(p) = self
+            .pending
+            .as_mut()
+            .filter(|p| p.offer.id == id && p.fetch == Fetch::Asking)
+        else {
+            return out;
+        };
+        let origin = p.offer.origin;
+        if !self.peers.contains_key(&origin) {
+            p.fetch = Fetch::Waiting;
+            return out;
+        }
+        p.fetch = Fetch::Wanted;
+        self.send(origin, &Message::FilesWant { id }, &mut out);
+        out
+    }
+
+    /// May a data stream from `peer` for `id` be accepted? Only for the outstanding
+    /// `FilesWant` to that peer; any other stream is stopped at once (file sync spec 3).
+    pub fn stream_allowed(&self, peer: DeviceId, id: FilesId) -> bool {
+        self.pending
+            .as_ref()
+            .is_some_and(|p| p.offer.id == id && p.offer.origin == peer && p.fetch == Fetch::Wanted)
+    }
+
+    /// The fetched files are in place and on the clipboard (written with `seq`). The copy
+    /// becomes the current copy, and echo layer 2 skips the write.
+    pub fn files_applied(&mut self, id: FilesId, manifest: &Manifest, seq: u64) -> Vec<Event> {
+        let mut out = Vec::new();
+        if !self
+            .pending
+            .as_ref()
+            .is_some_and(|p| p.offer.id == id && p.fetch == Fetch::Wanted)
+        {
+            return out;
+        }
+        let Some(p) = self.pending.take() else {
+            return out;
+        };
+        if manifest.hash() != p.offer.manifest_hash {
+            self.pending = Some(p);
+            return self.transfer_failed(id, TransferFailure::BadData);
+        }
+        // An applied remote copy ends a local walk.
+        self.walk = None;
+        self.last_write_seq = Some(seq);
+        self.applied = None;
+        let offer = p.offer;
+        out.push(Event::FilesApplied {
+            id,
+            origin: offer.origin,
+            total: offer.total,
+            count: offer.count,
+        });
+        self.set_current(
+            Current::Files(HeldFiles {
+                offer,
+                content: manifest.content_hash(),
+                stopped: false,
+            }),
+            &mut out,
+        );
+        out
+    }
+
+    /// A fetch failed on this side. A broken link is asked again when the origin is back;
+    /// anything else ends the fetch for good (and tells the origin).
+    pub fn transfer_failed(&mut self, id: FilesId, failure: TransferFailure) -> Vec<Event> {
+        let mut out = Vec::new();
+        let Some(p) = self
+            .pending
+            .as_mut()
+            .filter(|p| p.offer.id == id && matches!(p.fetch, Fetch::Asking | Fetch::Wanted))
+        else {
+            return out;
+        };
+        if failure == TransferFailure::Interrupted {
+            self.interrupted(&mut out);
+            return out;
+        }
+        let (origin, wanted) = (p.offer.origin, p.fetch == Fetch::Wanted);
+        p.fetch = Fetch::Remembered;
+        if wanted {
+            let cancel = Message::FilesCancel {
+                id,
+                reason: files::CODE_ABORTED,
+            };
+            self.send(origin, &cancel, &mut out);
+        }
+        out.push(Event::TransferFailed {
+            id,
+            peer: origin,
+            failure,
+        });
+        out
+    }
+
+    /// The stream the receiver asked for came and was accepted: a later break of it counts
+    /// as a new one.
+    pub fn stream_started(&mut self, peer: DeviceId, id: FilesId) {
+        if let Some(p) = self
+            .pending
+            .as_mut()
+            .filter(|p| p.offer.id == id && p.offer.origin == peer && p.fetch == Fetch::Wanted)
+        {
+            p.charged = false;
+        }
+    }
+
+    /// A send failed before its stream could tell the receiver anything (no data link, the
+    /// copy is gone here, or the stream could not be opened). The receiver gets a
+    /// `FilesCancel` (failed, not aborted: nobody pressed Stop), so it does not wait for a stream that never comes; then the
+    /// next queued send starts.
+    pub fn serve_failed(&mut self, peer: DeviceId, id: FilesId) -> Vec<Event> {
+        let mut out = Vec::new();
+        if self.running.contains(&(peer, id)) || self.queue.contains(&(peer, id)) {
+            let cancel = Message::FilesCancel {
+                id,
+                reason: files::CODE_FAILED,
+            };
+            self.send(peer, &cancel, &mut out);
+        }
+        out.extend(self.serve_done(peer, id));
+        out
+    }
+
+    /// A send ended (done, failed or reset). The next queued send starts.
+    pub fn serve_done(&mut self, peer: DeviceId, id: FilesId) -> Vec<Event> {
+        let mut out = Vec::new();
+        self.running.retain(|s| *s != (peer, id));
+        self.queue.retain(|s| *s != (peer, id));
+        self.pump(&mut out);
+        out
+    }
+
+    /// Stop (the window's Stop link, `uc transfer stop`): cancel the running fetch and every
+    /// send. A stopped copy is not fetched or offered again; a new copy starts afresh.
+    pub fn stop_transfer(&mut self) -> Vec<Event> {
+        let mut out = Vec::new();
+        if let Some(Current::Files(f)) = &mut self.current
+            && f.offer.origin == self.cfg.device.id
+        {
+            f.stopped = true;
+        }
+        self.halt_transfers(CancelReason::Stopped, &mut out);
         out
     }
 
@@ -629,13 +1233,15 @@ impl Engine {
             .filter(|(_, h)| self.hlc.check(&h.stamp, now_ms).is_ok())
             .max_by_key(|(_, h)| h.stamp)
             .map(|(id, h)| (id, h.id, h.stamp));
-        let held_stamp = self.held.as_ref().map(|h| h.header.stamp);
+        let held_stamp = self.current.as_ref().map(Current::stamp);
         match (best_peer, held_stamp) {
             (Some((from, id, stamp)), held) if held.is_none_or(|s| stamp > s) => {
                 self.explicit.insert(id);
                 self.send(from, &Message::Want { id }, &mut out);
                 (FetchOutcome::Requested { from, id }, out)
             }
+            // A file copy is fetched on its own; there is nothing more to apply.
+            (_, Some(_)) if self.held_ref().is_none() => (FetchOutcome::AlreadyCurrent, out),
             (_, Some(_)) => {
                 let id = self.held_id().unwrap_or_default();
                 if self.applied == Some(id) {
@@ -651,22 +1257,334 @@ impl Engine {
 
     // ----- internals -----
 
+    fn held_ref(&self) -> Option<&Held> {
+        match &self.current {
+            Some(Current::Clip(h)) => Some(h),
+            _ => None,
+        }
+    }
+
     fn held_id(&self) -> Option<ClipId> {
-        self.held.as_ref().map(|h| h.header.id)
+        self.held_ref().map(|h| h.header.id)
+    }
+
+    fn start_walk(&mut self, paths: Vec<PathBuf>, picked: bool) -> Event {
+        self.next_gen += 1;
+        let generation = self.next_gen;
+        self.walk = Some(Walk { generation, picked });
+        Event::WalkFiles {
+            generation,
+            paths,
+            picked,
+        }
+    }
+
+    /// Make `new` the current copy. Running sends belong to the old one and end; a pending
+    /// offer older than `new` is dropped.
+    fn set_current(&mut self, new: Current, out: &mut Vec<Event>) {
+        let stamp = new.stamp();
+        self.cancel_sends(CancelReason::Superseded, out);
+        if self.pending.as_ref().is_some_and(|p| p.offer.stamp < stamp) {
+            self.drop_pending(CancelReason::Superseded, out);
+        }
+        self.current = Some(new);
+    }
+
+    /// End every send (running and queued) and tell each receiver.
+    fn cancel_sends(&mut self, reason: CancelReason, out: &mut Vec<Event>) {
+        let running = std::mem::take(&mut self.running);
+        let queued: Vec<_> = self.queue.drain(..).collect();
+        for &(peer, id) in &running {
+            out.push(Event::CancelTransfer {
+                id,
+                peer,
+                reason,
+                sending: true,
+            });
+        }
+        for (peer, id) in running.into_iter().chain(queued) {
+            let cancel = Message::FilesCancel {
+                id,
+                reason: reason.code(),
+            };
+            self.send(peer, &cancel, out);
+        }
+    }
+
+    /// Forget the pending offer, cancelling its fetch.
+    fn drop_pending(&mut self, reason: CancelReason, out: &mut Vec<Event>) {
+        if let Some(p) = self.pending.take() {
+            self.cancel_fetch(&p, reason, out);
+        }
+    }
+
+    /// Cancel a running fetch of `p` (if it runs) and tell the origin (if it was asked).
+    fn cancel_fetch(&mut self, p: &Pending, reason: CancelReason, out: &mut Vec<Event>) {
+        let (id, origin) = (p.offer.id, p.offer.origin);
+        if matches!(p.fetch, Fetch::Asking | Fetch::Wanted) {
+            out.push(Event::CancelTransfer {
+                id,
+                peer: origin,
+                reason,
+                sending: false,
+            });
+        }
+        if p.fetch == Fetch::Wanted {
+            let cancel = Message::FilesCancel {
+                id,
+                reason: reason.code(),
+            };
+            self.send(origin, &cancel, out);
+        }
+    }
+
+    /// Stop or pause: cancel the fetch (the offer stays remembered) and
+    /// every send.
+    fn halt_transfers(&mut self, reason: CancelReason, out: &mut Vec<Event>) {
+        if let Some(mut p) = self.pending.take() {
+            self.cancel_fetch(&p, reason, out);
+            p.fetch = Fetch::Remembered;
+            self.pending = Some(p);
+        }
+        self.cancel_sends(reason, out);
+    }
+
+    /// Start queued sends while fewer than [`SERVE_MAX`] run.
+    fn pump(&mut self, out: &mut Vec<Event>) {
+        while self.running.len() < SERVE_MAX {
+            let Some((peer, id)) = self.queue.pop_front() else {
+                break;
+            };
+            if self.peers.contains_key(&peer) {
+                self.running.push((peer, id));
+                out.push(Event::ServeFiles { peer, id });
+            }
+        }
+    }
+
+    /// The link to `peer` is gone (closed or replaced). Its sends end; a fetch from it was
+    /// interrupted.
+    fn link_lost(&mut self, peer: DeviceId, out: &mut Vec<Event>) {
+        self.running.retain(|(p, _)| *p != peer);
+        self.queue.retain(|(p, _)| *p != peer);
+        self.pump(out);
+        if self.pending.as_ref().is_some_and(|p| {
+            p.offer.origin == peer && matches!(p.fetch, Fetch::Asking | Fetch::Wanted)
+        }) {
+            self.interrupted(out);
+        }
+    }
+
+    /// The running fetch broke. Ask again if the origin is still here, else wait for it; give
+    /// up after [`FETCH_RETRIES`] breaks.
+    fn interrupted(&mut self, out: &mut Vec<Event>) {
+        let Some(p) = self.pending.as_mut() else {
+            return;
+        };
+        // One blip is counted once, even when both the stream and the link report it.
+        if p.fetch == Fetch::Wanted && !p.charged {
+            p.interruptions += 1;
+            p.charged = true;
+        }
+        if p.interruptions > FETCH_RETRIES {
+            p.fetch = Fetch::Remembered;
+            out.push(Event::TransferFailed {
+                id: p.offer.id,
+                peer: p.offer.origin,
+                failure: TransferFailure::Retries,
+            });
+            return;
+        }
+        p.fetch = Fetch::Waiting;
+        let origin = p.offer.origin;
+        if self.peers.get(&origin).is_some_and(|s| s.ext.is_some()) {
+            self.ask(out);
+        }
+    }
+
+    /// Emit `FetchFiles` for the pending offer.
+    fn ask(&mut self, out: &mut Vec<Event>) {
+        if let Some(p) = self.pending.as_mut() {
+            p.fetch = Fetch::Asking;
+            out.push(Event::FetchFiles {
+                peer: p.offer.origin,
+                id: p.offer.id,
+                total: p.offer.total,
+                count: p.offer.count,
+            });
+        }
+    }
+
+    /// May an offer with this stamp be fetched now (not only remembered)?
+    fn may_fetch(&self, stamp: &Stamp, now_ms: u64) -> bool {
+        !self.paused && self.cfg.role == Role::Full && self.auto_apply_allowed(stamp, now_ms)
+    }
+
+    /// Offer the current file copy to `peer`, if this device is its origin and the peer can
+    /// take files. A full member without the files bit gets a note instead. Returns true if
+    /// the offer went out.
+    fn offer_files(&mut self, peer: DeviceId, out: &mut Vec<Event>) -> bool {
+        let offer = match &self.current {
+            Some(Current::Files(f)) if f.offer.origin == self.cfg.device.id && !f.stopped => {
+                f.offer.clone()
+            }
+            _ => return false,
+        };
+        if self.paused {
+            return false;
+        }
+        // Nothing goes out before the peer's engine Hello: its features are not known yet.
+        let Some((role, ext)) = self
+            .peers
+            .get(&peer)
+            .and_then(|p| p.ext.map(|e| (p.role, e)))
+        else {
+            return false;
+        };
+        if role != Role::Full {
+            return false;
+        }
+        if !ext.files() {
+            out.push(Event::Skipped(SkipReason::PeerNoFiles(peer)));
+            return false;
+        }
+        self.send(peer, &Message::FilesOffer(offer), out)
+    }
+
+    fn on_files_offer(
+        &mut self,
+        from: DeviceId,
+        offer: FilesOffer,
+        now_ms: u64,
+        out: &mut Vec<Event>,
+    ) {
+        // Only the origin offers its copy.
+        if offer.origin != from || !offer.is_consistent() {
+            out.push(Event::BadClip {
+                peer: from,
+                error: ClipError::Mismatch,
+            });
+            return;
+        }
+        if self.hlc.check(&offer.stamp, now_ms).is_err() {
+            out.push(Event::RefusedFutureStamp { peer: from });
+            return;
+        }
+        // A later local copy must be newer than this offer, fetched or not.
+        let _ = self.hlc.observe(&offer.stamp, now_ms);
+        if !self.is_newer_stamp(&offer.stamp) {
+            return;
+        }
+        if let Some(p) = &self.pending {
+            if p.offer.id == offer.id {
+                // The origin is back after a broken fetch: ask again from the start.
+                if p.fetch == Fetch::Waiting && self.may_fetch(&offer.stamp, now_ms) {
+                    self.ask(out);
+                }
+                return;
+            }
+            if p.offer.stamp >= offer.stamp {
+                return;
+            }
+            self.drop_pending(CancelReason::Superseded, out);
+        }
+        // A newer copy exists: sends of the older current copy are of no use any more.
+        self.cancel_sends(CancelReason::Superseded, out);
+        let fetch_now = self.may_fetch(&offer.stamp, now_ms);
+        let id = offer.id;
+        self.pending = Some(Pending {
+            offer,
+            fetch: Fetch::Remembered,
+            interruptions: 0,
+            charged: false,
+        });
+        if fetch_now {
+            self.ask(out);
+        } else {
+            out.push(Event::FilesHeldOnly { id });
+        }
+    }
+
+    fn on_files_want(&mut self, from: DeviceId, id: FilesId, out: &mut Vec<Event>) {
+        let ours = match &self.current {
+            Some(Current::Files(f)) if f.offer.id == id => {
+                Some(f.offer.origin == self.cfg.device.id && !f.stopped && !self.paused)
+            }
+            _ => None,
+        };
+        let full = self.peers.get(&from).is_some_and(|p| p.role == Role::Full);
+        if ours != Some(true) || !full {
+            // We moved on (superseded), or we do not serve this copy (aborted).
+            let reason = if ours.is_some() {
+                files::CODE_ABORTED
+            } else {
+                files::CODE_SUPERSEDED
+            };
+            self.send(from, &Message::FilesCancel { id, reason }, out);
+            return;
+        }
+        if let Some(i) = self.running.iter().position(|s| *s == (from, id)) {
+            // The peer asks again (it lost the stream): reset the old one first.
+            self.running.remove(i);
+            out.push(Event::CancelTransfer {
+                id,
+                peer: from,
+                reason: CancelReason::Requested,
+                sending: true,
+            });
+        } else if self.queue.contains(&(from, id)) {
+            return;
+        }
+        self.queue.push_back((from, id));
+        self.pump(out);
+    }
+
+    fn on_files_cancel(&mut self, from: DeviceId, id: FilesId, code: u8, out: &mut Vec<Event>) {
+        let reason = CancelReason::ByPeer(code);
+        if let Some(p) = self
+            .pending
+            .as_mut()
+            .filter(|p| p.offer.id == id && p.offer.origin == from)
+        {
+            let active = matches!(p.fetch, Fetch::Asking | Fetch::Wanted);
+            p.fetch = Fetch::Remembered;
+            if active {
+                out.push(Event::CancelTransfer {
+                    id,
+                    peer: from,
+                    reason,
+                    sending: false,
+                });
+            }
+            return;
+        }
+        if let Some(i) = self.running.iter().position(|s| *s == (from, id)) {
+            self.running.remove(i);
+            out.push(Event::CancelTransfer {
+                id,
+                peer: from,
+                reason,
+                sending: true,
+            });
+            self.pump(out);
+        }
+        self.queue.retain(|s| *s != (from, id));
     }
 
     fn has_full_peer(&self) -> bool {
         self.peers.values().any(|p| p.role == Role::Full)
     }
 
+    /// `Latest` for the current copy. While it is files, `Latest { header: None }`: files never
+    /// appear in `Latest` or `Clip` (file sync spec 3).
     fn latest_msg(&self) -> Message {
         Message::Latest {
-            header: self.held.as_ref().map(|h| h.header.clone()),
+            header: self.held_ref().map(|h| h.header.clone()),
         }
     }
 
     fn clip_msg(&self) -> Option<Message> {
-        self.held.as_ref().map(|h| Message::Clip {
+        self.held_ref().map(|h| Message::Clip {
             header: h.header.clone(),
             data: h.clip.parts().iter().map(|(_, d)| d.clone()).collect(),
         })
@@ -678,8 +1596,7 @@ impl Engine {
             return false;
         };
         let small = self
-            .held
-            .as_ref()
+            .held_ref()
             .is_some_and(|h| h.clip.size() <= self.cfg.push_max);
         let m = if role == Role::Full && small {
             self.clip_msg()
@@ -699,6 +1616,7 @@ impl Engine {
         if p.link.send(msg::encode(m)).is_err() {
             self.peers.remove(&peer);
             out.push(Event::PeerLost { peer });
+            self.link_lost(peer, out);
             return false;
         }
         true
@@ -717,9 +1635,12 @@ impl Engine {
     /// Only the stamp decides. The same bytes copied again carry the same wire ID but a newer
     /// stamp, and must be applied. A clip already held (or older) never has a newer stamp.
     fn is_newer(&self, h: &ClipHeader) -> bool {
-        self.held
-            .as_ref()
-            .is_none_or(|held| h.stamp > held.header.stamp)
+        self.is_newer_stamp(&h.stamp)
+    }
+
+    /// Is `stamp` newer than the current copy (clip or files)?
+    fn is_newer_stamp(&self, stamp: &Stamp) -> bool {
+        self.current.as_ref().is_none_or(|c| *stamp > c.stamp())
     }
 
     fn on_hello(&mut self, from: DeviceId, h: Hello, now_ms: u64, out: &mut Vec<Event>) {
@@ -732,12 +1653,15 @@ impl Engine {
         }
         if let Some(p) = self.peers.get_mut(&from) {
             p.role = h.role;
+            p.ext = Some(h.ext);
         }
         out.push(Event::PeerHello {
             peer: from,
             role: h.role,
             protocol: h.protocol,
         });
+        // File offers go out only now, when the peer's features are known.
+        self.offer_files(from, out);
         // The peer refuses stamps more than the limit ahead of its clock.
         if now_ms > h.wall_ms.saturating_add(self.cfg.future_limit_ms) {
             out.push(Event::OwnClockAhead { peer: from });
@@ -823,11 +1747,14 @@ impl Engine {
             .is_some_and(|p| p.role == Role::PullOnly);
         let stamp = header.stamp;
         let content = clip.content_hash();
-        self.held = Some(Held {
-            clip,
-            header,
-            content,
-        });
+        self.set_current(
+            Current::Clip(Held {
+                clip,
+                header,
+                content,
+            }),
+            out,
+        );
 
         if self.paused || !(explicit || self.auto_apply_allowed(&stamp, now_ms)) {
             out.push(Event::HeldOnly {
@@ -853,7 +1780,7 @@ impl Engine {
     }
 
     fn apply_held(&mut self, cb: &mut dyn Clipboard, out: &mut Vec<Event>) {
-        let Some(held) = self.held.as_ref() else {
+        let Some(held) = self.held_ref() else {
             return;
         };
         let ending = cb.line_ending();
@@ -874,6 +1801,8 @@ impl Engine {
             Ok(seq) => {
                 self.last_write_seq = Some(seq);
                 self.applied = Some(id);
+                // An applied remote copy ends a local walk.
+                self.walk = None;
                 out.push(Event::Applied { id, kind, origin });
             }
             Err(_) => out.push(Event::WriteFailed),

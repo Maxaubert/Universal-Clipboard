@@ -7,12 +7,18 @@
 //! - An unknown message type is skipped (decodes to `Ok(None)`), so a newer peer can add types.
 //! - Bytes after a known body are ignored, so a newer peer can append fields at the end.
 //! - Decoding never panics on any input (property tested).
+//!
+//! File sync (0.2) keeps every 0.1.x frame byte for byte. It adds [`HelloExt`] after the
+//! `Hello` body (old peers ignore it; a missing one reads as no features) and three message
+//! types (`FilesOffer`, `FilesWant`, `FilesCancel`, tags 9 to 11) that old peers skip. Files
+//! never appear in `Latest` or `Clip`: an unknown `Format` there would make an old peer close
+//! the link.
 
 use serde::{Deserialize, Serialize};
 
 use crate::clip::PartMeta;
 use crate::hlc::Stamp;
-use crate::ids::{ClipId, DeviceId};
+use crate::ids::{ClipId, DeviceId, FilesId};
 
 /// The protocol version this build speaks.
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -63,6 +69,26 @@ pub struct DeviceRecord {
     pub kind: DeviceKind,
 }
 
+/// Feature bit: this device can receive file copies (file sync spec 3).
+pub const FEATURE_FILES: u32 = 1;
+/// The features this build supports.
+pub const FEATURES: u32 = FEATURE_FILES;
+
+/// Fields after the 0.1.x `Hello` body (file sync spec 3). Every future `Hello` field goes in
+/// here, at the end. A `Hello` without it (from 0.1.x) reads as [`HelloExt::default`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HelloExt {
+    /// Feature bits, see [`FEATURE_FILES`].
+    pub features: u32,
+}
+
+impl HelloExt {
+    /// Does the peer accept file copies?
+    pub fn files(&self) -> bool {
+        self.features & FEATURE_FILES != 0
+    }
+}
+
 /// First message on every connection.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
@@ -83,6 +109,38 @@ pub struct Hello {
     /// The sender's group ID (protocol 5.9 step 2): the change ID of its genesis, or all
     /// zeros when it has no group. Added in M7.
     pub group: [u8; 32],
+    /// The extension after the 0.1.x body. The codec writes it by hand after the other
+    /// fields, so serde skips it.
+    #[serde(skip)]
+    pub ext: HelloExt,
+}
+
+/// A file copy on offer (file sync spec 3): the header only. The files come on a data stream
+/// after a `FilesWant`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilesOffer {
+    /// The copy's ID (see [`crate::files::files_id`]).
+    pub id: FilesId,
+    /// The device where the copy happened. Only it offers and serves the copy.
+    pub origin: DeviceId,
+    /// Clock stamp (its device is the origin).
+    pub stamp: Stamp,
+    /// Total bytes of all files.
+    pub total: u64,
+    /// Number of files.
+    pub count: u32,
+    /// BLAKE3 of the manifest that starts the data stream.
+    pub manifest_hash: [u8; 32],
+    /// Picked with "Copy files..." or `uc copy` (no byte limit).
+    pub picked: bool,
+}
+
+impl FilesOffer {
+    /// Is the offer self-consistent? (Origin matches stamp, ID matches manifest and stamp.)
+    pub fn is_consistent(&self) -> bool {
+        self.origin == self.stamp.device
+            && crate::files::files_id(&self.manifest_hash, &self.stamp) == self.id
+    }
 }
 
 /// The header of a clip: everything except the bytes.
@@ -161,6 +219,23 @@ pub enum Message {
         /// The secret.
         secret: [u8; 32],
     },
+    /// "I hold this file copy." Sent only by the origin, only to peers whose `Hello` has
+    /// [`FEATURE_FILES`].
+    FilesOffer(FilesOffer),
+    /// "Send me file copy X on a data stream."
+    FilesWant {
+        /// The copy.
+        id: FilesId,
+    },
+    /// "Stop file copy X" (either side). `reason` is
+    /// [`crate::files::CODE_SUPERSEDED`], [`crate::files::CODE_ABORTED`] or
+    /// [`crate::files::CODE_FAILED`].
+    FilesCancel {
+        /// The copy.
+        id: FilesId,
+        /// Why.
+        reason: u8,
+    },
 }
 
 const T_HELLO: u8 = 0;
@@ -172,6 +247,9 @@ const T_WANT: u8 = 5;
 const T_REMOVED: u8 = 6;
 const T_WANT_SECRET: u8 = 7;
 const T_SECRET: u8 = 8;
+const T_FILES_OFFER: u8 = 9;
+const T_FILES_WANT: u8 = 10;
+const T_FILES_CANCEL: u8 = 11;
 
 /// The message type byte of a frame (the second byte), or `None` for a frame that is too
 /// short. The agent uses it to route membership, address and secret messages before the
@@ -200,7 +278,7 @@ pub enum FrameType {
     Secret,
     /// `Removed`.
     Removed,
-    /// `Latest`, `Clip`, `Want` and unknown types: the engine's business.
+    /// `Latest`, `Clip`, `Want`, the file messages and unknown types: the engine's business.
     Clip,
 }
 
@@ -233,6 +311,15 @@ struct WantSecretBody {
 struct SecretBody {
     epoch: u32,
     secret: [u8; 32],
+}
+#[derive(Serialize, Deserialize)]
+struct FilesWantBody {
+    id: FilesId,
+}
+#[derive(Serialize, Deserialize)]
+struct FilesCancelBody {
+    id: FilesId,
+    reason: u8,
 }
 
 /// Why a frame could not be decoded.
@@ -274,7 +361,11 @@ pub fn encode(msg: &Message) -> Vec<u8> {
 /// Encode a message with an explicit protocol version byte (for talking to an older peer).
 pub fn encode_with_version(version: u8, msg: &Message) -> Vec<u8> {
     let (tag, payload) = match msg {
-        Message::Hello(h) => (T_HELLO, body(h)),
+        Message::Hello(h) => {
+            let mut b = body(h);
+            b.extend_from_slice(&body(&h.ext));
+            (T_HELLO, b)
+        }
         Message::Membership { changes } => (
             T_MEMBERSHIP,
             body(&MembershipBody {
@@ -310,6 +401,15 @@ pub fn encode_with_version(version: u8, msg: &Message) -> Vec<u8> {
                 secret: *secret,
             }),
         ),
+        Message::FilesOffer(o) => (T_FILES_OFFER, body(o)),
+        Message::FilesWant { id } => (T_FILES_WANT, body(&FilesWantBody { id: *id })),
+        Message::FilesCancel { id, reason } => (
+            T_FILES_CANCEL,
+            body(&FilesCancelBody {
+                id: *id,
+                reason: *reason,
+            }),
+        ),
     };
     let mut out = Vec::with_capacity(2 + payload.len());
     out.push(version);
@@ -336,7 +436,13 @@ pub fn decode(frame: &[u8]) -> Result<Option<Message>, CodecError> {
         return Err(CodecError::Version(*version));
     }
     let msg = match *tag {
-        T_HELLO => Message::Hello(parse(rest)?),
+        T_HELLO => {
+            let (mut h, ext_bytes): (Hello, &[u8]) =
+                postcard::take_from_bytes(rest).map_err(|_| CodecError::Malformed)?;
+            // A 0.1.x peer sends no extension: no features. A broken one counts the same.
+            h.ext = parse(ext_bytes).unwrap_or_default();
+            Message::Hello(h)
+        }
         T_MEMBERSHIP => {
             let b: MembershipBody = parse(rest)?;
             Message::Membership { changes: b.changes }
@@ -370,6 +476,18 @@ pub fn decode(frame: &[u8]) -> Result<Option<Message>, CodecError> {
             Message::Secret {
                 epoch: b.epoch,
                 secret: b.secret,
+            }
+        }
+        T_FILES_OFFER => Message::FilesOffer(parse(rest)?),
+        T_FILES_WANT => {
+            let b: FilesWantBody = parse(rest)?;
+            Message::FilesWant { id: b.id }
+        }
+        T_FILES_CANCEL => {
+            let b: FilesCancelBody = parse(rest)?;
+            Message::FilesCancel {
+                id: b.id,
+                reason: b.reason,
             }
         }
         _ => return Ok(None),
@@ -445,10 +563,10 @@ mod tests {
                 vec(arb_id(), 0..3),
                 any::<u64>(),
                 any::<u64>(),
-                arb_id()
+                (arb_id(), any::<u32>())
             )
                 .prop_map(
-                    |(p, av, id, name, kind, full, heads, epoch, wall, group)| {
+                    |(p, av, id, name, kind, full, heads, epoch, wall, (group, features))| {
                         Message::Hello(Hello {
                             protocol: p,
                             app_version: av,
@@ -462,6 +580,7 @@ mod tests {
                             epoch,
                             wall_ms: wall,
                             group,
+                            ext: HelloExt { features },
                         })
                     }
                 ),
@@ -474,6 +593,30 @@ mod tests {
             Just(Message::Removed),
             any::<u32>().prop_map(|epoch| Message::WantSecret { epoch }),
             (any::<u32>(), arb_id()).prop_map(|(epoch, secret)| Message::Secret { epoch, secret }),
+            (
+                arb_id(),
+                arb_stamp(),
+                any::<u64>(),
+                any::<u32>(),
+                arb_id(),
+                any::<bool>()
+            )
+                .prop_map(|(id, stamp, total, count, manifest_hash, picked)| {
+                    Message::FilesOffer(FilesOffer {
+                        id: FilesId(id),
+                        origin: stamp.device,
+                        stamp,
+                        total,
+                        count,
+                        manifest_hash,
+                        picked,
+                    })
+                }),
+            arb_id().prop_map(|id| Message::FilesWant { id: FilesId(id) }),
+            (arb_id(), any::<u8>()).prop_map(|(id, reason)| Message::FilesCancel {
+                id: FilesId(id),
+                reason
+            }),
         ]
     }
 
@@ -491,7 +634,7 @@ mod tests {
         }
 
         #[test]
-        fn random_bodies_with_valid_prefix_never_panic(tag in 0u8..10, b in vec(any::<u8>(), 0..512)) {
+        fn random_bodies_with_valid_prefix_never_panic(tag in 0u8..13, b in vec(any::<u8>(), 0..512)) {
             let mut f = vec![PROTOCOL_VERSION, tag];
             f.extend(b);
             let _ = decode(&f);
@@ -513,6 +656,167 @@ mod tests {
             f.extend(extra);
             prop_assert_eq!(decode(&f), Ok(Some(m)));
         }
+
+        /// A 0.1.x peer parses only the base `Hello` and ignores the rest: the new frame must
+        /// start with exactly the 0.1.x bytes, and the 0.1.x frame must read as no features.
+        #[test]
+        fn new_hello_starts_with_the_old_hello(m in arb_message()) {
+            if let Message::Hello(h) = &m {
+                let f = encode(&m);
+                let old = old_hello_frame(h);
+                prop_assert!(f.starts_with(&old));
+                let mut legacy = h.clone();
+                legacy.ext = HelloExt::default();
+                prop_assert_eq!(decode(&old), Ok(Some(Message::Hello(legacy))));
+            }
+        }
+    }
+
+    /// The 0.1.3 encoding of a `Hello`: version, tag, postcard body, nothing after.
+    fn old_hello_frame(h: &Hello) -> Vec<u8> {
+        let mut f = vec![PROTOCOL_VERSION, T_HELLO];
+        f.extend(postcard::to_allocvec(h).unwrap());
+        f
+    }
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    // Frames encoded by the 0.1.3 codec (captured 2026-11-16).
+    const HELLO_013: &str = "01000105302e312e330707070707070707070707070707070707070707070707070707070707070707094d61782773204d616301000109090909090909090909090909090909090909090909090909090909090909090280d8c1a28c340505050505050505050505050505050505050505050505050505050505050505";
+    const LATEST_013: &str = "01030101010101010101010101010101010101010101010101010101010101010101010707070707070707070707070707070707070707070707070707070707070707fbd8c1a28c340407070707070707070707070707070707070707070707070707070707070707070100050303030303030303030303030303030303030303030303030303030303030303";
+    const LATEST_NONE_013: &str = "010300";
+    const CLIP_013: &str = "010401010101010101010101010101010101010101010101010101010101010101010707070707070707070707070707070707070707070707070707070707070707fbd8c1a28c340407070707070707070707070707070707070707070707070707070707070707070100050303030303030303030303030303030303030303030303030303030303030303010568656c6c6f";
+    const WANT_013: &str = "01050202020202020202020202020202020202020202020202020202020202020202";
+
+    fn sample_hello(ext: HelloExt) -> Message {
+        Message::Hello(Hello {
+            protocol: 1,
+            app_version: "0.1.3".into(),
+            device: DeviceRecord {
+                id: DeviceId([7; 32]),
+                name: "Max's Mac".into(),
+                kind: DeviceKind::Mac,
+            },
+            role: Role::Full,
+            chain_heads: vec![[9; 32]],
+            epoch: 2,
+            wall_ms: 1_790_000_000_000,
+            group: [5; 32],
+            ext,
+        })
+    }
+
+    fn sample_header() -> ClipHeader {
+        let dev = DeviceId([7; 32]);
+        ClipHeader {
+            id: ClipId([1; 32]),
+            origin: dev,
+            stamp: Stamp {
+                wall_ms: 1_790_000_000_123,
+                counter: 4,
+                device: dev,
+            },
+            parts: vec![PartMeta {
+                format: Format::TextPlain,
+                size: 5,
+                hash: [3; 32],
+            }],
+        }
+    }
+
+    #[test]
+    fn frames_are_byte_compatible_with_0_1_3() {
+        // Unchanged messages encode to exactly the 0.1.3 bytes.
+        let same = [
+            (
+                LATEST_013,
+                Message::Latest {
+                    header: Some(sample_header()),
+                },
+            ),
+            (LATEST_NONE_013, Message::Latest { header: None }),
+            (
+                CLIP_013,
+                Message::Clip {
+                    header: sample_header(),
+                    data: vec![b"hello".to_vec()],
+                },
+            ),
+            (
+                WANT_013,
+                Message::Want {
+                    id: ClipId([2; 32]),
+                },
+            ),
+        ];
+        for (old, m) in same {
+            assert_eq!(encode(&m), hex(old), "{m:?}");
+            assert_eq!(decode(&hex(old)), Ok(Some(m)));
+        }
+        // A 0.1.3 Hello reads as one with no features.
+        assert_eq!(
+            decode(&hex(HELLO_013)),
+            Ok(Some(sample_hello(HelloExt::default())))
+        );
+        // A new Hello is the 0.1.3 bytes plus the extension (features 1 = one varint byte).
+        let new = encode(&sample_hello(HelloExt { features: FEATURES }));
+        let mut expect = hex(HELLO_013);
+        expect.push(0x01);
+        assert_eq!(new, expect);
+        match decode(&new) {
+            Ok(Some(Message::Hello(h))) => assert!(h.ext.files()),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn hello_with_a_broken_extension_has_no_features() {
+        let mut f = hex(HELLO_013);
+        // An unfinished varint.
+        f.push(0x80);
+        match decode(&f) {
+            Ok(Some(Message::Hello(h))) => assert_eq!(h.ext, HelloExt::default()),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn file_messages_use_tags_9_to_11_and_route_to_the_engine() {
+        let id = FilesId([4; 32]);
+        let want = encode(&Message::FilesWant { id });
+        let cancel = encode(&Message::FilesCancel { id, reason: 2 });
+        assert_eq!(&want[..2], &[PROTOCOL_VERSION, 10]);
+        assert_eq!(&cancel[..2], &[PROTOCOL_VERSION, 11]);
+        assert_eq!(frame_type(&want), Some(FrameType::Clip));
+        let stamp = Stamp {
+            wall_ms: 5,
+            counter: 0,
+            device: DeviceId([7; 32]),
+        };
+        let offer = FilesOffer {
+            id: crate::files::files_id(&[8; 32], &stamp),
+            origin: stamp.device,
+            stamp,
+            total: 10,
+            count: 1,
+            manifest_hash: [8; 32],
+            picked: false,
+        };
+        assert!(offer.is_consistent());
+        let f = encode(&Message::FilesOffer(offer.clone()));
+        assert_eq!(f[1], 9);
+        assert_eq!(decode(&f), Ok(Some(Message::FilesOffer(offer.clone()))));
+        let mut wrong = offer.clone();
+        wrong.manifest_hash = [9; 32];
+        assert!(!wrong.is_consistent());
+        let mut other_origin = offer;
+        other_origin.origin = DeviceId([1; 32]);
+        assert!(!other_origin.is_consistent());
     }
 
     #[test]

@@ -8,6 +8,10 @@
 //! The window opens when the user starts the app, and once when the agent found a newer
 //! version at its start (decision 2026-11-14): the agent starts it with `--route update`.
 //! Closing it ends this process and leaves the agent running.
+//!
+//! "Copy files..." and "Copy folder..." on Home open the system file picker here
+//! (`pick_paths`, tauri-plugin-dialog, called from Rust only, so the page gets no file access);
+//! the page then sends the picked paths with `files.copy`.
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -29,6 +33,8 @@ pub const ALLOWED: &[&str] = &[
     "pause.set",
     "settings.get",
     "settings.set",
+    "files.copy",
+    "transfer.stop",
     "diagnostics",
     "leave",
     "setup.status",
@@ -102,6 +108,38 @@ async fn firewall_add() -> Result<Value, Failure> {
     ipc_call("firewall.check".into(), json!({})).await
 }
 
+/// "Copy files..." (`folder` false: one or more files) and "Copy folder..." (`folder` true): the
+/// system picker. Windows cannot pick files and folders in one dialog, so these are two. Returns
+/// the picked paths, absolute, or none when the user cancelled.
+#[tauri::command]
+async fn pick_paths(app: AppHandle, folder: bool) -> Vec<String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+    let (tx, rx) = tokio::sync::oneshot::channel::<Vec<FilePath>>();
+    let mut d = app.dialog().file();
+    if let Some(w) = app.get_webview_window("main") {
+        d = d.set_parent(&w);
+    }
+    if folder {
+        d.set_title("Copy folder")
+            .pick_folder(move |p| drop(tx.send(p.into_iter().collect())));
+    } else {
+        d.set_title("Copy files")
+            .pick_files(move |p| drop(tx.send(p.unwrap_or_default())));
+    }
+    picked_paths(rx.await.unwrap_or_default())
+}
+
+/// The picked items as path strings; anything that is not a local path (a mobile content URI)
+/// is left out.
+pub fn picked_paths(picked: Vec<tauri_plugin_dialog::FilePath>) -> Vec<String> {
+    picked
+        .into_iter()
+        .filter_map(|p| p.into_path().ok())
+        .filter(|p| p.is_absolute())
+        .map(|p| p.display().to_string())
+        .collect()
+}
+
 /// The screen the agent asked for with `--route <name>`. Only `update` is known.
 pub fn route_arg(args: &[String]) -> Option<String> {
     let i = args.iter().position(|a| a == "--route")?;
@@ -165,6 +203,7 @@ pub fn run() {
     tauri::Builder::default()
         // A second launch only brings the first window to the front. The agent's
         // `--route update` also moves the page to the update screen.
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let route = route_arg(&args);
             if let Some(r) = &route {
@@ -182,7 +221,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ipc_call,
             firewall_add,
-            launch_route
+            launch_route,
+            pick_paths
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Universal Clipboard window");
@@ -224,6 +264,24 @@ mod tests {
         assert_eq!(route_arg(&a(&["uc", "--route", "settings"])), None);
         assert_eq!(route_arg(&a(&["uc", "--route"])), None);
         assert_eq!(route_arg(&a(&["uc"])), None);
+    }
+
+    #[test]
+    fn the_window_can_copy_files_and_stop_a_transfer() {
+        assert!(is_allowed("files.copy"));
+        assert!(is_allowed("transfer.stop"));
+        assert!(!is_allowed("debug.copy_files"));
+    }
+
+    #[test]
+    fn only_local_absolute_paths_are_picked() {
+        use tauri_plugin_dialog::FilePath;
+        let abs = std::env::temp_dir();
+        let got = picked_paths(vec![
+            FilePath::Path(abs.clone()),
+            FilePath::Path(std::path::PathBuf::from("relative")),
+        ]);
+        assert_eq!(got, vec![abs.display().to_string()]);
     }
 
     #[test]

@@ -4,6 +4,8 @@
 //! Each OS backend (`uc-clip-win`, `uc-clip-mac`, `uc-clip-linux`) implements [`Clipboard`].
 //! Tests use [`FakeClipboard`], so no test ever touches a real clipboard.
 
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 
 mod fake;
@@ -59,8 +61,15 @@ pub struct Snapshot {
     pub has_marker: bool,
     /// The source marked the copy as private, or a private marker could not be read (plan 3.10).
     pub private: bool,
-    /// The clipboard holds a file or folder reference. The whole clip is skipped (plan 3.8).
+    /// The clipboard holds a file or folder reference (readable or not). When it does, the copy
+    /// is a file copy and its text and image parts are ignored.
     pub has_files: bool,
+    /// The file and folder paths of a file copy, absolute, in clipboard order. Empty when the
+    /// clipboard holds no file reference, or only references that are not real paths.
+    pub files: Vec<PathBuf>,
+    /// The file copy has no real paths: virtual files (an Outlook attachment, an item inside a
+    /// zip opened in Explorer, a macOS promised file). Such a copy is never synced.
+    pub files_virtual: bool,
     /// macOS only: the clip came from another Apple device through Apple's Universal Clipboard
     /// (type `com.apple.is-remote-clipboard`, plan 3.8). Whether such a clip is sent on is plan
     /// decision 8; the backend only reports it. Always false on other OSes.
@@ -74,6 +83,9 @@ pub enum ClipboardError {
     Busy,
     /// The OS refused access (for example a privacy setting).
     Denied,
+    /// This backend cannot do it (for example file references on a backend without file
+    /// support yet).
+    Unsupported,
     /// Any other failure, with a short code for the diagnostic report (never content).
     Other(String),
 }
@@ -83,6 +95,7 @@ impl std::fmt::Display for ClipboardError {
         match self {
             ClipboardError::Busy => f.write_str("clipboard is busy"),
             ClipboardError::Denied => f.write_str("clipboard access denied"),
+            ClipboardError::Unsupported => f.write_str("not supported by this clipboard"),
             ClipboardError::Other(code) => write!(f, "clipboard error: {code}"),
         }
     }
@@ -103,10 +116,33 @@ pub trait Clipboard {
     /// line ending of [`Clipboard::line_ending`]. Returns the change counter after the write.
     fn write(&mut self, parts: &[RawPart]) -> Result<u64, ClipboardError>;
 
+    /// Replace the clipboard with references to `paths` (absolute, top-level items only) plus
+    /// the origin marker, in one step. `image` is a PNG to put next to them, so that pasting
+    /// into a chat or document also works when the copy is one small image file. Returns the
+    /// change counter after the write. Backends without file support return
+    /// [`ClipboardError::Unsupported`].
+    fn write_files(
+        &mut self,
+        paths: &[PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        let _ = (paths, image);
+        Err(ClipboardError::Unsupported)
+    }
+
     /// The line ending that this clipboard uses for text.
     fn line_ending(&self) -> LineEnding {
         LineEnding::Lf
     }
+}
+
+/// Check the arguments of [`Clipboard::write_files`] before the clipboard is touched: at least
+/// one path, and every path absolute.
+pub fn check_file_paths(paths: &[PathBuf]) -> Result<(), ClipboardError> {
+    if paths.is_empty() || !paths.iter().all(|p| Path::is_absolute(p)) {
+        return Err(ClipboardError::Other("bad-file-paths".into()));
+    }
+    Ok(())
 }
 
 impl<C: Clipboard + ?Sized> Clipboard for &mut C {
@@ -115,6 +151,13 @@ impl<C: Clipboard + ?Sized> Clipboard for &mut C {
     }
     fn write(&mut self, parts: &[RawPart]) -> Result<u64, ClipboardError> {
         (**self).write(parts)
+    }
+    fn write_files(
+        &mut self,
+        paths: &[PathBuf],
+        image: Option<&[u8]>,
+    ) -> Result<u64, ClipboardError> {
+        (**self).write_files(paths, image)
     }
     fn line_ending(&self) -> LineEnding {
         (**self).line_ending()

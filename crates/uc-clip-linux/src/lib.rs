@@ -8,8 +8,9 @@
 //!   real GNOME machine is still open, so we do not claim GNOME support.
 //!
 //! Only `CLIPBOARD` is synced, never the primary selection. Formats: UTF-8 text, `text/html`,
-//! `image/png`. Private hints (`x-kde-passwordManagerHint=secret`) and file clips are
-//! reported, not read. Our writes carry [`mime::MARKER`].
+//! `image/png`, and file copies (`x-special/gnome-copied-files`, else `text/uri-list` with
+//! `file:` URIs; spec 2026-11-16 section 6). Private hints (`x-kde-passwordManagerHint=secret`)
+//! are reported, not read. Our writes carry [`mime::MARKER`].
 //!
 //! The pure parts ([`mime`], [`session`], [`autostart`]) build on every OS. The backends build
 //! on Linux only.

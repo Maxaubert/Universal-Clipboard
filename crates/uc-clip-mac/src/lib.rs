@@ -5,11 +5,15 @@
 //!   private named pasteboard, so they never touch the user's clipboard and show no prompt.
 //! - Change detection is polling of `changeCount` ([`poll::Poller`] picks the wait).
 //! - Read: `public.utf8-plain-text`, `public.html`, `public.png`, else `public.tiff` turned
-//!   into PNG. Clips with a private marker, a file reference or our own marker are sorted by
-//!   their types alone, and their content is not read.
+//!   into PNG. Clips with a private marker or our own marker are sorted by their types alone,
+//!   and their content is not read.
+//! - File copies (file sync, spec 6): the `public.file-url` of each item (Finder's file
+//!   reference URLs resolved to paths), else the old `NSFilenamesPboardType` list. Text and
+//!   images next to them are not read. A promised file makes the copy virtual. [`cloud_only`]
+//!   tells an evicted iCloud Drive item.
 //! - Write: text, HTML, PNG plus a TIFF copy, and our marker, with
 //!   `prepareForNewContents(.currentHostOnly)` so Apple's Universal Clipboard does not send our
-//!   clips again.
+//!   clips again. A file copy is written as `NSURL`s through `writeObjects`, then the marker.
 //! - A clip that came from another Apple device through Universal Clipboard is flagged
 //!   ([`uc_clip::Snapshot::remote`]). Plan decision 8 decides what the agent does with it.
 //!
@@ -24,4 +28,4 @@ pub mod types;
 mod mac;
 
 #[cfg(target_os = "macos")]
-pub use mac::{AccessBehavior, MacClipboard, TEST_PASTEBOARD_ENV};
+pub use mac::{AccessBehavior, MacClipboard, TEST_PASTEBOARD_ENV, cloud_only};

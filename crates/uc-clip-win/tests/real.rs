@@ -5,10 +5,12 @@
 //! Notepad-like text, a browser copy, a screenshot-like bitmap, an Explorer file copy.
 #![cfg(windows)]
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use uc_clip::{Clipboard, ClipboardError, Format, LineEnding};
 use uc_clip_win::dib::{self, Rgba};
+use uc_clip_win::files;
 use uc_clip_win::formats::{self, CF_DIB, CF_DIBV5, CF_HDROP, CF_UNICODETEXT};
 use uc_clip_win::{RawFormat, Retry, WinClipboard};
 
@@ -23,6 +25,10 @@ macro_rules! real_test {
 
 fn utf16(s: &str) -> Vec<u8> {
     formats::utf8_to_utf16z(s.as_bytes())
+}
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().collect()
 }
 
 fn name(n: &str) -> RawFormat {
@@ -242,35 +248,50 @@ real_test!(text_and_image_write, {
     assert_eq!(part(&snap, Format::TextHtml), None);
 });
 
-real_test!(explorer_file_copy_is_skipped, {
+real_test!(explorer_file_copy_gives_paths_and_no_parts, {
     let mut cb = WinClipboard::new().unwrap();
-    // DROPFILES header (20 bytes, wide) + "C:\a.txt\0\0".
-    let mut drop = Vec::new();
-    drop.extend_from_slice(&20u32.to_le_bytes());
-    drop.extend_from_slice(&[0u8; 12]);
-    drop.extend_from_slice(&1u32.to_le_bytes());
-    drop.extend_from_slice(&utf16("C:\\a.txt"));
-    drop.extend_from_slice(&[0, 0]);
+    // What Explorer puts on the clipboard for one file: DROPFILES (wide), the shell's extra
+    // formats, the drop effect and a file name text.
+    let drop = files::build_hdrop(&[wide(r"C:\a.txt")]).unwrap();
     cb.write_raw(&[
         (RawFormat::Id(CF_HDROP), drop),
-        (name("FileNameW"), utf16("C:\\a.txt")),
+        (name("FileNameW"), utf16(r"C:\a.txt")),
         (name("Preferred DropEffect"), 5u32.to_le_bytes().to_vec()),
         (RawFormat::Id(CF_UNICODETEXT), utf16("a.txt")),
     ])
     .unwrap();
     let snap = cb.read().unwrap();
-    assert!(snap.has_files);
-    assert!(snap.parts.is_empty(), "content of a file copy is not read");
+    assert!(snap.has_files && !snap.files_virtual && !snap.has_marker);
+    assert_eq!(snap.files, vec![PathBuf::from(r"C:\a.txt")]);
+    assert!(
+        snap.parts.is_empty(),
+        "text next to a file copy is not read"
+    );
 });
 
-real_test!(virtual_file_copy_is_skipped, {
+real_test!(virtual_file_copy_is_marked_virtual, {
     let mut cb = WinClipboard::new().unwrap();
+    // An Outlook attachment or a zip item: FileGroupDescriptorW without CF_HDROP.
     cb.write_raw(&[
         (name(formats::FILE_GROUP_DESCRIPTOR), vec![0u8; 600]),
         (RawFormat::Id(CF_UNICODETEXT), utf16("mail.msg")),
     ])
     .unwrap();
-    assert!(cb.read().unwrap().has_files);
+    let snap = cb.read().unwrap();
+    assert!(snap.has_files && snap.files_virtual);
+    assert!(snap.files.is_empty() && snap.parts.is_empty());
+    // A program that offers both has real paths: not virtual.
+    cb.write_raw(&[
+        (name(formats::FILE_GROUP_DESCRIPTOR), vec![0u8; 600]),
+        (
+            RawFormat::Id(CF_HDROP),
+            files::build_hdrop(&[wide(r"D:\x.zip")]).unwrap(),
+        ),
+    ])
+    .unwrap();
+    let snap = cb.read().unwrap();
+    assert!(snap.has_files && !snap.files_virtual);
+    assert_eq!(snap.files, vec![PathBuf::from(r"D:\x.zip")]);
 });
 
 real_test!(private_markers_are_honored, {

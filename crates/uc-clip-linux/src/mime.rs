@@ -4,6 +4,7 @@
 //! [`Snapshot`], and which types to offer on a write. The backends only move bytes. So the
 //! rules are tested on every OS, also on Windows and macOS.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use uc_clip::{ClipboardError, Format, RawPart, Snapshot};
@@ -28,8 +29,13 @@ pub const PRIVATE_TYPES: &[&str] = &[
 /// A list of URIs. It holds a file clip when one line is a `file:` URI (plan 3.8).
 pub const URI_LIST: &str = "text/uri-list";
 
-/// GNOME Files (Nautilus) and other GTK file managers offer this type for copied files.
+/// GNOME Files (Nautilus) and other GTK file managers offer this type for copied files. The
+/// first line is `copy` or `cut`, then one URI per line.
 pub const GNOME_COPIED_FILES: &str = "x-special/gnome-copied-files";
+
+/// KDE's cut flag. `0` means copy: a paste in Dolphin never moves (and so never deletes) the
+/// files we put on the clipboard.
+pub const KDE_CUT_SELECTION: &str = "application/x-kde-cutselection";
 
 /// HTML.
 pub const HTML: &str = "text/html";
@@ -75,7 +81,7 @@ pub struct ReadPlan {
     pub private: bool,
     /// The KDE hint is offered; its value decides.
     pub kde_hint: bool,
-    /// GNOME copied files is offered.
+    /// [`GNOME_COPIED_FILES`] is offered: a file copy.
     pub files: bool,
     /// `text/uri-list` is offered; its content decides.
     pub uri_list: bool,
@@ -118,12 +124,184 @@ pub fn is_secret_hint(value: &[u8]) -> bool {
         .eq_ignore_ascii_case("secret")
 }
 
-/// A `text/uri-list` holds at least one `file:` URI (RFC 2483: comment lines start with `#`).
-pub fn uri_list_has_files(bytes: &[u8]) -> bool {
-    String::from_utf8_lossy(bytes).lines().any(|l| {
-        let l = l.trim();
-        !l.starts_with('#') && l.len() >= 5 && l[..5].eq_ignore_ascii_case("file:")
-    })
+/// The URIs of a `text/uri-list` or of [`GNOME_COPIED_FILES`], sorted into local paths and the
+/// rest.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FileUris {
+    /// The local paths of `file:` URIs, absolute, in list order.
+    pub paths: Vec<PathBuf>,
+    /// `file:` URIs that name no local path: another host, or a path that is not absolute or
+    /// holds a NUL byte.
+    pub foreign_files: usize,
+    /// URIs of any other scheme (`https:`, `sftp:`, `trash:`, ...).
+    pub other: usize,
+}
+
+impl FileUris {
+    /// The list names files: local paths, or `file:` URIs we cannot open. A list of web links
+    /// only is not a file copy.
+    pub fn is_file_copy(&self) -> bool {
+        !self.paths.is_empty() || self.foreign_files > 0
+    }
+}
+
+/// Parse a `text/uri-list` (RFC 2483). Lines end in CRLF or LF; empty lines and comment lines
+/// (`#`) are skipped. Only `file:` URIs give paths (RFC 8089): `file:///p`,
+/// `file://localhost/p` and the short `file:/p` form that some KDE apps write. The path is
+/// percent-decoded as bytes; a query or fragment is cut off. It never fails: a broken line
+/// counts as a foreign or other URI.
+pub fn parse_file_uris(bytes: &[u8]) -> FileUris {
+    let mut out = FileUris::default();
+    for line in bytes.split(|&b| b == b'\n') {
+        let line = line.trim_ascii();
+        if line.is_empty() || line[0] == b'#' {
+            continue;
+        }
+        if line.len() < 5 || !line[..5].eq_ignore_ascii_case(b"file:") {
+            out.other += 1;
+            continue;
+        }
+        match file_uri_path(&line[5..]) {
+            Some(p) => out.paths.push(p),
+            None => out.foreign_files += 1,
+        }
+    }
+    out
+}
+
+/// Parse the value of [`GNOME_COPIED_FILES`]: a first line `copy` or `cut`, then the URIs. A
+/// cut is read as a copy (spec 2.4: the source is never deleted). Without the verb line every
+/// line is a URI.
+pub fn parse_gnome_copied_files(bytes: &[u8]) -> FileUris {
+    let first = bytes.split(|&b| b == b'\n').next().unwrap_or_default();
+    let verb = first.trim_ascii();
+    if verb.eq_ignore_ascii_case(b"copy") || verb.eq_ignore_ascii_case(b"cut") {
+        parse_file_uris(&bytes[first.len()..])
+    } else {
+        parse_file_uris(bytes)
+    }
+}
+
+/// The local path in the part of a `file:` URI after the scheme, or `None`.
+fn file_uri_path(rest: &[u8]) -> Option<PathBuf> {
+    // Query and fragment are not part of the path.
+    let end = rest
+        .iter()
+        .position(|&b| b == b'?' || b == b'#')
+        .unwrap_or(rest.len());
+    let rest = &rest[..end];
+    let path = match rest.strip_prefix(b"//") {
+        Some(after) => {
+            // An authority: empty or `localhost` is this machine.
+            let slash = after.iter().position(|&b| b == b'/')?;
+            let host = &after[..slash];
+            if !host.is_empty() && !host.eq_ignore_ascii_case(b"localhost") {
+                return None;
+            }
+            &after[slash..]
+        }
+        None => rest,
+    };
+    let bytes = percent_decode(path);
+    if bytes.first() != Some(&b'/') || bytes.contains(&0) {
+        return None;
+    }
+    Some(path_from_bytes(bytes))
+}
+
+/// Decode `%XX` escapes. A `%` without two hex digits stays as it is.
+fn percent_decode(s: &[u8]) -> Vec<u8> {
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(s.len());
+    let mut i = 0;
+    while i < s.len() {
+        if s[i] == b'%'
+            && let (Some(hi), Some(lo)) = (
+                s.get(i + 1).copied().and_then(hex),
+                s.get(i + 2).copied().and_then(hex),
+            )
+        {
+            out.push((hi << 4) | lo);
+            i += 3;
+        } else {
+            out.push(s[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// A path from raw bytes. Linux paths are bytes; on other OSes (only the pure tests run there)
+/// invalid UTF-8 is repaired.
+fn path_from_bytes(bytes: Vec<u8>) -> PathBuf {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        PathBuf::from(std::ffi::OsString::from_vec(bytes))
+    }
+    #[cfg(not(unix))]
+    {
+        PathBuf::from(String::from_utf8_lossy(&bytes).into_owned())
+    }
+}
+
+/// The bytes of a path (see [`path_from_bytes`]).
+fn path_bytes(path: &Path) -> Vec<u8> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        path.as_os_str().as_bytes().to_vec()
+    }
+    #[cfg(not(unix))]
+    {
+        path.to_string_lossy().into_owned().into_bytes()
+    }
+}
+
+/// The `file://` URI of an absolute path. Every byte except the RFC 3986 unreserved set and
+/// `/` is percent-encoded, so spaces, `#`, `%` and non-UTF-8 names survive the round trip.
+pub fn file_uri(path: &Path) -> String {
+    let mut uri = String::from("file://");
+    for b in path_bytes(path) {
+        if b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'.' | b'_' | b'~') {
+            uri.push(b as char);
+        } else {
+            uri.push_str(&format!("%{b:02X}"));
+        }
+    }
+    uri
+}
+
+/// A `text/uri-list` for `paths`: one URI per line, each line ending in CRLF (RFC 2483).
+pub fn build_uri_list(paths: &[PathBuf]) -> Vec<u8> {
+    let mut out = String::new();
+    for p in paths {
+        out.push_str(&file_uri(p));
+        out.push_str("\r\n");
+    }
+    out.into_bytes()
+}
+
+/// A [`GNOME_COPIED_FILES`] value for `paths`: `copy`, then one URI per line, LF, no newline at
+/// the end (as Nautilus writes it).
+pub fn build_gnome_copied_files(paths: &[PathBuf]) -> Vec<u8> {
+    let mut out = String::from("copy");
+    for p in paths {
+        out.push('\n');
+        out.push_str(&file_uri(p));
+    }
+    out.into_bytes()
+}
+
+/// The text form of a file copy: the paths, one per line, so a paste into a terminal or an
+/// editor gives the paths. Names that are not UTF-8 are repaired.
+pub fn path_text(paths: &[PathBuf]) -> Vec<u8> {
+    paths
+        .iter()
+        .map(|p| String::from_utf8_lossy(&path_bytes(p)).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into_bytes()
 }
 
 /// Turn text bytes into UTF-8. Invalid UTF-8 is repaired, so the wire never holds it.
@@ -143,12 +321,65 @@ pub fn decode_text(bytes: Vec<u8>, enc: TextEncoding) -> Vec<u8> {
     }
 }
 
+/// The file part of a copy, as [`read_files`] found it.
+struct ReadFiles {
+    /// The local paths.
+    paths: Vec<PathBuf>,
+    /// The list could not be read. The copy is still a file copy (its text is a file name,
+    /// which must not be synced as text), but it is not called virtual.
+    unreadable: bool,
+}
+
+/// Decide whether the copy is a file copy, and read its paths. `None`: not a file copy.
+///
+/// - [`GNOME_COPIED_FILES`] offered: always a file copy. Its paths are read; if it cannot be
+///   read, `text/uri-list` is tried.
+/// - Else `text/uri-list`: a file copy when it holds a `file:` URI. Web links only: not a file
+///   copy, so the text is read as usual. A list that cannot be read counts as files.
+fn read_files<F>(p: &ReadPlan, fetch: &mut F) -> Option<ReadFiles>
+where
+    F: FnMut(&str) -> Result<Option<Vec<u8>>, ClipboardError>,
+{
+    let found = |paths| {
+        Some(ReadFiles {
+            paths,
+            unreadable: false,
+        })
+    };
+    let unreadable = Some(ReadFiles {
+        paths: Vec::new(),
+        unreadable: true,
+    });
+    if p.files
+        && let Ok(Some(v)) = fetch(GNOME_COPIED_FILES)
+    {
+        return found(parse_gnome_copied_files(&v).paths);
+    }
+    if p.uri_list {
+        return match fetch(URI_LIST) {
+            Ok(Some(v)) => {
+                let uris = parse_file_uris(&v);
+                if p.files || uris.is_file_copy() {
+                    found(uris.paths)
+                } else {
+                    None
+                }
+            }
+            Ok(None) if !p.files => None,
+            Ok(None) | Err(_) => unreadable,
+        };
+    }
+    if p.files { unreadable } else { None }
+}
+
 /// Build a snapshot from the offered types and a function that reads one type.
 ///
 /// `fetch` returns `Ok(None)` when the owner refused or the type went away. Rules:
 /// - marker: nothing else is read (echo layer 1);
 /// - private hint: nothing else is read; a hint that cannot be read counts as private;
-/// - file clip: nothing else is read; a `text/uri-list` that cannot be read counts as files;
+/// - file copy (see [`read_files`]): only the file list is read. `files` holds its local
+///   paths. A readable list with no local path (only `sftp:`, `trash:`, a `file:` URI of
+///   another host) sets `files_virtual`: there is nothing on disk to send;
 /// - else text, HTML and PNG are read. A part that fails to read is left out.
 pub fn build_snapshot<F>(seq: u64, offered: &[String], mut fetch: F) -> Snapshot
 where
@@ -173,15 +404,10 @@ where
         snap.private = true;
         return snap;
     }
-    if p.files
-        || (p.uri_list
-            && match fetch(URI_LIST) {
-                Ok(Some(v)) => uri_list_has_files(&v),
-                Ok(None) => false,
-                Err(_) => true,
-            })
-    {
+    if let Some(files) = read_files(&p, &mut fetch) {
         snap.has_files = true;
+        snap.files_virtual = files.paths.is_empty() && !files.unreadable;
+        snap.files = files.paths;
         return snap;
     }
     if let Some((mime, enc)) = p.text
@@ -219,6 +445,29 @@ pub fn write_items(parts: &[RawPart]) -> Vec<Item> {
             Format::TextHtml => items.push((HTML.to_owned(), bytes)),
             Format::ImagePng => items.push((PNG.to_owned(), bytes)),
         }
+    }
+    items.push((MARKER.to_owned(), Arc::new(MARKER_VALUE.to_vec())));
+    items
+}
+
+/// The types to offer for a file copy of `paths`, plus our marker: [`GNOME_COPIED_FILES`],
+/// `text/uri-list`, [`KDE_CUT_SELECTION`] `0` (a copy, never a cut), the paths as text, and
+/// `image/png` when `image` is given (spec 2.2.5). Bytes are shared, not copied.
+pub fn write_file_items(paths: &[PathBuf], image: Option<&[u8]>) -> Vec<Item> {
+    let mut items = vec![
+        (
+            GNOME_COPIED_FILES.to_owned(),
+            Arc::new(build_gnome_copied_files(paths)),
+        ),
+        (URI_LIST.to_owned(), Arc::new(build_uri_list(paths))),
+        (KDE_CUT_SELECTION.to_owned(), Arc::new(b"0".to_vec())),
+    ];
+    let text = Arc::new(path_text(paths));
+    for m in WRITE_TEXT {
+        items.push(((*m).to_owned(), text.clone()));
+    }
+    if let Some(png) = image {
+        items.push((PNG.to_owned(), Arc::new(png.to_vec())));
     }
     items.push((MARKER.to_owned(), Arc::new(MARKER_VALUE.to_vec())));
     items
@@ -343,23 +592,216 @@ mod tests {
         assert!(!is_secret_hint(b"accept"));
     }
 
+    fn paths(list: &[&str]) -> Vec<PathBuf> {
+        list.iter().map(PathBuf::from).collect()
+    }
+
     #[test]
-    fn file_clips_are_skipped() {
-        let (s, _) = snap(&[
+    fn uri_list_file_copy_gives_paths_and_no_text() {
+        let (s, asked) = snap(&[
             (
                 "text/uri-list",
-                b"# comment\r\nfile:///home/u/report.pdf\r\n",
+                b"# comment\r\nfile:///home/u/report.pdf\r\nfile:///home/u/My%20Folder\r\n",
             ),
             ("UTF8_STRING", b"report.pdf"),
         ]);
-        assert!(s.has_files);
+        assert!(s.has_files && !s.files_virtual);
+        assert_eq!(s.files, paths(&["/home/u/report.pdf", "/home/u/My Folder"]));
         assert!(s.parts.is_empty());
+        assert_eq!(asked, vec![URI_LIST.to_owned()]);
+    }
+
+    #[test]
+    fn gnome_copied_files_is_read_first() {
         let (s, asked) = snap(&[
-            (GNOME_COPIED_FILES, b"copy\nfile:///a"),
+            (GNOME_COPIED_FILES, b"copy\nfile:///a\nfile:///b%20c"),
+            ("text/uri-list", b"file:///other\r\n"),
             ("UTF8_STRING", b"a"),
         ]);
-        assert!(s.has_files);
-        assert!(asked.is_empty());
+        assert!(s.has_files && !s.files_virtual);
+        assert_eq!(s.files, paths(&["/a", "/b c"]));
+        assert_eq!(asked, vec![GNOME_COPIED_FILES.to_owned()]);
+    }
+
+    #[test]
+    fn unreadable_gnome_list_falls_back_to_uri_list() {
+        let types = offered(&[GNOME_COPIED_FILES, URI_LIST, "UTF8_STRING"]);
+        let s = build_snapshot(1, &types, |m| match m {
+            GNOME_COPIED_FILES => Err(ClipboardError::Busy),
+            URI_LIST => Ok(Some(b"file:///x/y\r\n".to_vec())),
+            _ => Ok(Some(b"y".to_vec())),
+        });
+        assert!(s.has_files && !s.files_virtual);
+        assert_eq!(s.files, paths(&["/x/y"]));
+        // Neither list readable: still a file copy (the text is a file name), not virtual.
+        let s = build_snapshot(1, &types, |m| match m {
+            "UTF8_STRING" => Ok(Some(b"y".to_vec())),
+            _ => Ok(None),
+        });
+        assert!(s.has_files && !s.files_virtual && s.files.is_empty() && s.parts.is_empty());
+        let s = build_snapshot(1, &offered(&[GNOME_COPIED_FILES]), |_| Ok(None));
+        assert!(s.has_files && !s.files_virtual);
+    }
+
+    #[test]
+    fn cut_is_read_as_copy() {
+        let (s, _) = snap(&[(GNOME_COPIED_FILES, b"cut\nfile:///home/u/a.txt\n")]);
+        assert_eq!(s.files, paths(&["/home/u/a.txt"]));
+    }
+
+    #[test]
+    fn copy_with_no_local_path_is_virtual() {
+        // Nautilus in an SFTP folder or in the trash: a file copy, but nothing on disk.
+        let (s, _) = snap(&[
+            (GNOME_COPIED_FILES, b"copy\nsftp://host/x\ntrash:///y"),
+            ("UTF8_STRING", b"x"),
+        ]);
+        assert!(s.has_files && s.files_virtual && s.files.is_empty() && s.parts.is_empty());
+        // A uri-list with a `file:` URI of another host only.
+        let (s, _) = snap(&[("text/uri-list", b"file://nas/share/x\r\n")]);
+        assert!(s.has_files && s.files_virtual && s.files.is_empty());
+    }
+
+    #[test]
+    fn mixed_list_keeps_the_local_paths() {
+        let (s, _) = snap(&[(
+            "text/uri-list",
+            b"https://example.org/\r\nfile:///a\r\nfile://nas/b\r\n",
+        )]);
+        assert!(s.has_files && !s.files_virtual);
+        assert_eq!(s.files, paths(&["/a"]));
+    }
+
+    #[test]
+    fn parse_file_uri_forms() {
+        let u = parse_file_uris(
+            b"file:///a/b\r\n\
+              FILE://localhost/c\r\n\
+              file://LocalHost/d\n\
+              file:/e%2Ff\n\
+              \n\
+              # file:///comment\r\n\
+              file:///g%23h#frag\n\
+              file:///i?q=1\n\
+              file:///bad%zz%4\n\
+              file://host/x\n\
+              file:relative\n\
+              file:///nul%00x\n\
+              file://\n\
+              https://example.org/\n\
+              mailto:a@b",
+        );
+        assert_eq!(
+            u.paths,
+            paths(&["/a/b", "/c", "/d", "/e/f", "/g#h", "/i", "/bad%zz%4"])
+        );
+        assert_eq!(u.foreign_files, 4);
+        assert_eq!(u.other, 2);
+        assert!(u.is_file_copy());
+        assert!(!parse_file_uris(b"https://x\r\n# c\r\n").is_file_copy());
+        assert_eq!(parse_file_uris(b""), FileUris::default());
+    }
+
+    #[test]
+    fn gnome_value_without_verb_is_all_uris() {
+        assert_eq!(parse_gnome_copied_files(b"file:///a").paths, paths(&["/a"]));
+        assert_eq!(
+            parse_gnome_copied_files(b"copy").paths,
+            Vec::<PathBuf>::new()
+        );
+        assert_eq!(parse_gnome_copied_files(b"").paths, Vec::<PathBuf>::new());
+        assert_eq!(
+            parse_gnome_copied_files(b"COPY\r\nfile:///a\r\n").paths,
+            paths(&["/a"])
+        );
+    }
+
+    #[test]
+    fn file_uri_escapes_what_it_must() {
+        assert_eq!(
+            file_uri(Path::new("/home/u/a b.txt")),
+            "file:///home/u/a%20b.txt"
+        );
+        assert_eq!(
+            file_uri(Path::new("/t/grüß #1%.txt")),
+            "file:///t/gr%C3%BC%C3%9F%20%231%25.txt"
+        );
+        assert_eq!(file_uri(Path::new("/x-y_z.~/")), "file:///x-y_z.~/");
+    }
+
+    #[test]
+    fn every_byte_survives_a_round_trip() {
+        // Every ASCII byte but NUL and `/` (both are never in a Linux file name), plus some
+        // non-ASCII names. Off Unix the pure test uses a few UTF-8 names only.
+        let names: Vec<String> = if cfg!(unix) {
+            (1u8..=127)
+                .filter(|&b| b != b'/')
+                .map(|b| format!("n{}m", b as char))
+                .chain(["grüß", "日本語", "🎉 x", "a\r\nb", "%41", "#?", " lead"].map(String::from))
+                .collect()
+        } else {
+            vec!["a b".into(), "grüß #1".into(), "%41".into()]
+        };
+        let list: Vec<PathBuf> = names
+            .iter()
+            .map(|n| PathBuf::from(format!("/d/{n}")))
+            .collect();
+        // Line breaks inside a name are escaped, so each URI stays on one line.
+        assert_eq!(parse_file_uris(&build_uri_list(&list)).paths, list);
+        assert_eq!(
+            parse_gnome_copied_files(&build_gnome_copied_files(&list)).paths,
+            list
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_names_round_trip() {
+        use std::os::unix::ffi::OsStringExt;
+        let p = PathBuf::from(std::ffi::OsString::from_vec(b"/d/\xff\xfe x".to_vec()));
+        let list = vec![p];
+        assert_eq!(parse_file_uris(&build_uri_list(&list)).paths, list);
+        assert_eq!(path_text(&list), "/d/\u{FFFD}\u{FFFD} x".as_bytes());
+    }
+
+    #[test]
+    fn built_lists_have_the_expected_shape() {
+        let list = paths(&["/a", "/b c"]);
+        assert_eq!(build_uri_list(&list), b"file:///a\r\nfile:///b%20c\r\n");
+        assert_eq!(
+            build_gnome_copied_files(&list),
+            b"copy\nfile:///a\nfile:///b%20c"
+        );
+        assert_eq!(path_text(&list), b"/a\n/b c");
+    }
+
+    #[test]
+    fn write_file_items_offer_all_file_types_and_marker() {
+        let list = paths(&["/home/u/a.png"]);
+        let items = write_file_items(&list, None);
+        let names: Vec<&str> = items.iter().map(|(m, _)| m.as_str()).collect();
+        for m in [GNOME_COPIED_FILES, URI_LIST, KDE_CUT_SELECTION]
+            .iter()
+            .chain(WRITE_TEXT)
+        {
+            assert!(names.contains(m), "{m}");
+        }
+        assert!(!names.contains(&PNG));
+        assert_eq!(names.last(), Some(&MARKER));
+        let get = |m: &str| items.iter().find(|(n, _)| n == m).unwrap().1.to_vec();
+        assert_eq!(get(KDE_CUT_SELECTION), b"0");
+        assert_eq!(get("UTF8_STRING"), b"/home/u/a.png");
+        // What we write reads back as our own clip; without the marker, as the same files.
+        let offered: Vec<String> = names.iter().map(|s| (*s).to_owned()).collect();
+        assert!(plan(&offered).marker);
+        let s = build_snapshot(1, &offered[..offered.len() - 1], |m| Ok(Some(get(m))));
+        assert!(s.has_files && s.parts.is_empty());
+        assert_eq!(s.files, list);
+        // With the companion image (spec 2.2.5).
+        let items = write_file_items(&list, Some(b"png"));
+        let png = items.iter().find(|(n, _)| n == PNG).unwrap();
+        assert_eq!(png.1.as_slice(), b"png");
+        assert_eq!(items.last().unwrap().0, MARKER);
     }
 
     #[test]
@@ -368,7 +810,7 @@ mod tests {
             ("text/uri-list", b"https://example.org/\r\n"),
             ("UTF8_STRING", b"https://example.org/"),
         ]);
-        assert!(!s.has_files);
+        assert!(!s.has_files && !s.files_virtual && s.files.is_empty());
         assert_eq!(s.parts.len(), 1);
     }
 
@@ -382,7 +824,7 @@ mod tests {
                 Ok(Some(b"x".to_vec()))
             }
         });
-        assert!(s.has_files);
+        assert!(s.has_files && !s.files_virtual && s.files.is_empty() && s.parts.is_empty());
     }
 
     #[test]

@@ -15,8 +15,11 @@ pub const CAN_UPLOAD_TO_CLOUD: &str = "CanUploadToCloudClipboard";
 pub const PNG: &str = "PNG";
 /// `CF_HTML`.
 pub const HTML: &str = "HTML Format";
-/// Virtual files (for example an Outlook attachment). Treated like `CF_HDROP`.
+/// Virtual files (an Outlook attachment, an item inside a zip opened in Explorer). Without
+/// `CF_HDROP` next to it, the copy has no real paths and is never synced.
 pub const FILE_GROUP_DESCRIPTOR: &str = "FileGroupDescriptorW";
+/// Copy or cut for a file list (a DWORD `DROPEFFECT`). Our file writes set it to copy (1).
+pub const PREFERRED_DROP_EFFECT: &str = "Preferred DropEffect";
 
 /// Standard format IDs used here.
 pub const CF_BITMAP: u32 = 2;

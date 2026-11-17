@@ -34,6 +34,10 @@ use crate::profile::Profile;
 use crate::settings;
 use crate::state::{Activity, Notice, PairLockout, Pause, StateFile};
 
+mod transfers;
+
+use transfers::{FileState, Xfer};
+
 /// The fix for a missing Windows firewall rule (one UAC prompt).
 const FIREWALL_FIX: &str =
     "Run \"uc firewall add\" (or Fix in the window). Windows asks for permission once.";
@@ -77,6 +81,16 @@ pub fn own_device_type() -> u8 {
     } else {
         3
     }
+}
+
+/// The engine settings for this device. Test profiles with `UCLIP_TEST_NO_FILES=1` send no
+/// feature bits, so they act as a 0.1.x peer that cannot receive files.
+fn engine_config(profile: &Profile, rec: DeviceRecord) -> Config {
+    let mut cfg = Config::new(rec, Role::Full);
+    if profile.test_env("UCLIP_TEST_NO_FILES").as_deref() == Some("1") {
+        cfg.features = 0;
+    }
+    cfg
 }
 
 fn kind_of_type(t: u8) -> DeviceKind {
@@ -176,6 +190,9 @@ enum Wake {
     Resume,
 }
 
+/// How often the `transfer` event may go out (at most 4 per second, file sync spec 5).
+const TRANSFER_TICK: Duration = Duration::from_millis(250);
+
 /// IPC calls that change saved settings. Their reply says so when the save failed.
 const CHANGE_CALLS: &[&str] = &["devices.rename", "pause.set", "settings.set", "setup.step"];
 
@@ -272,6 +289,10 @@ pub struct Core {
     updater: Option<crate::update::Updater>,
     /// The version this agent reports.
     version: String,
+    /// File copies: walk, hash, sends, the fetch, the files folder (file sync spec 5).
+    files: FileState,
+    /// The other end of `files`' channel, until the main loop takes it.
+    xfer_rx: Option<mpsc::UnboundedReceiver<Xfer>>,
 }
 
 /// Why the agent could not start.
@@ -418,13 +439,18 @@ impl Core {
             name: String::new(),
             kind: kind_of_type(own_device_type()),
         };
-        let engine = Engine::new(Config::new(rec, Role::Full));
+        let engine = Engine::new(engine_config(&profile, rec));
         let port = if state.port != 0 {
             state.port
         } else {
             profile.default_port()
         };
         let host = Host::with_lockout(Lockout::from(state.pair_lockout).loaded(now_ms()));
+        let (mut files, xfer_rx) = FileState::new(profile.files_dir());
+        files.send_rate = profile
+            .test_env("UCLIP_TEST_SEND_RATE")
+            .and_then(|v| v.parse().ok());
+        files.serve_refused = profile.test_env("UCLIP_TEST_SERVE_REFUSED").as_deref() == Some("1");
         let mut core = Core {
             profile,
             dir,
@@ -478,14 +504,18 @@ impl Core {
             updater: crate::update::UpdateCfg::from_profile(&profile_for_update)
                 .map(|c| crate::update::Updater::new(c, profile_for_update.clone())),
             version: crate::update::current_version(&profile_for_update),
+            files,
+            xfer_rx: Some(xfer_rx),
         };
+        core.files_start();
         core.reset_engine();
         core.apply_settings();
         core.default_autostart();
         if core.state.pause == Pause::Forever
             || matches!(core.state.pause, Pause::Until(t) if t > now_ms())
         {
-            core.engine.set_paused(true);
+            let evs = core.engine.set_paused(true);
+            core.on_engine(evs);
         }
         core.start_net();
         Ok(core)
@@ -521,8 +551,10 @@ impl Core {
             kind: kind_of_type(own_device_type()),
         };
         let paused = self.engine.is_paused();
-        self.engine = Engine::new(Config::new(rec, Role::Full));
-        self.engine.set_paused(paused);
+        self.files_reset();
+        self.engine = Engine::new(engine_config(&self.profile, rec));
+        // A fresh engine has no transfers to cancel.
+        let _ = self.engine.set_paused(paused);
         self.apply_settings();
         self.sync_engine_group();
     }
@@ -551,6 +583,10 @@ impl Core {
         let fwd = cfg!(target_os = "macos") && s.forward_apple_clips;
         self.engine.set_forward_remote(fwd);
         self.clip.set_forward_remote(fwd);
+        self.engine
+            .set_file_max(uc_core::caps::file_limit_bytes(u64::from(s.file_limit_mb)));
+        // Off only ends an automatic walk; picked copies and transfers go on.
+        self.engine.set_auto_file_copy(s.auto_file_copy);
     }
 
     /// Decision 2026-11-14 (Max): start at login is on by default and is no longer a setup
@@ -613,9 +649,15 @@ impl Core {
         let disc: Arc<dyn uc_net::Discovery>;
         let binder: Arc<dyn uc_net::SocketBinder>;
         if let Some(ip) = self.profile.test_env("UCLIP_TEST_LOOPBACK") {
-            let Ok(ip) = ip.parse() else {
+            let Ok(ip) = ip.parse::<std::net::IpAddr>() else {
                 self.net_error = Some("UCLIP_TEST_LOOPBACK is not an address".into());
                 return;
+            };
+            // The network lab (Linux namespaces) passes a LAN address: a physical /24 there.
+            let (kind, prefix) = if ip.is_loopback() {
+                (Kind::Loopback, 8)
+            } else {
+                (Kind::Physical, 24)
             };
             self.policy = Policy {
                 allow_loopback: true,
@@ -625,9 +667,9 @@ impl Core {
                 name: "lo-test".into(),
                 index: 1,
                 description: "test loopback".into(),
-                kind: Kind::Loopback,
+                kind,
                 up: true,
-                addrs: vec![IfAddr { ip, prefix: 8 }],
+                addrs: vec![IfAddr { ip, prefix }],
             }];
             self.ifaces = list.clone();
             cfg.ifaces = Some(Arc::new(move || list.clone()));
@@ -782,6 +824,9 @@ impl Core {
     ) {
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut progress = tokio::time::interval(TRANSFER_TICK);
+        progress.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut xfer_rx = self.xfer_rx.take().expect("the main loop runs once");
         #[cfg(target_os = "macos")]
         let mut poll_at = tokio::time::Instant::now();
         #[cfg(not(target_os = "macos"))]
@@ -827,6 +872,8 @@ impl Core {
                         poll_at = tokio::time::Instant::now() + p.next;
                     }
                 }
+                Some(m) = xfer_rx.recv() => self.on_xfer(m),
+                _ = progress.tick(), if self.files.busy() => self.emit_transfer(),
                 _ = tick.tick() => self.on_tick().await,
                 _ = &mut ctrl_c => self.shutdown = true,
             }
@@ -869,7 +916,8 @@ impl Core {
             && wall >= t
         {
             self.state.pause = Pause::Off;
-            self.engine.set_paused(false);
+            let evs = self.engine.set_paused(false);
+            self.on_engine(evs);
             self.emit("status", json!({"paused": false}));
             self.dirty = true;
         }
@@ -959,6 +1007,9 @@ impl Core {
 
     fn on_engine(&mut self, evs: Vec<EngineEvent>) {
         for e in evs {
+            if self.on_file_event(&e) {
+                continue;
+            }
             match e {
                 EngineEvent::Sent { kind, peers, .. } => {
                     tracing::info!(kind = kind_text(kind), peers, "sent");
@@ -1055,6 +1106,7 @@ impl Core {
                 _ => {}
             }
         }
+        self.sync_walk();
     }
 
     // ------------------------------------------------------------ network
@@ -1065,7 +1117,9 @@ impl Core {
             NetEvent::Down { peer } => {
                 tracing::info!(peer = %short_id(&peer.0), "link down");
                 self.peers.remove(&peer);
-                self.engine.disconnect(peer);
+                let evs = self.engine.disconnect(peer);
+                self.on_engine(evs);
+                self.files_peer_gone(peer);
                 self.emit("devices", json!({}));
             }
             NetEvent::Frame { peer, frame } => self.on_frame(peer, frame),
@@ -1077,6 +1131,7 @@ impl Core {
                 self.emit("devices", json!({}));
             }
             NetEvent::Pairing(conn) => self.on_pairing_conn(conn),
+            NetEvent::Stream { peer, link, stream } => self.on_stream(peer, link, stream),
             NetEvent::PortChanged(p) => {
                 tracing::info!(port = p, "port in use, moved to a new one");
                 self.port = p;
@@ -1112,6 +1167,8 @@ impl Core {
             epoch: u64::from(epoch),
             wall_ms: now_ms(),
             group: *g.group_id(),
+            // The same extension as the engine's Hello (file sync spec 3).
+            ext: self.engine.hello_ext(),
         }))
     }
 
@@ -1150,7 +1207,9 @@ impl Core {
             return;
         };
         let _ = link.send(msg::encode(&hello));
-        self.engine.disconnect(peer);
+        let evs = self.engine.disconnect(peer);
+        self.on_engine(evs);
+        self.files_peer_gone(peer);
         self.peers.insert(
             peer,
             PeerLink {
@@ -1169,7 +1228,9 @@ impl Core {
         if let Some(p) = self.peers.remove(&peer) {
             p.link.close(2, b"closed");
         }
-        self.engine.disconnect(peer);
+        let evs = self.engine.disconnect(peer);
+        self.on_engine(evs);
+        self.files_peer_gone(peer);
         if let Some(n) = &self.net {
             n.end_probation(peer);
         }
@@ -1371,11 +1432,14 @@ impl Core {
             .filter(|(d, p)| p.gate.data_allowed() && !members.contains(&d.0))
             .map(|(d, _)| *d)
             .collect();
+        let mut engine_evs = Vec::new();
         for d in &gone {
             if let Some(p) = self.peers.get(d) {
                 p.send(&Message::Removed);
             }
-            self.engine.disconnect(*d);
+            // The removed peer's link closes, which ends its transfers. The engine may
+            // start a queued send for another peer here, so its events are handled below.
+            engine_evs.extend(self.engine.disconnect(*d));
             self.closing.push((Instant::now() + FLUSH, *d));
         }
         for p in self.peers.values_mut() {
@@ -1404,6 +1468,10 @@ impl Core {
             self.rotate_at = Some(Instant::now() + Duration::from_secs(u64::from(wait)));
         }
         self.sync_engine_group();
+        for d in gone {
+            self.files_peer_gone(d);
+        }
+        self.on_engine(engine_evs);
         self.emit("devices", json!({}));
         self.save();
     }
@@ -1691,6 +1759,8 @@ impl Core {
             "pause.set" => self.pause(&p),
             "settings.get" => Ok(self.settings_json()),
             "settings.set" => self.settings_set(&p),
+            "files.copy" => self.files_copy(&p),
+            "transfer.stop" => Ok(self.transfer_stop()),
             "diagnostics" => Ok(self.diagnostics().await),
             "pair.start" => self.pair_start().await,
             "pair.cancel" => {
@@ -1743,7 +1813,29 @@ impl Core {
                     Err(e) => Err(IpcError::new("clipboard", e.to_string())),
                 }
             }
-            "debug.clipboard" => Ok(json!({"text": self.clip.debug_text()})),
+            "debug.copy_files" => {
+                let paths: Vec<PathBuf> = p
+                    .get("paths")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(PathBuf::from)
+                    .collect();
+                match self.clip.debug_copy_files(&paths) {
+                    Ok(seq) => {
+                        self.read_retries = 0;
+                        self.settle_at = Some(Instant::now() + SETTLE);
+                        Ok(json!({"seq": seq}))
+                    }
+                    Err(e) => Err(IpcError::new("clipboard", e.to_string())),
+                }
+            }
+            "debug.clipboard" => Ok(json!({
+                "text": self.clip.debug_text(),
+                "files": self.clip.debug_files(),
+                "png": self.clip.debug_png().map(|b| HEXLOWER.encode(blake3::hash(&b).as_bytes())),
+            })),
             "debug.wake" => {
                 self.on_resume();
                 Ok(json!({}))
@@ -1890,7 +1982,8 @@ impl Core {
                 ));
             }
         };
-        self.engine.set_paused(self.state.pause != Pause::Off);
+        let evs = self.engine.set_paused(self.state.pause != Pause::Off);
+        self.on_engine(evs);
         self.save();
         self.emit("status", json!({}));
         Ok(serde_json::to_value(self.state.pause).unwrap_or(Value::Null))
@@ -2422,6 +2515,8 @@ impl Core {
             "pid": std::process::id(),
             "version": self.version,
             "activity": self.state.activity.iter().rev().take(5).collect::<Vec<_>>(),
+            "transfer": self.transfer_view(),
+            "last_transfer_error": self.last_transfer_error(),
         })
     }
 
@@ -2551,6 +2646,15 @@ impl Core {
             lines.push("Group: none".into());
         }
         lines.push(format!("Links open: {}", self.connected()));
+        let s = &self.state.settings;
+        lines.push(format!(
+            "Automatic file copies: {}, up to {} MB, transfer: {}",
+            if s.auto_file_copy { "on" } else { "off" },
+            s.file_limit_mb,
+            self.transfer_view()
+                .and_then(|v| v["phase"].as_str().map(str::to_string))
+                .unwrap_or_else(|| "none".into())
+        ));
         let ps = self.host.status(now_ms());
         lines.push(format!(
             "Pairing: open={} code tries={} lockout={} lockout ms={} lockouts={}",

@@ -70,7 +70,7 @@ impl From<PairLockout> for uc_pair::session::Lockout {
 pub struct Activity {
     /// "text", "image", "text and image", ...
     pub kind: String,
-    /// "sent", "received", "not sent".
+    /// "sent", "received", "not sent", "not received" (file copies).
     pub direction: String,
     /// The other device's name, if any.
     pub device: Option<String>,

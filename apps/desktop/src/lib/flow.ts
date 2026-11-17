@@ -14,7 +14,7 @@
 // App.svelte renders each screen in a `.layer` (absolute, fills the body) inside a {#key}, so
 // the old screen stays for its exit while the new one enters. `screenOut` is the old layer's
 // Svelte out-transition, `screenIn` the new layer's action. Screens mark their parts with
-// data-m="text|art|cta|back|os|rows|hdr|tiles|here" and the S1 target with data-shape.
+// data-m="text|art|cta|back|os|rows|hdr|tiles|files|here" and the S1 target with data-shape.
 import { anim, canAnimate, draw, IN, IO, OUT, press, reduced, rise, track } from './motion';
 import { store, type View } from './store.svelte';
 import { endIn, offerIn, updatingIn } from './update-motion';
@@ -206,10 +206,12 @@ function welcomeIn(node: HTMLElement, r: boolean) {
   anim(node.querySelector('.w-arcs'), [{ opacity: 0 }, { opacity: 1 }], { duration: 700, delay: 1050, easing: OUT });
 }
 
-// H3: the header, then the tiles one by one, then This PC's bar docks from below.
+// H3: the header, then the tiles one by one, then This PC's bar docks from below. The file
+// buttons above the bar come up with it, a little before.
 function homeIn(node: HTMLElement) {
   rise(q(node, 'hdr'), { y: 6 });
   node.querySelectorAll('[data-m="tiles"] > *').forEach((t, i) => rise(t, { y: 10, delay: 120 + i * 60 }));
+  rise(q(node, 'files'), { y: 34, d: 760, delay: 380 });
   rise(q(node, 'here'), { y: 34, d: 760, delay: 420 });
 }
 
