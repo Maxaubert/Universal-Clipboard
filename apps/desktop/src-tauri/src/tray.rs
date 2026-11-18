@@ -131,19 +131,20 @@ impl Rect {
 
 /// Where the panel (its window, clear edge included) goes, next to the icon and inside the
 /// work area of the icon's screen. `edge`: the clear edge in physical pixels, so the visible
-/// panel sits `gap` away from the taskbar or menu bar.
+/// panel sits `gap` away from the taskbar or menu bar. Above or below the icon, the visible
+/// panel's right edge lines up with the icon's right edge, like the system tray menus (Max
+/// 2026-11-18).
 pub fn panel_position(icon: Rect, work: Rect, size: (i32, i32), edge: i32, gap: i32) -> (i32, i32) {
     let (w, h) = size;
-    let cx = icon.x + icon.w / 2;
     let cy = icon.y + icon.h / 2;
-    let centred_x = cx - w / 2;
+    let right_x = icon.right() - w + edge;
     let centred_y = cy - h / 2;
     let (x, y) = if icon.y >= work.bottom() - 1 {
         // Taskbar at the bottom: above it.
-        (centred_x, work.bottom() - h + edge - gap)
+        (right_x, work.bottom() - h + edge - gap)
     } else if icon.bottom() <= work.y + 1 {
         // Taskbar or menu bar at the top: below it.
-        (centred_x, work.y - edge + gap)
+        (right_x, work.y - edge + gap)
     } else if icon.x >= work.right() - 1 {
         // Taskbar on the right.
         (work.right() - w + edge - gap, centred_y)
@@ -152,9 +153,9 @@ pub fn panel_position(icon: Rect, work: Rect, size: (i32, i32), edge: i32, gap: 
         (work.x - edge + gap, centred_y)
     } else if cy > work.y + work.h / 2 {
         // The icon is inside the work area (the Windows overflow flyout): above it.
-        (centred_x, icon.y - h + edge - gap)
+        (right_x, icon.y - h + edge - gap)
     } else {
-        (centred_x, icon.bottom() - edge + gap)
+        (right_x, icon.bottom() - edge + gap)
     };
     // Keep the visible panel inside the work area.
     let x = x.clamp(work.x - edge, (work.right() - w + edge).max(work.x - edge));
@@ -262,6 +263,9 @@ pub struct Tray {
     /// When the panel last closed: a click on the icon that closed it by taking the focus
     /// must not open it again.
     last_close: Mutex<Option<Instant>>,
+    /// The panel is on screen. Until then a lost focus is ignored: on Windows the new, still
+    /// hidden window gets the focus and loses it at once, which closed it before it showed.
+    panel_up: AtomicBool,
     /// The screen the next window should open on (read by the page via `launch_route`).
     pub pending_route: Mutex<Option<String>>,
     #[cfg(target_os = "linux")]
@@ -438,11 +442,14 @@ fn toggle_panel(app: &AppHandle) {
             .focused(true);
     #[cfg(any(windows, target_os = "macos"))]
     let b = b.transparent(true);
+    tray(app).panel_up.store(false, Ordering::SeqCst);
     match b.build() {
         Ok(w) => {
             let app2 = app.clone();
             w.on_window_event(move |e| {
-                if let tauri::WindowEvent::Focused(false) = e {
+                if let tauri::WindowEvent::Focused(false) = e
+                    && tray(&app2).panel_up.load(Ordering::SeqCst)
+                {
                     close_panel(&app2);
                 }
             });
@@ -455,6 +462,7 @@ fn toggle_panel(app: &AppHandle) {
 pub fn close_panel(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(PANEL) {
         *tray(app).last_close.lock().unwrap() = Some(Instant::now());
+        tray(app).panel_up.store(false, Ordering::SeqCst);
         let _ = w.destroy();
     }
 }
@@ -476,6 +484,7 @@ pub fn panel_ready(app: AppHandle, height: f64) {
     let Some(m) = mon else {
         let _ = w.show();
         let _ = w.set_focus();
+        tray(&app).panel_up.store(true, Ordering::SeqCst);
         return;
     };
     let scale = m.scale_factor();
@@ -500,21 +509,18 @@ pub fn panel_ready(app: AppHandle, height: f64) {
     let gap = (8.0 * scale).round() as i32;
     let (x, y) = panel_position(icon, work, size, edge, gap);
     // macOS: like the system menus. macOS keeps a window from going under the menu bar, so
-    // the page drops its clear top edge (html.mac) and the window starts just below the bar,
-    // with the panel's right edge under the icon's right edge.
+    // the page drops its clear top edge (html.mac) and the window starts just below the bar;
+    // and panel_position already puts the panel's right edge under the icon's right edge.
     #[cfg(target_os = "macos")]
-    let (x, y) = {
-        let _ = (x, y, gap);
-        let x = (icon.right() - size.0 + edge).clamp(
-            work.x - edge,
-            (work.right() - size.0 + edge).max(work.x - edge),
-        );
-        (x, work.y + (3.0 * scale).round() as i32)
+    let y = {
+        let _ = (y, gap);
+        work.y + (3.0 * scale).round() as i32
     };
     let _ = w.set_size(PhysicalSize::new(size.0 as u32, size.1 as u32));
     let _ = w.set_position(PhysicalPosition::new(x, y));
     let _ = w.show();
     let _ = w.set_focus();
+    tray(&app).panel_up.store(true, Ordering::SeqCst);
     #[cfg(target_os = "macos")]
     activate_app(&app);
     if let Some(t) = tray(&app).clicked.lock().unwrap().take() {
@@ -822,7 +828,11 @@ mod tests {
             1032 - GAP,
             "visible bottom sits GAP above the bar"
         );
-        assert_eq!(p.0 + SIZE.0 / 2, 1712, "centred on the icon");
+        assert_eq!(
+            p.0 + SIZE.0 - EDGE,
+            1724,
+            "right edge on the icon's right edge"
+        );
         inside(p, work);
         // An icon at the far right corner: pushed left, still inside.
         let p = panel_position(Rect { x: 1900, ..icon }, work, SIZE, EDGE, GAP);
