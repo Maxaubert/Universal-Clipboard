@@ -13,10 +13,9 @@
   let transfer = $state<Transfer | null>(null);
   let loaded = $state(false);
   let error = $state<string | null>(null);
-  let now = $state(Date.now());
   let card: HTMLDivElement | undefined = $state();
 
-  const v = $derived(panelView(status, devices, transfer, now));
+  const v = $derived(panelView(status, devices, transfer));
 
   async function load() {
     if (!api) return;
@@ -28,7 +27,6 @@
     } catch {
       status = null;
     }
-    now = Date.now();
     loaded = true;
   }
 
@@ -80,11 +78,9 @@
         ro.observe(card);
       }
     })();
-    const clock = setInterval(() => (now = Date.now()), 30_000);
     return () => {
       off?.();
       ro?.disconnect();
-      clearInterval(clock);
       window.removeEventListener('keydown', esc);
     };
   });

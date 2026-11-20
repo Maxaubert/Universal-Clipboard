@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import Panel from '../Panel.svelte';
 import { setApi } from '../lib/ipc';
 import { createMockApi, type Scenario } from '../lib/mock';
-import { panelView, shortAgo } from '../lib/panel';
+import { panelView } from '../lib/panel';
 import type { Device, Status } from '../lib/types';
 
 async function open(scenario: Scenario) {
@@ -35,16 +35,15 @@ const devs: Device[] = [
 
 describe('panelView', () => {
   const now = 1_000_000_000;
-  it('synced shows one short fact and the other devices', () => {
+  it('synced shows the other devices and no status line', () => {
     const v = panelView(
       status({ activity: [{ kind: 'Text', direction: 'received', device: "Max's Mac", time_ms: now - 120_000, note: null }] }),
       devs,
       null,
-      now,
     );
     expect(v.word).toBe('Synced');
     expect(v.lamp).toBe('ok');
-    expect(v.sub).toBe("Text from Max's Mac, 2 min ago");
+    expect(v).not.toHaveProperty('sub');
     expect(v.chips).toEqual([
       { name: "Max's Mac", on: true },
       { name: "Max's iPhone", on: false },
@@ -53,34 +52,27 @@ describe('panelView', () => {
   });
   it('a transfer is only a bar and a percent, no fact line', () => {
     const t = { id: '1', phase: 'receiving', device: "Max's Mac", done: 40, total: 100, files: 3 } as const;
-    const v = panelView(status({}), devs, t, now);
+    const v = panelView(status({}), devs, t);
     expect(v.word).toBe('Receiving');
     expect(v.xfer).toEqual({ up: false, pct: 40 });
-    expect(v.sub).toBeNull();
-    const s = panelView(status({}), devs, { ...t, phase: 'sending', done: 72 }, now);
+    const s = panelView(status({}), devs, { ...t, phase: 'sending', done: 72 });
     expect(s.word).toBe('Sending');
     expect(s.xfer).toEqual({ up: true, pct: 72 });
   });
   it('paused, not connected with the VPN note, needs attention, agent down', () => {
-    expect(panelView(status({ state: 'paused', paused: true }), devs, null, now)).toMatchObject({ word: 'Paused', lamp: 'off', paused: true, sub: null });
+    expect(panelView(status({ state: 'paused', paused: true }), devs, null)).toMatchObject({ word: 'Paused', lamp: 'off', paused: true });
     const vpn = panelView(
       status({ state: 'needs-attention', fix_code: 'vpn', reason: "Can't reach your other device? Your VPN blocks the local network." }),
       devs,
       null,
-      now,
     );
     expect(vpn).toMatchObject({ word: 'Not connected', lamp: 'warn' });
     expect(vpn.note).toEqual({ text: "Can't reach your other device? Your VPN blocks the local network.", fix: 'Show me how', route: 'vpn' });
-    const clock = panelView(status({ state: 'needs-attention', fix_code: 'clock', reason: 'The date and time are wrong.' }), devs, null, now);
+    const clock = panelView(status({ state: 'needs-attention', fix_code: 'clock', reason: 'The date and time are wrong.' }), devs, null);
     expect(clock.word).toBe('Needs attention');
     expect(clock.note?.route).toBeNull();
-    expect(panelView(null, devs, null, now)).toMatchObject({ word: 'Not running', lamp: 'warn' });
-    expect(panelView(status({ state: 'no-peers', connected: 0 }), devs, null, now).word).toBe('Not connected');
-  });
-  it('short times', () => {
-    expect(shortAgo(now - 5_000, now)).toBe('just now');
-    expect(shortAgo(now - 3 * 3_600_000, now)).toBe('3 h ago');
-    expect(shortAgo(now - 86_400_000, now)).toBe('1 day ago');
+    expect(panelView(null, devs, null)).toMatchObject({ word: 'Not running', lamp: 'warn' });
+    expect(panelView(status({ state: 'no-peers', connected: 0 }), devs, null).word).toBe('Not connected');
   });
 });
 
