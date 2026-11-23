@@ -17,6 +17,7 @@
 //! on, the process starts with `--tray` (no window) and closing the window does not end it.
 
 pub mod tray;
+pub mod watch;
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -241,6 +242,7 @@ async fn agent_loop(app: tauri::AppHandle) {
                 .shown
                 .load(std::sync::atomic::Ordering::SeqCst)
         {
+            tracing::info!("no agent for a minute and nothing on screen: exit");
             app.exit(0);
             return;
         }
@@ -249,6 +251,11 @@ async fn agent_loop(app: tauri::AppHandle) {
         {
             // (Re)connected, for example to the new agent after an update: the page checks
             // again, so it leaves the "agent is down" screen by itself.
+            if misses > 0 {
+                tracing::info!(after_misses = misses, "agent connected");
+            } else {
+                tracing::info!("agent connected");
+            }
             misses = 0;
             let _ = app.emit("uc-event", json!({"event": "status", "data": {}}));
             refresh_tray(&app, &p, true).await;
@@ -261,6 +268,7 @@ async fn agent_loop(app: tauri::AppHandle) {
                         // Before the pages hear of it: an open page would call `status`, which
                         // starts the agent again.
                         if e.event == "quitting" {
+                            tracing::info!("agent quitting: exit");
                             app.exit(0);
                             return;
                         }
@@ -292,6 +300,7 @@ async fn agent_loop(app: tauri::AppHandle) {
                 }
             }
             // The agent went away: tell the page so it checks again.
+            tracing::info!("agent connection lost");
             let _ = app.emit("uc-event", json!({"event": "status", "data": {}}));
         }
         misses += 1;
@@ -320,6 +329,14 @@ async fn refresh_tray(app: &AppHandle, p: &Profile, settings: bool) {
 }
 
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    watch::init_log();
+    let restarted = watch::wait_if_restarted(&args);
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        flags = ?watch::flags(&args),
+        "window process start"
+    );
     let app = tauri::Builder::default()
         // A second launch goes to this process: `--tray` (the agent at its start) changes
         // nothing, any other start opens the window. The agent's `--route update` also moves
@@ -330,6 +347,7 @@ pub fn run() {
                 return;
             }
             let route = route_arg(&args);
+            tracing::info!(flags = ?watch::flags(&args), "second launch");
             // Not in this callback: building a webview here deadlocks on Windows.
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
@@ -342,8 +360,9 @@ pub fn run() {
             });
         }))
         .manage(tray::Tray::default())
-        .setup(|app| {
+        .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
+            watch::start(app.handle(), restarted);
             // `--tray`: the icon only. Otherwise the window, as before.
             #[cfg(target_os = "macos")]
             if tray::tray_arg(&args) {
@@ -376,6 +395,10 @@ pub fn run() {
         // process: open the window.
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = e {
+            tracing::info!(
+                main_open = app.get_webview_window("main").is_some(),
+                "reopen (app opened while running)"
+            );
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 if app.get_webview_window("main").is_none() {
@@ -399,7 +422,9 @@ pub fn run() {
         // With the icon shown, closing the last window (the window or the panel) keeps the
         // process. Quit, "icon off" and the agent quitting exit with a code.
         if let RunEvent::ExitRequested {
-            code: None, api, ..
+            code: None,
+            ref api,
+            ..
         } = e
             && app
                 .state::<tray::Tray>()
@@ -407,6 +432,8 @@ pub fn run() {
                 .load(std::sync::atomic::Ordering::SeqCst)
         {
             api.prevent_exit();
+        } else if let RunEvent::ExitRequested { code, .. } = &e {
+            tracing::info!(?code, "exit");
         }
     });
 }

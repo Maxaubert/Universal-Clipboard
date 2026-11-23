@@ -13,7 +13,7 @@
 //!   the page.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -266,6 +266,8 @@ pub struct Tray {
     /// The panel is on screen. Until then a lost focus is ignored: on Windows the new, still
     /// hidden window gets the focus and loses it at once, which closed it before it showed.
     panel_up: AtomicBool,
+    /// Counts built panels, so a late stuck-panel check leaves a newer panel alone.
+    panel_gen: AtomicU64,
     /// The screen the next window should open on (read by the page via `launch_route`).
     pub pending_route: Mutex<Option<String>>,
     #[cfg(target_os = "linux")]
@@ -306,13 +308,14 @@ pub fn show(app: &AppHandle) {
                 m.update(&view);
                 *t.menu.lock().unwrap() = Some(m);
             }
-            Err(e) => eprintln!("tray menu: {e}"),
+            Err(e) => tracing::error!(error = %e, "tray menu"),
         }
         b = b.on_menu_event(|app, e| on_menu(app, e.id().as_ref()));
     }
     let b = b.on_tray_icon_event(|icon, e| on_icon_event(icon.app_handle(), e));
+    tracing::info!("tray icon shown");
     if let Err(e) = b.build(app) {
-        eprintln!("tray icon: {e}");
+        tracing::error!(error = %e, "tray icon not built");
         t.shown.store(false, Ordering::SeqCst);
     }
 }
@@ -406,6 +409,10 @@ fn on_icon_event(app: &AppHandle, e: TrayIconEvent) {
         w: s.width as i32,
         h: s.height as i32,
     };
+    tracing::info!(
+        panel_open = app.get_webview_window(PANEL).is_some(),
+        "icon click"
+    );
     *tray(app).icon_rect.lock().unwrap() = Some(r);
     *tray(app).clicked.lock().unwrap() = Some(Instant::now());
     // Not in this event handler: building a webview here deadlocks on Windows.
@@ -425,8 +432,18 @@ fn toggle_panel(app: &AppHandle) {
         .unwrap()
         .is_some_and(|t| t.elapsed() < Duration::from_millis(300))
     {
+        tracing::debug!("click right after the panel closed: stays closed");
         return;
     }
+    build_panel(app, true);
+}
+
+/// How long a new panel may take to call `panel_ready` before it counts as stuck.
+pub const PANEL_READY_WITHIN: Duration = Duration::from_secs(3);
+
+/// Build the panel (hidden; the page shows it through `panel_ready`). `retry`: when the page
+/// does not report within [`PANEL_READY_WITHIN`], remove the stuck panel and build it once more.
+fn build_panel(app: &AppHandle, retry: bool) {
     let b =
         tauri::WebviewWindowBuilder::new(app, PANEL, WebviewUrl::App("index.html#panel".into()))
             .title("Universal Clipboard")
@@ -443,8 +460,10 @@ fn toggle_panel(app: &AppHandle) {
     #[cfg(any(windows, target_os = "macos"))]
     let b = b.transparent(true);
     tray(app).panel_up.store(false, Ordering::SeqCst);
+    let generation = tray(app).panel_gen.fetch_add(1, Ordering::SeqCst) + 1;
     match b.build() {
         Ok(w) => {
+            tracing::info!(retry = !retry, "panel built");
             let app2 = app.clone();
             w.on_window_event(move |e| {
                 if let tauri::WindowEvent::Focused(false) = e
@@ -454,8 +473,28 @@ fn toggle_panel(app: &AppHandle) {
                 }
             });
         }
-        Err(e) => eprintln!("panel: {e}"),
+        Err(e) => {
+            tracing::error!(error = %e, "panel not built");
+            return;
+        }
     }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(PANEL_READY_WITHIN).await;
+        let t = tray(&app);
+        // Still this panel (not closed and built again) and never shown.
+        if t.panel_gen.load(Ordering::SeqCst) != generation
+            || t.panel_up.load(Ordering::SeqCst)
+            || app.get_webview_window(PANEL).is_none()
+        {
+            return;
+        }
+        tracing::warn!(retry, "panel stuck: no panel_ready within 3 s, removing it");
+        close_panel(&app);
+        if retry {
+            build_panel(&app, false);
+        }
+    });
 }
 
 /// Close the panel if it is open.
@@ -463,6 +502,7 @@ pub fn close_panel(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(PANEL) {
         *tray(app).last_close.lock().unwrap() = Some(Instant::now());
         tray(app).panel_up.store(false, Ordering::SeqCst);
+        tracing::debug!("panel closed");
         let _ = w.destroy();
     }
 }
@@ -524,7 +564,10 @@ pub fn panel_ready(app: AppHandle, height: f64) {
     #[cfg(target_os = "macos")]
     activate_app(&app);
     if let Some(t) = tray(&app).clicked.lock().unwrap().take() {
+        tracing::info!(ms = t.elapsed().as_millis() as u64, "panel shown");
         log_open_time(t.elapsed());
+    } else {
+        tracing::info!("panel shown");
     }
 }
 
@@ -630,14 +673,86 @@ pub fn open_window(app: &AppHandle, route: Option<String>) {
         let _ = w.set_focus();
         return;
     }
+    tracing::info!(route = route.as_deref(), "opening the window");
     *tray(app).pending_route.lock().unwrap() = route;
-    if let Some(cfg) = app.config().app.windows.iter().find(|w| w.label == "main")
-        && let Ok(b) = tauri::WebviewWindowBuilder::from_config(app, cfg)
-        && let Ok(w) = b.build()
-    {
-        let _ = w.show();
-        let _ = w.set_focus();
+    if build_main(app) {
+        check_main_shown(app);
     }
+}
+
+/// Build and show the main window. False (and logged) when it could not be built.
+fn build_main(app: &AppHandle) -> bool {
+    let Some(cfg) = app.config().app.windows.iter().find(|w| w.label == "main") else {
+        tracing::error!("no main window in the config");
+        return false;
+    };
+    let b = match tauri::WebviewWindowBuilder::from_config(app, cfg) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(error = %e, "window builder");
+            return false;
+        }
+    };
+    match b.build() {
+        Ok(w) => {
+            let _ = w.show();
+            let _ = w.set_focus();
+            tracing::info!("window built");
+            true
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "window not built");
+            false
+        }
+    }
+}
+
+/// The Dock icon without a window (2026-11-23): a few seconds after opening, check that the
+/// window is really there and visible. If not, log what we see and build it once more.
+fn check_main_shown(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let Some(w) = app.get_webview_window("main") else {
+            // Closed by the user in the meantime, or never built: nothing to check.
+            return;
+        };
+        let visible = w.is_visible().unwrap_or(false);
+        let minimized = w.is_minimized().unwrap_or(false);
+        let size = w
+            .outer_size()
+            .map(|s| (s.width, s.height))
+            .unwrap_or((0, 0));
+        let pos = w.outer_position().map(|p| (p.x, p.y)).unwrap_or((0, 0));
+        let on_screen = app
+            .available_monitors()
+            .map(|ms| {
+                ms.iter().any(|m| {
+                    let (mp, msz) = (m.position(), m.size());
+                    pos.0 < mp.x + msz.width as i32
+                        && pos.0 + size.0 as i32 > mp.x
+                        && pos.1 < mp.y + msz.height as i32
+                        && pos.1 + size.1 as i32 > mp.y
+                })
+            })
+            .unwrap_or(true);
+        if visible && !minimized && on_screen {
+            return;
+        }
+        tracing::warn!(
+            visible,
+            minimized,
+            on_screen,
+            ?size,
+            ?pos,
+            "window not on screen after opening: building it again"
+        );
+        let _ = w.destroy();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        if build_main(&app) {
+            let _ = app.get_webview_window("main").map(|w| w.center());
+        }
+    });
 }
 
 // ------------------------------------------------------------------ Linux menu

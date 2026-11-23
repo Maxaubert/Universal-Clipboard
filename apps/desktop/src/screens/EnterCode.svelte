@@ -165,9 +165,9 @@
     {#if askLeave}
       <div role="alertdialog" aria-label={S.leaveOtherTitle} style="display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: -22px;" in:msgIn>
         <div style="font-size: 14px; font-weight: 600; text-align: center;">{S.leaveOtherTitle}</div>
-        <div style="display: flex; gap: 8px;">
-          <button type="button" class="btn ghost" style="height: 38px; padding: 0 16px; font-size: 14px;" onclick={() => (askLeave = false)}>{S.cancel}</button>
-          <button type="button" class="btn" style="height: 38px; padding: 0 16px; font-size: 14px; width: auto;" onclick={() => join(true)}>{S.leaveOtherYes}</button>
+        <div style="display: flex; gap: 8px; width: 320px;">
+          <button type="button" class="btn ghost" style="height: 38px; padding: 0 16px; font-size: 14px; flex: 1; width: auto; white-space: nowrap;" onclick={() => (askLeave = false)}>{S.cancel}</button>
+          <button type="button" class="btn" style="height: 38px; padding: 0 16px; font-size: 14px; flex: 1; width: auto; white-space: nowrap;" onclick={() => join(true)}>{S.leaveOtherYes}</button>
         </div>
       </div>
     {/if}

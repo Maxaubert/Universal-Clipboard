@@ -20,7 +20,13 @@ pub struct Rotating {
 impl Rotating {
     /// Log to `dir/agent.log`.
     pub fn new(dir: &Path) -> Rotating {
-        let path = dir.join("agent.log");
+        Rotating::named(dir, "agent.log")
+    }
+
+    /// Log to `dir/<file>` (the window process uses `ui.log`). `file` ends in `.log`; the
+    /// rotated copy is `<file>.1`.
+    pub fn named(dir: &Path, file: &str) -> Rotating {
+        let path = dir.join(file);
         let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let f = OpenOptions::new()
             .create(true)
@@ -85,9 +91,15 @@ fn level_from(v: &str) -> tracing::Level {
 /// Start logging to the state folder. `UCLIP_LOG` sets the level (default `info`). A panic
 /// is written to the log too (the Windows agent has no console), then the old hook runs.
 pub fn init(dir: &Path, _test: bool) {
+    init_named(dir, "agent.log");
+}
+
+/// [`init`] for another log file in the state folder: the window and tray process writes
+/// `ui.log` (it has no console on Windows or when the agent starts it on macOS).
+pub fn init_named(dir: &Path, file: &str) {
     let level = level_from(&std::env::var("UCLIP_LOG").unwrap_or_default());
     let set = tracing_subscriber::fmt()
-        .with_writer(Rotating::new(dir))
+        .with_writer(Rotating::named(dir, file))
         .with_ansi(false)
         .with_max_level(level)
         .with_target(false)
@@ -166,6 +178,22 @@ b
         r.flush().unwrap();
         assert!(dir.join("agent.log.1").exists());
         assert!(std::fs::metadata(dir.join("agent.log")).unwrap().len() <= MAX_BYTES);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn named_logs_rotate_to_their_own_file() {
+        let dir = std::env::temp_dir().join(format!("uc-log-ui-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut r = Rotating::named(&dir, "ui.log");
+        let line = vec![b'x'; 1000];
+        for _ in 0..300 {
+            r.write_all(&line).unwrap();
+        }
+        r.flush().unwrap();
+        assert!(dir.join("ui.log.1").exists());
+        assert!(!dir.join("agent.log").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -154,3 +154,15 @@ or a VM).
 - A real-agent run of the shell (needs a window). The same IPC client is tested through `uc`.
 - Norwegian text: all strings are in `strings.ts`, ready.
 - Settings beyond the two in the locked design (image size, formatting, name): use `uc settings`.
+
+## Window process log and watchdog (2026-11-23)
+- The window and tray process writes `ui.log` (rotates at 256 KB to `ui.log.1`) in the state folder,
+  next to `agent.log` (macOS: `~/Library/Application Support/uclip/`). Clicks, panel and window
+  steps, agent connects, exits, panics. Never clipboard content. `UCLIP_LOG=debug` for more.
+- Why: on 2026-11-23 the macOS menu bar panel stopped opening and a Dock reopen showed no window
+  after two days of uptime; the process only wrote to stderr, so nothing was recorded.
+- Recovery (`apps/desktop/src-tauri/src/watch.rs`, `tray.rs`): a panel that does not call
+  `panel_ready` within 3 s is removed and built once more; a main window that is not visible on a
+  screen 3 s after opening is rebuilt once; a main thread that does not answer for 30 s makes the
+  process start a fresh `--tray --restarted` copy and exit (a restarted copy that hangs again within
+  2 min aborts instead, leaving a crash report).
