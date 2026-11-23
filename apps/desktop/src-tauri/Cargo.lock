@@ -5283,6 +5283,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-single-instance",
  "tokio",
+ "tracing",
  "uc-agent",
  "uc-cli",
 ]
