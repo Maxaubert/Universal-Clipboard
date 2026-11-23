@@ -5179,7 +5179,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "uc-agent"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "blake3",
  "data-encoding",
@@ -5212,7 +5212,7 @@ dependencies = [
 
 [[package]]
 name = "uc-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "clap",
  "qrcode",
@@ -5223,14 +5223,14 @@ dependencies = [
 
 [[package]]
 name = "uc-clip"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "uc-clip-linux"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rustix",
  "uc-clip",
@@ -5242,7 +5242,7 @@ dependencies = [
 
 [[package]]
 name = "uc-clip-mac"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "objc2",
  "objc2-app-kit",
@@ -5252,7 +5252,7 @@ dependencies = [
 
 [[package]]
 name = "uc-clip-win"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "png",
  "uc-clip",
@@ -5261,7 +5261,7 @@ dependencies = [
 
 [[package]]
 name = "uc-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "blake3",
  "png",
@@ -5273,7 +5273,7 @@ dependencies = [
 
 [[package]]
 name = "uc-desktop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "objc2",
  "serde",
@@ -5290,7 +5290,7 @@ dependencies = [
 
 [[package]]
 name = "uc-keys"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ed25519-dalek",
  "keyring",
@@ -5300,7 +5300,7 @@ dependencies = [
 
 [[package]]
 name = "uc-net"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ed25519-dalek",
  "hmac",
@@ -5321,7 +5321,7 @@ dependencies = [
 
 [[package]]
 name = "uc-pair"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "curve25519-dalek",
  "data-encoding",
@@ -5338,7 +5338,7 @@ dependencies = [
 
 [[package]]
 name = "uc-update"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "blake2",
  "blake3",
@@ -5354,7 +5354,7 @@ dependencies = [
 
 [[package]]
 name = "uc-winhost"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "windows-sys 0.61.2",
 ]
