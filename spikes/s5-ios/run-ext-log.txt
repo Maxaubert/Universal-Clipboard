@@ -1,6 +1,0 @@
-getpwuid_r did not find a match for uid 501
-Filtering the log data using "composedMessage CONTAINS "S5EXT""
-Timestamp               Ty Process[PID:TID]
-2026-11-28 12:18:35.982 Df S5Share[39666:204692c] (Foundation) S5EXT start=ok before=14338376 after=16042312 ms=5
-2026-11-28 12:18:37.031 Df S5Share[39666:204692c] (Foundation) S5EXT after1s=25725352
-Child process terminated with signal 15: Terminated

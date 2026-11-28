@@ -4,3 +4,4 @@ ios/build/
 ios/Generated/
 ios/UcS5.xcframework/
 ios/S5.xcodeproj/
+run-ext-log.txt
