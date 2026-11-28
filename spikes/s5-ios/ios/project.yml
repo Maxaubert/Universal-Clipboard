@@ -1,0 +1,68 @@
+name: S5
+options:
+  bundleIdPrefix: com.universalclipboard.s5
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    OTHER_LDFLAGS: "-lc++ -framework Network -framework Security -framework SystemConfiguration -lresolv"
+targets:
+  S5App:
+    type: application
+    platform: iOS
+    sources: [App, Generated/uc_s5.swift]
+    dependencies:
+      - framework: UcS5.xcframework
+        embed: false
+      - target: S5Share
+    info:
+      path: App/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: UC S5
+        NSLocalNetworkUsageDescription: Finds your computers on this network.
+        NSBonjourServices: [_uclip._udp, _uclip-pair._udp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.universalclipboard.s5
+        TARGETED_DEVICE_FAMILY: "1,2"
+  S5Share:
+    type: app-extension
+    platform: iOS
+    sources: [ShareExt, Generated/uc_s5.swift]
+    dependencies:
+      - framework: UcS5.xcframework
+        embed: false
+    info:
+      path: ShareExt/Info.plist
+      properties:
+        CFBundleDisplayName: Universal Clipboard S5
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule: TRUEPREDICATE
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.universalclipboard.s5.share
+  S5UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: S5App
+    settings:
+      base:
+        TEST_TARGET_NAME: S5App
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.universalclipboard.s5.uitests
+schemes:
+  S5App:
+    build:
+      targets:
+        S5App: all
+    test:
+      targets: [S5UITests]
