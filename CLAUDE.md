@@ -12,6 +12,7 @@ Pairing, membership and key store code notes (M3): `docs/pairing.md`.
 macOS clipboard backend (M5): `docs/clip-mac.md`.
 Agent, IPC and the `uc` CLI (M7), test switches, measurements: `docs/agent.md`.
 Installers, firewall helper, self-update, keys and releases (M9): `docs/install.md`.
+iPhone and iPad app (S5, M12, M14), approved 2026-11-28: `docs/plan/2026-11-28-ios-ipad.md`.
 File and folder sync (0.2.0): spec `docs/plan/2026-11-16-file-sync.md`, agent part `docs/agent.md` "File copies".
 
 ## Rules
